@@ -1,25 +1,67 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# 环境变量与密钥
+.env
+.env.local
+.env.*.local
 
-# Virtual environment
+# 虚拟环境
 .venv/
 venv/
 env/
 
-# Environment variables
-.env
-.env.*
+# 运行产物（全量忽略，不入库）
+artifacts/
 
-# IDE
-.vscode/
+# 字节码缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 构建与分发
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+eggs/
+.eggs/
+wheels/
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# 静态类型检查
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# ============== 数据目录 ==============
+data/processed/
+
+# 输入数据目录
+data/input/  
+
+
+# ============== IDE 与编辑器 ==============
 .idea/
-
-# OS
+.vscode/
+*.swp
+*.swo
+*~
 .DS_Store
-Thumbs.db
+.agents/
+.codex/
 
-# Logs
+# ============== 日志 ==============
 *.log
+logs/
+
+# ============== 其他临时文件 ==============
+*.tmp
+*.bak
+*.old

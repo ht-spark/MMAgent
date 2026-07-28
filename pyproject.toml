@@ -1,0 +1,34 @@
+[project]
+name = "MMAgent"
+version = "1.1.0"
+description = "用于数学建模题目的专用智能体"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph",
+    "langchain",
+    "langchain-openai",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "pandas",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "pulp",
+    "httpx",
+    "tenacity",
+    "openpyxl",
+    "pytest",
+    "pytest-asyncio"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
