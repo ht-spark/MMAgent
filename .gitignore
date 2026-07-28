@@ -29,6 +29,7 @@ wheels/
 
 # 测试与覆盖率
 .pytest_cache/
+.tests/
 .coverage
 .coverage.*
 htmlcov/

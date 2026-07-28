@@ -25,11 +25,19 @@ Python 3.13，依赖：langgraph, pandas, numpy, scipy, scikit-learn, pydantic, 
 6. 产物落盘（artifacts/<run_id>/）— State 只存路径
 
 ## 已完成进度
-- Phase 1 部分：schemas/problem.py（DataField, DataInventory, ProblemAnalysis, SubProblem, ProblemClassification）
+- Phase 1 部分：schemas/{problem,common,research}.py（DataField, DataInventory, ProblemAnalysis, SubProblem, ProblemClassification, GateResult, KnowledgeGap, SearchRequest, EvidenceItem）
 - Phase 3 部分：tools/file_tools.py（CSV/Excel/MD 读取 + data_inventory 画像）
 - Phase 3 部分：agents/problem_analyst.py（understand/decompose/classify + BaseAgent 基类）
-- Phase 3 部分：prompts/（problem_analysis.md, task_decomposition.md, problem_classification.md）
-- 64 个单元测试全部通过
+- Phase 3 部分：layers/l0_understanding.py（L0 子图 + G1 重试逻辑）
+- Phase 3 部分：gates/g1_understanding.py（小问完整 + DAG 校验 + 主类型齐备）
+- Phase 4 部分：agents/research_agent.py（identify_gaps / plan_queries / extract_evidence）
+- Phase 3+4 部分：prompts/（problem_analysis.md, task_decomposition.md, problem_classification.md, knowledge_gap.md, query_planner.md, evidence_extraction.md）
+- 101 个单元测试全部通过
+
+## Gate 模式
+- GateResult: gate_id / passed / failed_checks / action(pass|retry|escalate|human) / budget_used / budget_remaining
+- 预算机制：max_budget=2，`budget_used <= max_budget → retry`，否则 human
+- DAG 校验：DFS + 三色标记（WHITE/GRAY/BLACK），遇到 GRAY 节点判定有环
 
 ## Agent 构建模式
 - BaseAgent 支持 LLM 注入：测试用 FakeLLM（实现 with_structured_output + invoke），生产从环境变量创建 ChatOpenAI

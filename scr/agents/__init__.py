@@ -7,5 +7,6 @@ from __future__ import annotations
 
 from .base import BaseAgent
 from .problem_analyst import ProblemAnalyst
+from .research_agent import ResearchAgent
 
-__all__ = ["BaseAgent", "ProblemAnalyst"]
+__all__ = ["BaseAgent", "ProblemAnalyst", "ResearchAgent"]

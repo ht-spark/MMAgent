@@ -140,7 +140,7 @@ class ProblemAnalysis(BaseModel):
 
     research_subject: str
     background: str
-    explicit_questions: list[str] = Field(min_length=1)
+    explicit_questions: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     expected_outputs: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
