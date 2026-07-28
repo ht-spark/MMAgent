@@ -57,6 +57,7 @@ data/input/
 .DS_Store
 .agents/
 .codex/
+.workbuddy/
 
 # ============== 日志 ==============
 *.log
