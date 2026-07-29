@@ -57,20 +57,25 @@ class BaseAgent:
     def _create_default_llm(self) -> Any:
         """从环境变量创建默认 LLM 客户端（langchain ChatOpenAI）。
 
-        需要设置环境变量：
-          - OPENAI_API_KEY: API 密钥（必需）
-          - MODEL_NAME: 模型名（默认 gpt-4o）
-          - OPENAI_BASE_URL: 自定义 API 地址（可选，用于兼容第三方接口）
+        支持两种配置：
+          1. OpenAI: OPENAI_API_KEY + MODEL_NAME + OPENAI_BASE_URL
+          2. DeepSeek（兼容 OpenAI 接口）: DEEPSEEK_API_KEY + DEEPSEEK_MODEL + DEEPSEEK_BASE_URL
         """
+        # 优先尝试 OpenAI
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY not set. Either set the environment variable "
-                "or pass an llm instance to the agent constructor."
-            )
-
-        model_name = os.getenv("MODEL_NAME", "gpt-4o")
-        base_url = os.getenv("OPENAI_BASE_URL")
+        if api_key:
+            model_name = os.getenv("MODEL_NAME", "gpt-4o")
+            base_url = os.getenv("OPENAI_BASE_URL")
+        else:
+            # 尝试 DeepSeek
+            api_key = os.getenv("DEEPSEEK_API_KEY")
+            if not api_key:
+                raise RuntimeError(
+                    "No API key found. Set OPENAI_API_KEY or DEEPSEEK_API_KEY "
+                    "in .env, or pass an llm instance to the agent constructor."
+                )
+            model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
         from langchain_openai import ChatOpenAI
 
@@ -126,6 +131,9 @@ class BaseAgent:
     def _call_structured(self, schema: type[T], prompt: str) -> T:
         """调用 LLM 并返回结构化输出。
 
+        优先使用 with_structured_output（OpenAI 等支持 response_format 的模型）。
+        失败时自动回退到 JSON prompt + 手动解析（兼容 DeepSeek 等）。
+
         Args:
             schema: Pydantic 模型类，约束 LLM 输出结构。
             prompt: 渲染后的 prompt 文本。
@@ -133,5 +141,86 @@ class BaseAgent:
         Returns:
             schema 的实例。
         """
-        structured_llm = self.llm.with_structured_output(schema)
-        return structured_llm.invoke(prompt)
+        # 方案 1：尝试 structured output
+        try:
+            structured_llm = self.llm.with_structured_output(schema)
+            return structured_llm.invoke(prompt)
+        except Exception as e:
+            if "response_format" not in str(e) and "BadRequestError" not in str(type(e).__name__):
+                raise  # 非 structured output 相关的错误，直接抛出
+            # 回退到方案 2：JSON prompt
+            return self._call_structured_json_fallback(schema, prompt)
+
+    def _call_structured_json_fallback(self, schema: type[T], prompt: str) -> T:
+        """JSON prompt + 手动解析（兼容不支持 response_format 的模型）。"""
+        import json
+
+        # 构建 JSON 示例
+        schema_json = schema.model_json_schema()
+        example = self._schema_to_example(schema_json)
+
+        json_prompt = (
+            prompt
+            + "\n\n---\n**重要**：你必须用纯 JSON 格式回答，不要用 Markdown 代码块，不要加解释。\n"
+            + f"JSON 格式和字段说明：\n```json\n{example}\n```\n"
+            + "直接返回 JSON，不要 ```json 包裹。"
+        )
+
+        result = self.llm.invoke(json_prompt)
+        text = (result.content if hasattr(result, "content") else str(result)).strip()
+
+        # 清理 Markdown 代码块
+        if text.startswith("```"):
+            lines = text.split("\n")
+            # 去掉第一行（```json）和最后一行（```）
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # 尝试提取 JSON 对象
+            import re
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group())
+                except json.JSONDecodeError:
+                    raise ValueError(f"JSON 解析失败，LLM 返回: {text[:300]}")
+            else:
+                raise ValueError(f"JSON 解析失败，LLM 返回: {text[:300]}")
+
+        return schema.model_validate(data)
+
+    @staticmethod
+    def _schema_to_example(schema_json: dict) -> str:
+        """从 JSON Schema 生成简化的示例 JSON 字符串。"""
+        import json
+
+        props = schema_json.get("properties", {})
+        example: dict = {}
+        for key, prop in props.items():
+            ptype = prop.get("type", "string")
+            if ptype == "array":
+                items = prop.get("items", {})
+                if items.get("type") == "string":
+                    example[key] = ["示例项1", "示例项2"]
+                else:
+                    example[key] = []
+            elif ptype == "object":
+                example[key] = {}
+            elif ptype in ("integer", "number"):
+                example[key] = 0
+            elif ptype == "boolean":
+                example[key] = False
+            else:
+                # 尝试从 enum 取第一个值
+                enum = prop.get("enum")
+                if enum:
+                    example[key] = enum[0]
+                else:
+                    example[key] = "示例文本"
+        return json.dumps(example, ensure_ascii=False, indent=2)

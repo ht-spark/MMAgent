@@ -324,8 +324,9 @@ class TestPromptTemplates:
 class TestErrorHandling:
     def test_no_llm_no_api_key(self, monkeypatch):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         agent = ResearchAgent()
-        with pytest.raises(RuntimeError, match="OPENAI_API_KEY not set"):
+        with pytest.raises(RuntimeError, match="No API key found"):
             _ = agent.llm
 
     def test_fake_llm_not_registered(self, sample_analysis, sample_subproblems):

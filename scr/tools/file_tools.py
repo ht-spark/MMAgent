@@ -35,9 +35,11 @@ from ..schemas.problem import (
 __all__ = [
     "read_csv",
     "read_excel",
+    "read_excel_all_sheets",
     "read_markdown",
     "read_file",
     "generate_data_inventory",
+    "generate_data_inventories",
 ]
 
 # ---------------------------------------------------------------------------
@@ -93,6 +95,30 @@ def read_excel(
     if not p.exists():
         raise FileNotFoundError(f"Excel file not found: {p}")
     return pd.read_excel(p, sheet_name=sheet_name, **kwargs)
+
+
+def read_excel_all_sheets(
+    path: str | Path,
+    **kwargs: Any,
+) -> dict[str, pd.DataFrame]:
+    """读取 Excel 文件的所有工作表。
+
+    Args:
+        path: Excel 文件路径（.xlsx / .xls）。
+        **kwargs: 透传给 pandas.read_excel 的参数。
+
+    Returns:
+        {sheet_name: DataFrame} 字典。
+
+    Raises:
+        FileNotFoundError: 文件不存在。
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Excel file not found: {p}")
+    sheets = pd.read_excel(p, sheet_name=None, **kwargs)
+    # pandas 返回的 key 可能是 int（sheet 索引），统一转为 str
+    return {str(k): v for k, v in sheets.items()}
 
 
 def read_markdown(path: str | Path, encoding: str = "utf-8") -> str:
@@ -364,3 +390,62 @@ def generate_data_inventory(
         )
 
     return inventory
+
+
+def generate_data_inventories(
+    file_paths: list[str | Path],
+    output_dir: str | Path | None = None,
+) -> list[DataInventory]:
+    """对多个数据文件生成画像（Excel 文件自动展开所有 sheet）。
+
+    每个文件每个 sheet 生成一个独立的 DataInventory。
+    Excel 多 sheet 时 file_name 标注为 ``"filename.xlsx::sheet_name"``。
+
+    Args:
+        file_paths: 数据文件路径列表。
+        output_dir: 可选，画像 JSON 写入目录（每个文件一个 JSON）。
+
+    Returns:
+        DataInventory 列表（不可读文件自动跳过）。
+    """
+    inventories: list[DataInventory] = []
+
+    for fp in file_paths:
+        p = Path(fp)
+        if not p.exists():
+            continue
+        ext = p.suffix.lower()
+
+        if ext in (".xlsx", ".xls"):
+            # Excel：展开所有 sheet
+            try:
+                sheets = read_excel_all_sheets(p)
+            except Exception:
+                continue
+            for sheet_name in sheets:
+                try:
+                    inv = generate_data_inventory(p, sheet_name=sheet_name)
+                    # file_name 标注 sheet 名
+                    inv = inv.model_copy(
+                        update={"file_name": f"{p.name}::{sheet_name}"}
+                    )
+                    inventories.append(inv)
+                except Exception:
+                    continue
+        else:
+            try:
+                inv = generate_data_inventory(p)
+                inventories.append(inv)
+            except (FileNotFoundError, ValueError):
+                continue
+
+    # 可选写盘
+    if output_dir is not None and inventories:
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        for i, inv in enumerate(inventories):
+            safe_name = inv.file_name.replace("::", "_").replace("/", "_")
+            out_path = out / f"data_inventory_{i}_{safe_name}.json"
+            out_path.write_text(inv.model_dump_json(indent=2), encoding="utf-8")
+
+    return inventories

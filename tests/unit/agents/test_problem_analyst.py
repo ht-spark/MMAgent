@@ -371,8 +371,9 @@ class TestErrorHandling:
     def test_no_llm_no_api_key(self, monkeypatch):
         """没有 LLM 且没有 API Key → RuntimeError。"""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         analyst = ProblemAnalyst()  # 不传 llm
-        with pytest.raises(RuntimeError, match="OPENAI_API_KEY not set"):
+        with pytest.raises(RuntimeError, match="No API key found"):
             _ = analyst.llm  # 触发惰性初始化
 
     def test_fake_llm_not_registered(self, sample_analysis):

@@ -172,7 +172,15 @@ class L3DataSubgraph:
         requirements: list[DataRequirement],
     ) -> tuple[PreprocessingReport, Path]:
         """执行预处理，写入 processed.csv（原始数据不覆盖）。"""
-        df = pd.read_csv(data_path, encoding="utf-8")
+        # 根据扩展名选择读取方式
+        p = Path(data_path)
+        ext = p.suffix.lower()
+        if ext in (".xlsx", ".xls"):
+            df = pd.read_excel(data_path, sheet_name=0)
+        elif ext == ".csv":
+            df = pd.read_csv(data_path, encoding="utf-8")
+        else:
+            df = pd.read_csv(data_path, encoding="utf-8")
         rows_before = len(df)
         steps: list[PreprocessingStep] = []
 

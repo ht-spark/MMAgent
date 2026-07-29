@@ -15,6 +15,8 @@ Python 3.13，依赖：langgraph, pandas, numpy, scipy, scikit-learn, pydantic, 
 - 依赖需用清华镜像安装：`pip install xxx -i https://pypi.tuna.tsinghua.edu.cn/simple`
 - 运行测试：`cd D:\MMAgent && python -m pytest tests/ -v`
 - pyproject.toml 已配置 pythonpath=["."] 和 testpaths=["tests"]
+- 已安装：pandas, numpy, pydantic, openpyxl, pytest, langgraph, langchain, langchain-openai, python-dotenv, pulp
+- .env 文件已配置 OPENAI_API_KEY（自动加载，main.py 顶部 load_dotenv()）
 
 ## 确定性 Tool 构建流程（六步）
 1. Schema 定义（schemas/xxx.py）— Pydantic 数据契约
@@ -39,8 +41,11 @@ Python 3.13，依赖：langgraph, pandas, numpy, scipy, scikit-learn, pydantic, 
 - Phase 6 部分：gates/g4_data.py（字段齐备率 + 缺失率阈值 + 整体评分）
 - Phase 7 部分：layers/l4_solve.py（formulate + codegen + sandbox exec + G5）
 - Phase 7 部分：gates/g5_result.py（执行结果 + 数值非空 + 作用域路由）
+- Phase 8 部分：layers/l5_writing.py（论文生成 + 数值一致性核对 + 章节完整性）
+- Phase 9 部分：layers/l6_review.py（5 项程序化审查 + final_package + submission_checklist）
+- Phase 9 部分：math_modeling_agent/main.py（端到端 run() 入口 + CLI）
 - Phase 3+4+5 部分：prompts/（problem_analysis.md, task_decomposition.md, problem_classification.md, knowledge_gap.md, query_planner.md, evidence_extraction.md, model_candidate.md, model_scoring.md, model_critic.md）
-- 115 个单元测试全部通过
+- 118 个单元测试全部通过
 
 ## Gate 模式
 - GateResult: gate_id / passed / failed_checks / action(pass|retry|escalate|human) / budget_used / budget_remaining
