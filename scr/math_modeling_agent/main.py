@@ -164,6 +164,8 @@ def run(
     l5_result = l5.run(
         analysis, subproblems, execution_result,
         selected_model_name=candidate.name,
+        selected_models=selected_models,
+        subproblem_executions=l4_result.get("subproblem_executions", []),
     )
     paper_path = l5_result["paper_draft_path"]
     paper_text = l5_result["paper_text"]

@@ -54,14 +54,14 @@ class L3DataSubgraph:
     def run(
         self,
         data_path: str | Path,
-        data_inventory: DataInventory,
+        data_inventory: DataInventory | None,
         selected_models: list[ModelScore] | None = None,
     ) -> dict:
         """执行 L3 数据流程。
 
         Args:
             data_path: 数据文件路径。
-            data_inventory: L0 生成的 DataInventory。
+            data_inventory: L0 生成的 DataInventory（可为 None，此时跳过处理）。
             selected_models: 可选，L2 选中的模型（用于推断字段需求）。
 
         Returns:
@@ -69,6 +69,16 @@ class L3DataSubgraph:
               - data_requirements / preprocessing_report / quality_report
               - processed_data_path / gate_result / workflow_status
         """
+        if data_inventory is None:
+            return {
+                "data_requirements": [],
+                "preprocessing_report": None,
+                "quality_report": None,
+                "processed_data_path": "",
+                "gate_result": None,
+                "workflow_status": "l3_skipped_no_inventory",
+            }
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 1. plan_data

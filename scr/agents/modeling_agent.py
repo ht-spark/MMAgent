@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -29,6 +30,9 @@ from ..schemas.research import EvidenceItem
 from .base import BaseAgent
 
 __all__ = ["ModelingAgent"]
+
+# 方法库路径：scr/agents/ → scr/ → 项目根目录
+_METHOD_LIBRARY_PATH = Path(__file__).resolve().parent.parent.parent / "方法库.md"
 
 
 # LLM 返回的原始评分（不含 total_score）
@@ -59,7 +63,31 @@ class ModelingAgent(BaseAgent):
       - generate_candidates：生成候选模型
       - score_candidates：评分（LLM 给单项 → 代码算总分）
       - criticize：Critic 审查
+
+    方法库（方法库.md）作为知识库注入到所有 prompt 中，为 LLM 提供
+    完整的模型分类体系、适用场景、优缺点等参考信息。
     """
+
+    # ------------------------------------------------------------------
+    # 方法库加载
+    # ------------------------------------------------------------------
+
+    _method_library_cache: str | None = None
+
+    @classmethod
+    def _load_method_library(cls) -> str:
+        """加载方法库内容（类级缓存，只读一次）。
+
+        Returns:
+            方法库.md 的完整文本，若文件不存在则返回空字符串。
+        """
+        if cls._method_library_cache is not None:
+            return cls._method_library_cache
+        if _METHOD_LIBRARY_PATH.exists():
+            cls._method_library_cache = _METHOD_LIBRARY_PATH.read_text(encoding="utf-8")
+        else:
+            cls._method_library_cache = ""
+        return cls._method_library_cache
 
     # ------------------------------------------------------------------
     # generate_candidates — 候选生成
@@ -106,6 +134,7 @@ class ModelingAgent(BaseAgent):
             subproblems=sp_str,
             data_inventory=inv_str,
             evidence_summary=ev_summary,
+            method_library=self._load_method_library(),
         )
         result = self._call_structured(ModelCandidateList, prompt)
         return result.candidates
@@ -162,6 +191,7 @@ class ModelingAgent(BaseAgent):
             problem_analysis=pa_str,
             subproblems=sp_str,
             data_inventory=inv_str,
+            method_library=self._load_method_library(),
         )
         result = self._call_structured(_ScoreInputList, prompt)
 
@@ -221,6 +251,7 @@ class ModelingAgent(BaseAgent):
             scored_candidates=scored_str,
             problem_analysis=pa_str,
             evidence_summary=ev_summary,
+            method_library=self._load_method_library(),
         )
         return self._call_structured(ModelCriticReport, prompt)
 
