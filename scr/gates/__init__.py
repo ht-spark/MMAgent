@@ -9,5 +9,16 @@ from __future__ import annotations
 
 from .base import Gate
 from .g1_understanding import G1UnderstandingGate
+from .g2_coverage import G2CoverageGate
+from .g3_decision import G3DecisionGate
+from .g4_data import G4DataGate
+from .g5_result import G5ResultGate
 
-__all__ = ["Gate", "G1UnderstandingGate"]
+__all__ = [
+    "G1UnderstandingGate",
+    "G2CoverageGate",
+    "G3DecisionGate",
+    "G4DataGate",
+    "G5ResultGate",
+    "Gate",
+]

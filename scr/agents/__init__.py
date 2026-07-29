@@ -6,7 +6,8 @@ Agent 加载 prompt 模板，调用 LLM，返回结构化输出。
 from __future__ import annotations
 
 from .base import BaseAgent
+from .modeling_agent import ModelingAgent
 from .problem_analyst import ProblemAnalyst
 from .research_agent import ResearchAgent
 
-__all__ = ["BaseAgent", "ProblemAnalyst", "ResearchAgent"]
+__all__ = ["BaseAgent", "ModelingAgent", "ProblemAnalyst", "ResearchAgent"]
