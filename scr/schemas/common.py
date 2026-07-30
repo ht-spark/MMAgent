@@ -16,7 +16,7 @@ class GateResult(BaseModel):
         gate_id: Gate 标识符（如 "G1"、"G2"）。
         passed: 是否通过。
         failed_checks: 失败项列表（如 ["explicit_questions_empty"]）。
-        action: 后续动作（pass / retry / escalate / human）。
+        action: 后续动作（pass / retry / escalate / blocked / human）。
         budget_used: 本 Gate 已用预算次数。
         budget_remaining: 剩余预算次数。
     """
@@ -24,7 +24,7 @@ class GateResult(BaseModel):
     gate_id: str
     passed: bool
     failed_checks: list[str] = Field(default_factory=list)
-    action: Literal["pass", "retry", "escalate", "human"]
+    action: Literal["pass", "retry", "escalate", "blocked", "human"]
     budget_used: int = Field(ge=0)
     budget_remaining: int = Field(ge=0)
 

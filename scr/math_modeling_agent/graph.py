@@ -1,350 +1,221 @@
-"""LangGraph 集成：主图组装。
+"""LangGraph 编排：主图组装。
 
-对应 architecture.md §9：
-  每层编译为独立子图，单测粒度对齐 Phase；
-  主图串联子图 + Gate 条件边 + Checkpoint。
+对应 architecture.md §2 总体工作流和 plan.md 分阶段执行。
 
-简化版（demo）：
-  - G1 作为 L0 → L1 的条件边（pass / retry / human）
-  - 其余 Gate 只做记录，线性串联
-  - 用 MemorySaver 做 checkpoint（可 resume）
-  - 保留 main.py 的函数式 run() 作为兼容入口
+完整实现 Phase 0 ~ Phase 6：
 
-用法::
-
-    from scr.math_modeling_agent.graph import build_graph, run_graph
-
-    graph = build_graph()
-    result = run_graph(graph, problem_text="...", data_path="...")
+  START → intake → context → G0 条件边
+    G0 pass → select_question → (条件边)
+      has_next → assemble_context → solve_question → validate_result → gq_check → (条件边)
+        pass → archive_result → select_question (循环)
+        retry → solve_question (重试)
+        blocked → archive_result → select_question (循环)
+      done → global_review → write_paper → review_paper → gf_check → (条件边)
+        deliver → END
+        revise → write_paper (修订)
+    G0 retry → g0_retry → intake (重跑输入摄入)
+    G0 human → END (人工介入)
 """
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from ..gates.g1_understanding import G1UnderstandingGate
-from ..layers.l1_research import FakeSearchProvider, L1ResearchSubgraph
-from ..layers.l3_data import L3DataSubgraph
-from ..layers.l4_solve import L4SolveSubgraph
-from ..layers.l5_writing import L5WritingSubgraph
-from ..layers.l6_review import L6ReviewSubgraph
-from ..schemas.model import ModelCandidate, ModelScore
-from ..schemas.problem import ProblemAnalysis, SubProblem
-from ..schemas.result import ExecutionResult
-from ..tools.file_tools import generate_data_inventory, generate_data_inventories
+from ..agents.paper_writer import write_paper_node
+from ..agents.question_solver import solve_question_node
+from ..agents.result_validator import validate_result_node
+from ..agents.reviewer import review_paper_node
+from ..gates.gf_delivery import route_gf
+from ..gates.g0_intake import route_g0
+from ..gates.gq_question import route_after_gq, run_gq_node
+from ..workflow.intake import run_intake
+from ..workflow.project_context import run_context
+from ..workflow.question_loop import (
+    archive_result,
+    assemble_context,
+    route_after_select,
+    select_question,
+)
+from .state import ProjectState, create_initial_state
 
 
 # ---------------------------------------------------------------------------
-# State 定义
+# 节点函数
 # ---------------------------------------------------------------------------
 
 
-class GraphState(TypedDict, total=False):
-    """LangGraph 主图状态。"""
-
-    # 输入
-    problem_text: str
-    data_paths: list  # list[str]，Excel 自动展开所有 sheet
-    output_dir: str
-    llm: Any
-    search_provider: Any
-
-    # L0
-    problem_analysis: ProblemAnalysis
-    subproblems: list  # list[SubProblem]
-    data_inventory: Any
-    problem_classification: Any
-
-    # L1
-    knowledge_gaps: list
-    evidence_items: list
-
-    # L2
-    selected_models: list  # list[(ModelCandidate, ModelScore)]
-
-    # L3
-    processed_data_path: str
-
-    # L4
-    execution_result: ExecutionResult
-    subproblem_executions: list  # list[SubProblemExecution]
-
-    # L5
-    paper_text: str
-    paper_path: str
-
-    # L6
-    final_package_dir: str
-    workflow_status: str
-
-    # 运行时
-    _l0_retry_count: int
-    errors: list
+def _intake_node(state: ProjectState) -> dict:
+    """intake 节点：输入摄入。"""
+    print("[intake] 开始：数据画像...")
+    result = run_intake(state)
+    dp = result.get("data_profile")
+    if dp:
+        print(f"[intake] 完成：{len(dp.files)} 个文件、{len(dp.tables)} 张表、{len(dp.fields)} 个字段")
+        for finding in dp.preliminary_findings:
+            print(f"  → {finding}")
+    return result
 
 
-# ---------------------------------------------------------------------------
-# Node 函数
-# ---------------------------------------------------------------------------
+def _context_node(state: ProjectState) -> dict:
+    """context 节点：全局上下文建立。"""
+    print("[context] 开始：题目理解 + 小问拆分...")
+    result = run_context(state)
+    pc = result.get("project_context")
+    if pc:
+        print(f"[context] 完成：{len(pc.questions)} 个小问")
+        for q in pc.questions:
+            deps = pc.question_dependencies.get(q.question_id, [])
+            print(f"  → {q.question_id}: {q.objective[:40]}... (deps={deps})")
+    return result
 
 
-def _l0_node(state: GraphState) -> dict:
-    """L0: 摄入 + 数据画像 + 题目理解。"""
-    retry_count = int(state.get("_l0_retry_count", 0))
-    print(f"[L0] 开始：数据画像 + 题目理解...（第 {retry_count + 1} 次）")
-    llm = state.get("llm")
-    data_paths = state.get("data_paths", [])
-    problem_text = state["problem_text"]
+def _g0_retry_node(state: ProjectState) -> dict:
+    """G0 重试时递增计数器。"""
+    retry_count = state.get("_g0_retry_count", 0)
+    return {"_g0_retry_count": retry_count + 1}
 
-    # 多文件多 sheet 数据画像
-    inventories = generate_data_inventories(data_paths) if data_paths else []
-    primary_inventory = inventories[0] if inventories else None
-    print(f"[L0] 生成 {len(inventories)} 个数据画像")
 
-    # 如果已经重试过，跳过 LLM 调用，直接用上次结果
-    if retry_count > 0 and state.get("problem_analysis") is not None:
-        print("[L0] 已重试，使用缓存的分析结果...")
-        analysis = state.get("problem_analysis")
-        subproblems = state.get("subproblems", [])
-        classification = state.get("problem_classification")
-    elif llm is not None:
-        from ..agents.problem_analyst import ProblemAnalyst
-        from ..schemas.problem import ProblemClassification
-        analyst = ProblemAnalyst(llm=llm)
-        inv_summary = primary_inventory.model_dump_json(indent=2) if primary_inventory else ""
+def _select_question_node(state: ProjectState) -> dict:
+    """select_question 节点：选择下一个可执行的小问。"""
+    return select_question(state)
+
+
+def _assemble_context_node(state: ProjectState) -> dict:
+    """assemble_context 节点：装配当前小问上下文。"""
+    return assemble_context(state)
+
+
+def _solve_question_node(state: ProjectState) -> dict:
+    """solve_question 节点：小问求解（含方法探索 + 建模计算）。"""
+    return solve_question_node(state)
+
+
+def _validate_result_node(state: ProjectState) -> dict:
+    """validate_result 节点：题型验证（Phase 5）。"""
+    return validate_result_node(state)
+
+
+def _gq_check_node(state: ProjectState) -> dict:
+    """gq_check 节点：GQ 小问结果质量门。"""
+    return run_gq_node(state)
+
+
+def _archive_result_node(state: ProjectState) -> dict:
+    """archive_result 节点：归档小问结果。"""
+    return archive_result(state)
+
+
+def _global_review_node(state: ProjectState) -> dict:
+    """global_review 节点：全题一致性审查（Phase 6 §6.1）。"""
+    print("[global_review] 开始：全题一致性审查...")
+    result = review_paper_node(state)
+    report = result.get("review_report")
+    if report:
+        print(f"[global_review] 完成: status={report.overall_status}, "
+              f"critical={report.critical_count}, major={report.major_count}")
+    return result
+
+
+def _write_paper_node(state: ProjectState) -> dict:
+    """write_paper 节点：论文写作（Phase 6 §6.2）。"""
+    print("[write_paper] 开始：论文写作...")
+    result = write_paper_node(state)
+    paper = result.get("paper_draft")
+    if paper:
+        print(f"[write_paper] 完成: {len(paper.sections)} 个章节, "
+              f"全文 {len(paper.full_text)} 字符")
+    return result
+
+
+def _review_paper_node(state: ProjectState) -> dict:
+    """review_paper 节点：论文审查（Phase 6 §6.1）。"""
+    print("[review_paper] 开始：论文审查...")
+    result = review_paper_node(state)
+    report = result.get("review_report")
+    if report:
+        print(f"[review_paper] 完成: status={report.overall_status}, "
+              f"critical={report.critical_count}, major={report.major_count}")
+    return result
+
+
+def _deliver_node(state: ProjectState) -> dict:
+    """deliver 节点：最终交付。
+
+    保存论文 Markdown、转换为 DOCX、保存审查报告。
+    """
+    import os
+    import json
+
+    output_dir = state.get("output_dir", "artifacts/unknown")
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"[deliver] 最终交付完成，产物目录: {output_dir}")
+
+    # 保存论文 Markdown
+    paper = state.get("paper_draft")
+    paper_path = ""
+    if paper and paper.full_text:
+        paper_path = os.path.join(output_dir, "paper.md")
+        with open(paper_path, "w", encoding="utf-8") as f:
+            f.write(paper.full_text)
+        print(f"[deliver] 论文 Markdown 已保存: {paper_path}")
+
+        # 转换为 DOCX
         try:
-            print("[L0] 调用 LLM understand...")
-            analysis = analyst.understand(problem_text, primary_inventory)
-            print(f"[L0] 小问数: {len(analysis.explicit_questions)}, 关键词: {analysis.keywords[:5]}")
+            from ..tools.md2docx import convert_paper_md_to_docx
+            docx_path = convert_paper_md_to_docx(paper_path, output_dir)
+            print(f"[deliver] 论文 DOCX 已保存: {docx_path}")
         except Exception as e:
-            print(f"[L0] understand 失败: {e}")
-            analysis = None
+            print(f"[deliver] DOCX 转换失败（不影响交付）: {e}")
 
-        if analysis is not None:
-            try:
-                print("[L0] 调用 LLM decompose...")
-                subproblems = analyst.decompose(analysis)
-                print(f"[L0] decompose 完成: {len(subproblems)} 个子问题")
-            except Exception as e:
-                print(f"[L0] decompose 失败: {e}")
-                subproblems = []
-
-            try:
-                print("[L0] 调用 LLM classify...")
-                classification = analyst.classify(analysis, subproblems) if subproblems else None
-                print(f"[L0] classify 完成: {classification.primary_type if classification else 'N/A'}")
-            except Exception as e:
-                print(f"[L0] classify 失败: {e}")
-                classification = None
-        else:
-            subproblems = []
-            classification = None
-
-        # 如果 decompose 返回空 → 使用应急子问题
-        if not subproblems and analysis is not None:
-            print("[L0] subproblems 为空，使用应急子问题...")
-            subproblems = [SubProblem(
-                id="q1",
-                task=analysis.explicit_questions[0] if analysis.explicit_questions else "综合分析",
-                input_requirements=analysis.keywords[:5] if analysis.keywords else [],
-                expected_outputs=analysis.expected_outputs[:3] if analysis.expected_outputs else [],
-                dependencies=[],
-                parallelizable=True,
-            )]
-            print("[L0] 使用应急子问题（1 个）")
-
-        # 如果 classification 为空 → 使用应急分类
-        if classification is None and analysis is not None:
-            print("[L0] classification 为空，使用应急分类...")
-            classification = ProblemClassification(
-                primary_type="composite",
-                secondary_types=[],
-                reasoning="LLM 分类失败，使用默认复合类型",
+    # 保存审查报告
+    review = state.get("review_report")
+    if review:
+        review_path = os.path.join(output_dir, "review_report.json")
+        with open(review_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "overall_status": review.overall_status,
+                    "summary": review.summary,
+                    "issues": [
+                        {
+                            "issue_id": i.issue_id,
+                            "severity": i.severity,
+                            "category": i.category,
+                            "message": i.message,
+                            "location": i.location,
+                            "suggested_fix": i.suggested_fix,
+                        }
+                        for i in review.issues
+                    ],
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
             )
-    else:
-        # 占位分支（无 LLM）
-        from ..schemas.problem import ProblemClassification
-        analysis = ProblemAnalysis(
-            research_subject=problem_text[:30],
-            background=problem_text[:100],
-            explicit_questions=["问题一：综合评价"],
-            constraints=[],
-            expected_outputs=["排名"],
-            keywords=[],
-        )
-        subproblems = [SubProblem(
-            id="q1", task="综合评价", input_requirements=[],
-            expected_outputs=[], dependencies=[], parallelizable=True,
-        )]
-        classification = ProblemClassification(
-            primary_type="evaluation",
-            secondary_types=[],
-            reasoning="占位分类",
-        )
+        print(f"[deliver] 审查报告已保存: {review_path}")
+
+    return {"workflow_status": "delivered", "final_package_dir": output_dir}
+
+
+def _gf_revise_node(state: ProjectState) -> dict:
+    """GF 修订时递增计数器并传递审查反馈。"""
+    retry_count = state.get("_gf_retry_count", 0)
+    review_report = state.get("review_report")
+    print(f"[GF] 开始第 {retry_count + 1} 次修订")
+
+    # 如果有审查报告，打印待修复问题摘要
+    if review_report and review_report.issues:
+        critical_issues = [i for i in review_report.issues if i.severity == "critical"]
+        major_issues = [i for i in review_report.issues if i.severity == "major"]
+        print(f"[GF] 待修复: {len(critical_issues)} 个严重问题, {len(major_issues)} 个重要问题")
+        for issue in (critical_issues + major_issues)[:5]:
+            print(f"  → [{issue.severity}] {issue.category}: {issue.message[:80]}")
 
     return {
-        "problem_analysis": analysis,
-        "subproblems": subproblems,
-        "data_inventory": primary_inventory,
-        "problem_classification": classification,
-        "_l0_retry_count": retry_count + 1,
-    }
-
-
-def _route_g1(state: GraphState) -> str:
-    """G1 路由：pass → l1, retry → l0, human → END。"""
-    retry_count = int(state.get("_l0_retry_count", 0))
-    analysis = state.get("problem_analysis")
-    subproblems = state.get("subproblems", [])
-    classification = state.get("problem_classification")
-
-    # 简单检查
-    has_analysis = analysis is not None and bool(analysis.explicit_questions)
-    has_subproblems = bool(subproblems)
-    has_classification = classification is not None
-
-    if has_analysis and has_subproblems and has_classification:
-        print(f"[G1] 通过 → L1")
-        return "pass"
-
-    # 超过最大重试次数 → 强制通过
-    if retry_count >= 3:
-        print(f"[G1] 重试 {retry_count} 次后强制通过 → L1")
-        return "pass"
-
-    print(f"[G1] 未通过 (analysis={has_analysis}, subproblems={has_subproblems}, classification={has_classification})，重试...")
-    return "retry"
-
-
-def _l1_node(state: GraphState) -> dict:
-    """L1: 研究（可选，无 search_provider 时跳过）。"""
-    llm = state.get("llm")
-    sp = state.get("search_provider")
-    analysis = state.get("problem_analysis")
-    subproblems = state.get("subproblems", [])
-
-    if llm is not None and sp is not None and analysis is not None:
-        l1 = L1ResearchSubgraph(llm=llm, search_provider=sp)
-        result = l1.run(analysis, subproblems)
-        return {
-            "knowledge_gaps": result.get("knowledge_gaps", []),
-            "evidence_items": result.get("evidence_items", []),
-        }
-    return {"knowledge_gaps": [], "evidence_items": []}
-
-
-def _l2_node(state: GraphState) -> dict:
-    """L2: 模型决策（无 LLM 时使用占位候选）。"""
-    print("[L2] 开始：模型决策...")
-    llm = state.get("llm")
-    analysis = state.get("problem_analysis")
-    subproblems = state.get("subproblems", [])
-
-    if llm is not None and analysis is not None:
-        try:
-            from ..agents.modeling_agent import ModelingAgent
-            agent = ModelingAgent(llm=llm)
-            print("[L2] 调用 LLM generate_candidates...")
-            candidates, scores, _ = agent.run_modeling(
-                analysis, subproblems, state.get("data_inventory"),
-                state.get("evidence_items"),
-            )
-            selected = list(zip(candidates, scores))
-            print(f"[L2] 生成 {len(selected)} 个候选模型")
-        except Exception as e:
-            print(f"[L2] LLM 调用失败：{e}，降级为占位")
-            llm = None
-    if llm is None or analysis is None:
-        candidate = ModelCandidate(
-            id="q1_c1", name="熵权法", family="客观赋权法",
-            required_data=[], assumptions=[], output_description="",
-            validation_method="",
-        )
-        score = ModelScore(
-            candidate_id="q1_c1",
-            problem_fit=0.8, data_fit=0.8, assumption_validity=0.7,
-            validation_feasibility=0.7, interpretability=0.9,
-            implementation_feasibility=0.9, innovation=0.5,
-            total_score=0.78, reasoning="占位",
-        )
-        selected = [(candidate, score)]
-
-    return {"selected_models": selected}
-
-
-def _l3_node(state: GraphState) -> dict:
-    """L3: 数据处理。"""
-    output_dir = state.get("output_dir", "artifacts/default")
-    data_paths = state.get("data_paths", [])
-    data_inventory = state.get("data_inventory")
-
-    if data_inventory is None:
-        return {"processed_data_path": "", "errors": [{"node": "l3", "message": "data_inventory 为空，跳过 L3"}]}
-
-    l3 = L3DataSubgraph(output_dir=f"{output_dir}/data")
-    result = l3.run(
-        data_paths[0] if data_paths else "",
-        data_inventory,
-        [s for _, s in state.get("selected_models", [])],
-    )
-    return {"processed_data_path": result["processed_data_path"]}
-
-
-def _l4_node(state: GraphState) -> dict:
-    """L4: 求解。"""
-    processed_path = state.get("processed_data_path", "")
-    if not processed_path:
-        return {"execution_result": None, "errors": [{"node": "l4", "message": "processed_data_path 为空，跳过 L4"}]}
-
-    output_dir = state.get("output_dir", "artifacts/default")
-    l4 = L4SolveSubgraph(output_dir=output_dir, timeout_seconds=30)
-    result = l4.run(
-        processed_path,
-        state.get("selected_models", []),
-    )
-    return {
-        "execution_result": result["execution_result"],
-        "subproblem_executions": result.get("subproblem_executions", []),
-    }
-
-
-def _l5_node(state: GraphState) -> dict:
-    """L5: 论文写作。"""
-    output_dir = state.get("output_dir", "artifacts/default")
-    l5 = L5WritingSubgraph(output_dir=f"{output_dir}/paper")
-    selected = state.get("selected_models", [])
-    model_name = selected[0][0].name if selected else ""
-    result = l5.run(
-        state.get("problem_analysis"),
-        state.get("subproblems", []),
-        state.get("execution_result"),
-        selected_model_name=model_name,
-        selected_models=selected,
-        subproblem_executions=state.get("subproblem_executions", []),
-    )
-    return {
-        "paper_text": result["paper_text"],
-        "paper_path": result["paper_draft_path"],
-    }
-
-
-def _l6_node(state: GraphState) -> dict:
-    """L6: 审查与交付。"""
-    output_dir = state.get("output_dir", "artifacts/default")
-    l6 = L6ReviewSubgraph(output_dir=output_dir)
-    result = l6.run(
-        problem_analysis=state.get("problem_analysis"),
-        execution_result=state.get("execution_result"),
-        paper_text=state.get("paper_text", ""),
-        paper_path=state.get("paper_path", ""),
-        artifacts={
-            "processed_data": state.get("processed_data_path", ""),
-        },
-    )
-    return {
-        "final_package_dir": result["final_package_dir"],
-        "workflow_status": result["workflow_status"],
+        "_gf_retry_count": retry_count + 1,
+        # review_report 已经在 state 中，write_paper_node 会读取它
     }
 
 
@@ -356,48 +227,103 @@ def _l6_node(state: GraphState) -> dict:
 def build_graph(checkpoint: bool = True):
     """构建 LangGraph 主图。
 
+    完整实现 Phase 0 ~ Phase 6：
+      START → intake → context → G0
+        G0 pass → select_question → has_next: assemble → solve → validate → GQ
+                                                                   pass/blocked: archive → select_question
+                                                                   retry: solve (重试)
+                                done: global_review → write_paper → review_paper → GF
+                                                                   deliver: END
+                                                                   revise: write_paper
+        G0 retry → g0_retry → intake
+        G0 human → END
+
     Args:
         checkpoint: 是否启用 MemorySaver checkpoint（可 resume）。
 
     Returns:
         编译后的 LangGraph app。
     """
-    builder = StateGraph(GraphState)
+    builder = StateGraph(ProjectState)
 
-    # 添加节点
-    builder.add_node("l0", _l0_node)
-    builder.add_node("l1", _l1_node)
-    builder.add_node("l2", _l2_node)
-    builder.add_node("l3", _l3_node)
-    builder.add_node("l4", _l4_node)
-    builder.add_node("l5", _l5_node)
-    builder.add_node("l6", _l6_node)
+    # Phase 1 节点
+    builder.add_node("intake", _intake_node)
+    builder.add_node("context", _context_node)
+    builder.add_node("g0_retry", _g0_retry_node)
 
-    # 边
-    builder.add_edge(START, "l0")
-    # G1 条件边：L0 → L1 / L0 / END
+    # Phase 2-5 节点
+    builder.add_node("select_question", _select_question_node)
+    builder.add_node("assemble_context", _assemble_context_node)
+    builder.add_node("solve_question", _solve_question_node)
+    builder.add_node("validate_result", _validate_result_node)
+    builder.add_node("gq_check", _gq_check_node)
+    builder.add_node("archive_result", _archive_result_node)
+
+    # Phase 6 节点
+    builder.add_node("global_review", _global_review_node)
+    builder.add_node("write_paper", _write_paper_node)
+    builder.add_node("review_paper", _review_paper_node)
+    builder.add_node("gf_revise", _gf_revise_node)
+    builder.add_node("deliver", _deliver_node)
+
+    # Phase 1 边
+    builder.add_edge(START, "intake")
+    builder.add_edge("intake", "context")
+
+    # G0 条件边：context → pass: select_question / retry: g0_retry / human: END
     builder.add_conditional_edges(
-        "l0",
-        _route_g1,
-        {"pass": "l1", "retry": "l0", "human": END},
+        "context",
+        route_g0,
+        {"pass": "select_question", "retry": "g0_retry", "human": END},
     )
-    # 其余线性串联
-    builder.add_edge("l1", "l2")
-    builder.add_edge("l2", "l3")
-    builder.add_edge("l3", "l4")
-    builder.add_edge("l4", "l5")
-    builder.add_edge("l5", "l6")
-    builder.add_edge("l6", END)
 
-    # Checkpoint
+    # 重试后回到 intake
+    builder.add_edge("g0_retry", "intake")
+
+    # Phase 2-5 边：逐问闭环
+    # select_question → has_next: assemble_context / done: global_review
+    builder.add_conditional_edges(
+        "select_question",
+        route_after_select,
+        {"has_next": "assemble_context", "done": "global_review"},
+    )
+
+    # assemble_context → solve_question → validate_result → gq_check
+    builder.add_edge("assemble_context", "solve_question")
+    builder.add_edge("solve_question", "validate_result")
+    builder.add_edge("validate_result", "gq_check")
+
+    # gq_check → pass: archive_result / retry: solve_question / blocked: archive_result
+    builder.add_conditional_edges(
+        "gq_check",
+        route_after_gq,
+        {"pass": "archive_result", "retry": "solve_question", "blocked": "archive_result"},
+    )
+
+    # archive_result → select_question (循环回去选下一问)
+    builder.add_edge("archive_result", "select_question")
+
+    # Phase 6 边：全题审查 + 论文写作 + 交付
+    # global_review → write_paper → review_paper → gf_check
+    builder.add_edge("global_review", "write_paper")
+    builder.add_edge("write_paper", "review_paper")
+
+    # gf_check → deliver / revise
+    builder.add_conditional_edges(
+        "review_paper",
+        route_gf,
+        {"deliver": "deliver", "revise": "gf_revise"},
+    )
+
+    # gf_revise → write_paper (修订后重新写作)
+    builder.add_edge("gf_revise", "write_paper")
+
+    # deliver → END
+    builder.add_edge("deliver", END)
+
     if checkpoint:
         return builder.compile(checkpointer=MemorySaver())
     return builder.compile()
-
-
-# ---------------------------------------------------------------------------
-# 运行入口
-# ---------------------------------------------------------------------------
 
 
 def run_graph(
@@ -410,11 +336,18 @@ def run_graph(
 ) -> dict:
     """用 LangGraph 运行完整工作流。
 
+    完整执行 Phase 0 ~ Phase 6：
+      输入摄入 → 全局上下文 → G0 质量门 → 逐问求解闭环（含验证）
+      → 全题审查 → 论文写作 → 论文审查 → 交付
+
+    通过 G0 后，按依赖顺序逐问求解，每问经过建模计算、题型验证和 GQ 门后归档。
+    所有小问处理完毕后，进行全题审查、论文写作和交付。
+
     Args:
         problem_text: 题目文本。
         data_paths: 数据文件路径（单个或列表，Excel 自动展开所有 sheet）。
         output_dir: 产物目录。
-        llm: 可选 LLM 注入（无则使用占位数据）。
+        llm: 可选 LLM 注入。
         search_provider: 可选搜索 Provider。
         checkpoint: 是否启用 checkpoint。
 
@@ -423,7 +356,6 @@ def run_graph(
     """
     import uuid
 
-    # 统一为列表
     if isinstance(data_paths, str):
         data_paths = [data_paths]
 
@@ -433,13 +365,14 @@ def run_graph(
     app = build_graph(checkpoint=checkpoint)
     config = {"configurable": {"thread_id": run_id}}
 
-    initial_state: GraphState = {
-        "problem_text": problem_text,
-        "data_paths": data_paths,
-        "output_dir": output_dir,
-        "llm": llm,
-        "search_provider": search_provider,
-    }
+    initial_state = create_initial_state(
+        run_id=run_id,
+        output_dir=output_dir,
+        problem_text=problem_text,
+        data_paths=data_paths,
+        llm=llm,
+        search_provider=search_provider,
+    )
 
     final_state = app.invoke(initial_state, config=config)
     return dict(final_state)

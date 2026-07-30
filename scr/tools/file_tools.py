@@ -178,6 +178,12 @@ _TIME_KEYWORDS = (
     "日期", "时间", "年", "月", "日", "时",
 )
 
+# 非时间列名称关键词（ID/编号/序号等，即使被 pd.to_datetime 解析也不应判为时间列）
+_NON_TIME_KEYWORDS = (
+    "编号", "序号", "id", "code", "编号", "代码", "标识", "索引",
+    "学号", "工号", "卡号", "牌号", "批号", "型号", "序号",
+)
+
 # 单位线索正则（从字段名括号中提取）
 _UNIT_PATTERNS: list[tuple[str, str]] = [
     (r"[\(\[（].*?(kg|g|吨|克|千克).*?[\)\]）]", "重量"),
@@ -223,8 +229,17 @@ def _detect_time_column(series: pd.Series, name: str) -> bool:
       1. 字段名包含时间关键词
       2. pandas 已识别为 datetime 类型
       3. object 列可被 pd.to_datetime 成功解析（抽样检查）
+
+    排除规则：
+      - 字段名包含 ID/编号/序号等关键词时，即使可被 to_datetime 解析也不判为时间列
+      - to_datetime 解析结果全部落在同一年内时，可能是数字误解析，不判为时间列
     """
     name_lower = name.lower()
+
+    # 排除规则：ID/编号/序号等列名不判为时间列
+    if any(kw in name_lower for kw in _NON_TIME_KEYWORDS):
+        return False
+
     if any(kw in name_lower for kw in _TIME_KEYWORDS):
         return True
 
@@ -235,7 +250,12 @@ def _detect_time_column(series: pd.Series, name: str) -> bool:
         sample = series.dropna().head(20)
         if len(sample) > 0:
             try:
-                pd.to_datetime(sample, errors="raise")
+                parsed = pd.to_datetime(sample, errors="raise")
+                # 验证：解析后的日期不应全部在同一年内（防止数字误解析）
+                if hasattr(parsed, "dt"):
+                    year_range = parsed.dt.year.nunique()
+                    if year_range <= 1:
+                        return False
                 return True
             except (ValueError, TypeError):
                 pass
