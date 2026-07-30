@@ -69,6 +69,7 @@ class GraphState(TypedDict, total=False):
 
     # L4
     execution_result: ExecutionResult
+    subproblem_executions: list  # list[SubProblemExecution]
 
     # L5
     paper_text: str
@@ -79,7 +80,7 @@ class GraphState(TypedDict, total=False):
     workflow_status: str
 
     # 运行时
-    _g1_budget_used: int
+    _l0_retry_count: int
     errors: list
 
 
@@ -90,7 +91,8 @@ class GraphState(TypedDict, total=False):
 
 def _l0_node(state: GraphState) -> dict:
     """L0: 摄入 + 数据画像 + 题目理解。"""
-    print("[L0] 开始：数据画像 + 题目理解...")
+    retry_count = int(state.get("_l0_retry_count", 0))
+    print(f"[L0] 开始：数据画像 + 题目理解...（第 {retry_count + 1} 次）")
     llm = state.get("llm")
     data_paths = state.get("data_paths", [])
     problem_text = state["problem_text"]
@@ -100,11 +102,16 @@ def _l0_node(state: GraphState) -> dict:
     primary_inventory = inventories[0] if inventories else None
     print(f"[L0] 生成 {len(inventories)} 个数据画像")
 
-    if llm is not None:
-        # 直接调用 ProblemAnalyst（跳过 L0UnderstandingSubgraph 的重试，自己控制）
+    # 如果已经重试过，跳过 LLM 调用，直接用上次结果
+    if retry_count > 0 and state.get("problem_analysis") is not None:
+        print("[L0] 已重试，使用缓存的分析结果...")
+        analysis = state.get("problem_analysis")
+        subproblems = state.get("subproblems", [])
+        classification = state.get("problem_classification")
+    elif llm is not None:
         from ..agents.problem_analyst import ProblemAnalyst
+        from ..schemas.problem import ProblemClassification
         analyst = ProblemAnalyst(llm=llm)
-        # 传入数据画像摘要给 LLM（减小 prompt）
         inv_summary = primary_inventory.model_dump_json(indent=2) if primary_inventory else ""
         try:
             print("[L0] 调用 LLM understand...")
@@ -134,21 +141,27 @@ def _l0_node(state: GraphState) -> dict:
             subproblems = []
             classification = None
 
-        # 如果 decompose 返回空 → 在 L0 内部重试一次（不同的 temperature 或简化 prompt）
+        # 如果 decompose 返回空 → 使用应急子问题
         if not subproblems and analysis is not None:
-            print("[L0] subproblems 为空，重试 decompose（简化版）...")
-            try:
-                subproblems = [SubProblem(
-                    id="q1",
-                    task=analysis.explicit_questions[0] if analysis.explicit_questions else "综合分析",
-                    input_requirements=analysis.keywords[:5] if analysis.keywords else [],
-                    expected_outputs=analysis.expected_outputs[:3] if analysis.expected_outputs else [],
-                    dependencies=[],
-                    parallelizable=True,
-                )]
-                print("[L0] 使用应急子问题（1 个）")
-            except Exception:
-                pass
+            print("[L0] subproblems 为空，使用应急子问题...")
+            subproblems = [SubProblem(
+                id="q1",
+                task=analysis.explicit_questions[0] if analysis.explicit_questions else "综合分析",
+                input_requirements=analysis.keywords[:5] if analysis.keywords else [],
+                expected_outputs=analysis.expected_outputs[:3] if analysis.expected_outputs else [],
+                dependencies=[],
+                parallelizable=True,
+            )]
+            print("[L0] 使用应急子问题（1 个）")
+
+        # 如果 classification 为空 → 使用应急分类
+        if classification is None and analysis is not None:
+            print("[L0] classification 为空，使用应急分类...")
+            classification = ProblemClassification(
+                primary_type="composite",
+                secondary_types=[],
+                reasoning="LLM 分类失败，使用默认复合类型",
+            )
     else:
         # 占位分支（无 LLM）
         from ..schemas.problem import ProblemClassification
@@ -175,34 +188,32 @@ def _l0_node(state: GraphState) -> dict:
         "subproblems": subproblems,
         "data_inventory": primary_inventory,
         "problem_classification": classification,
+        "_l0_retry_count": retry_count + 1,
     }
 
 
 def _route_g1(state: GraphState) -> str:
-    """G1 路由：pass → l1, retry → l0, human → END。预算 3 次防无限循环。"""
-    gate = G1UnderstandingGate()
-    budget_used = int(state.get("_g1_budget_used", 0))
-
-    # 如果 subproblems 为空但是在 _l0_node 已经尝试过应急方案 → 直接 pass
+    """G1 路由：pass → l1, retry → l0, human → END。"""
+    retry_count = int(state.get("_l0_retry_count", 0))
+    analysis = state.get("problem_analysis")
     subproblems = state.get("subproblems", [])
-    if not subproblems:
-        budget_used += 1  # 手动递增
+    classification = state.get("problem_classification")
 
-    result = gate.evaluate({
-        "problem_analysis": state.get("problem_analysis"),
-        "subproblems": subproblems,
-        "problem_classification": state.get("problem_classification"),
-        "_g1_budget_used": budget_used,
-    })
+    # 简单检查
+    has_analysis = analysis is not None and bool(analysis.explicit_questions)
+    has_subproblems = bool(subproblems)
+    has_classification = classification is not None
 
-    if result.passed:
+    if has_analysis and has_subproblems and has_classification:
+        print(f"[G1] 通过 → L1")
         return "pass"
 
-    # 防止无限循环：最多 retry 2 次
-    if budget_used >= 2:
-        print(f"[G1] 预算耗尽（{budget_used} 次），强制通过 → END")
-        return "human"
+    # 超过最大重试次数 → 强制通过
+    if retry_count >= 3:
+        print(f"[G1] 重试 {retry_count} 次后强制通过 → L1")
+        return "pass"
 
+    print(f"[G1] 未通过 (analysis={has_analysis}, subproblems={has_subproblems}, classification={has_classification})，重试...")
     return "retry"
 
 
@@ -266,10 +277,15 @@ def _l3_node(state: GraphState) -> dict:
     """L3: 数据处理。"""
     output_dir = state.get("output_dir", "artifacts/default")
     data_paths = state.get("data_paths", [])
+    data_inventory = state.get("data_inventory")
+
+    if data_inventory is None:
+        return {"processed_data_path": "", "errors": [{"node": "l3", "message": "data_inventory 为空，跳过 L3"}]}
+
     l3 = L3DataSubgraph(output_dir=f"{output_dir}/data")
     result = l3.run(
         data_paths[0] if data_paths else "",
-        state["data_inventory"],
+        data_inventory,
         [s for _, s in state.get("selected_models", [])],
     )
     return {"processed_data_path": result["processed_data_path"]}
@@ -277,13 +293,20 @@ def _l3_node(state: GraphState) -> dict:
 
 def _l4_node(state: GraphState) -> dict:
     """L4: 求解。"""
+    processed_path = state.get("processed_data_path", "")
+    if not processed_path:
+        return {"execution_result": None, "errors": [{"node": "l4", "message": "processed_data_path 为空，跳过 L4"}]}
+
     output_dir = state.get("output_dir", "artifacts/default")
     l4 = L4SolveSubgraph(output_dir=output_dir, timeout_seconds=30)
     result = l4.run(
-        state["processed_data_path"],
+        processed_path,
         state.get("selected_models", []),
     )
-    return {"execution_result": result["execution_result"]}
+    return {
+        "execution_result": result["execution_result"],
+        "subproblem_executions": result.get("subproblem_executions", []),
+    }
 
 
 def _l5_node(state: GraphState) -> dict:
@@ -293,10 +316,12 @@ def _l5_node(state: GraphState) -> dict:
     selected = state.get("selected_models", [])
     model_name = selected[0][0].name if selected else ""
     result = l5.run(
-        state["problem_analysis"],
+        state.get("problem_analysis"),
         state.get("subproblems", []),
-        state["execution_result"],
+        state.get("execution_result"),
         selected_model_name=model_name,
+        selected_models=selected,
+        subproblem_executions=state.get("subproblem_executions", []),
     )
     return {
         "paper_text": result["paper_text"],
@@ -309,10 +334,10 @@ def _l6_node(state: GraphState) -> dict:
     output_dir = state.get("output_dir", "artifacts/default")
     l6 = L6ReviewSubgraph(output_dir=output_dir)
     result = l6.run(
-        problem_analysis=state["problem_analysis"],
-        execution_result=state["execution_result"],
-        paper_text=state["paper_text"],
-        paper_path=state["paper_path"],
+        problem_analysis=state.get("problem_analysis"),
+        execution_result=state.get("execution_result"),
+        paper_text=state.get("paper_text", ""),
+        paper_path=state.get("paper_path", ""),
         artifacts={
             "processed_data": state.get("processed_data_path", ""),
         },

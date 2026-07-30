@@ -169,6 +169,30 @@ class SubProblem(BaseModel):
     dependencies: list[str] = Field(default_factory=list)
     parallelizable: bool = True
 
+    @staticmethod
+    def _normalize_to_list(value: object) -> list[str]:
+        """将字符串自动包装为列表，兼容 LLM 返回字符串而非数组的情况。"""
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            return [value]
+        return []
+
+    @field_validator("expected_outputs", mode="before")
+    @classmethod
+    def _wrap_expected_outputs(cls, v: object) -> list[str]:
+        return cls._normalize_to_list(v)
+
+    @field_validator("input_requirements", mode="before")
+    @classmethod
+    def _wrap_input_requirements(cls, v: object) -> list[str]:
+        return cls._normalize_to_list(v)
+
+    @field_validator("dependencies", mode="before")
+    @classmethod
+    def _wrap_dependencies(cls, v: object) -> list[str]:
+        return cls._normalize_to_list(v)
+
 
 class SubProblemList(BaseModel):
     """子问题列表包装，用于 LLM 结构化输出。"""

@@ -67,3 +67,4 @@ logs/
 *.tmp
 *.bak
 *.old
+.artifacts/

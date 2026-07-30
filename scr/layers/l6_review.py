@@ -117,7 +117,7 @@ class L6ReviewSubgraph:
     def run(
         self,
         problem_analysis: ProblemAnalysis,
-        execution_result: ExecutionResult,
+        execution_result: ExecutionResult | None,
         paper_text: str,
         paper_path: str,
         artifacts: dict[str, str] | None = None,
@@ -126,7 +126,7 @@ class L6ReviewSubgraph:
 
         Args:
             problem_analysis: L0 产出。
-            execution_result: L4 产出。
+            execution_result: L4 产出（可为 None，表示求解未执行）。
             paper_text: 论文正文。
             paper_path: 论文路径。
             artifacts: 所有产物路径字典。
@@ -154,8 +154,8 @@ class L6ReviewSubgraph:
             "symbol_definition": {"passed": sd_pass, "message": str(sd_issues)},
             "artifact_existence": {"passed": ae_pass, "message": f"missing={ae_missing}"},
             "execution_success": {
-                "passed": execution_result.success,
-                "message": execution_result.error_message or "OK",
+                "passed": execution_result.success if execution_result is not None else False,
+                "message": (execution_result.error_message if execution_result is not None else "求解未执行（数据预处理未完成）"),
             },
         }
 
