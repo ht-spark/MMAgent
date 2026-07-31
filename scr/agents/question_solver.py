@@ -36,11 +36,17 @@ class QuestionSolver:
 
     Args:
         llm: 可选的 LLM 客户端。
+        search_tool: 可选的联网搜索工具（TavilySearchTool）。
+                     若不传则 MethodExplorer 自动从环境变量创建。
     """
 
-    def __init__(self, llm: Any | None = None) -> None:
+    def __init__(
+        self,
+        llm: Any | None = None,
+        search_tool: Any | None = None,
+    ) -> None:
         self._llm = llm
-        self._explorer = MethodExplorer(llm=llm)
+        self._explorer = MethodExplorer(llm=llm, search_tool=search_tool)
         self._builder = ModelBuilder(llm=llm)
 
     def solve(

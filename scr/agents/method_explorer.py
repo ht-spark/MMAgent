@@ -15,10 +15,17 @@
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from ..schemas.context import DataProfile
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
+from ..tools.tavily_search import (
+    TavilySearchTool,
+    WebMethodCandidate,
+    WebMethodCandidateList,
+)
 from .method_catalog import get_candidates_for_task
 
 
@@ -27,10 +34,18 @@ class MethodExplorer:
 
     Args:
         llm: 可选的 LLM 客户端。无则使用启发式规则。
+        search_tool: 可选的联网搜索工具。无则从环境变量自动创建。
+                     若无 Tavily_API_KEY 则搜索功能降级为空。
     """
 
-    def __init__(self, llm: Any | None = None) -> None:
+    def __init__(
+        self,
+        llm: Any | None = None,
+        search_tool: TavilySearchTool | None = None,
+    ) -> None:
         self._llm = llm
+        self._search_tool = search_tool or TavilySearchTool.from_env()
+        self._prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
 
     # ------------------------------------------------------------------
     # explore — 候选生成
@@ -60,6 +75,11 @@ class MethodExplorer:
         """
         math_task = interpretation.math_task
         candidates = get_candidates_for_task(math_task)
+
+        # 联网搜索补充候选方法（不依赖方法目录）
+        external_candidates = self._search_external_methods(context, interpretation)
+        if external_candidates:
+            candidates.extend(external_candidates)
 
         # 硬过滤
         data_info = _extract_data_info(data_profile, context)
@@ -206,6 +226,179 @@ class MethodExplorer:
         decision = self.decide(candidates, context, interpretation)
         return candidates, decision
 
+    # ------------------------------------------------------------------
+    # 联网搜索集成
+    # ------------------------------------------------------------------
+
+    def _search_external_methods(
+        self,
+        context: CurrentQuestionContext,
+        interpretation: ProblemInterpretation,
+    ) -> list[dict]:
+        """联网搜索补充方法候选。
+
+        流程：
+          1. 检查搜索工具是否可用
+          2. 构造搜索查询并执行搜索
+          3. 从搜索结果中提取方法候选（LLM 优先，启发式回退）
+          4. 转换为方法目录格式
+
+        Returns:
+            方法候选列表（与 METHOD_CATALOG 格式兼容）。
+        """
+        if not self._search_tool or not self._search_tool.available:
+            return []
+
+        math_task = interpretation.math_task
+        problem_desc = (
+            interpretation.math_task_description
+            or context.objective
+            or context.question_text
+        )
+
+        # 执行搜索
+        search_results = self._search_tool.search_methods(
+            math_task=math_task,
+            problem_description=problem_desc,
+        )
+
+        if not search_results:
+            return []
+
+        # 提取方法候选
+        if self._llm is not None:
+            # LLM 提取（更精确）
+            web_candidates = self._llm_extract_methods(
+                search_results, math_task, problem_desc
+            )
+        else:
+            # 启发式提取（无需 LLM）
+            web_candidates = self._search_tool.extract_method_candidates(
+                search_results, math_task
+            )
+
+        if not web_candidates:
+            return []
+
+        # 转换为方法目录格式
+        catalog_candidates = self._convert_web_candidates(web_candidates)
+
+        print(f"[explorer] 联网搜索补充: {len(catalog_candidates)} 个外部方法候选")
+
+        return catalog_candidates
+
+    def _llm_extract_methods(
+        self,
+        search_results: list[dict],
+        math_task: str,
+        problem_description: str,
+    ) -> list[WebMethodCandidate]:
+        """使用 LLM 从搜索结果中提取结构化方法候选。
+
+        Args:
+            search_results: Tavily 搜索结果列表。
+            math_task: 数学任务类型。
+            problem_description: 问题描述。
+
+        Returns:
+            WebMethodCandidate 列表。LLM 失败时回退到启发式提取。
+        """
+        # 格式化搜索结果
+        formatted_results = self._format_search_results(search_results)
+
+        # 加载并渲染 prompt
+        try:
+            template = self._load_prompt("method_search")
+            prompt = self._render_prompt(
+                template,
+                math_task=math_task,
+                problem_description=problem_description[:500],
+                search_results=formatted_results,
+            )
+        except FileNotFoundError:
+            # prompt 模板不存在，回退到启发式
+            return self._search_tool.extract_method_candidates(
+                search_results, math_task
+            )
+
+        # 调用 LLM
+        try:
+            structured_llm = self._llm.with_structured_output(WebMethodCandidateList)
+            result = structured_llm.invoke(prompt)
+            candidates = result.candidates
+            print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
+            return candidates
+        except Exception as e:
+            print(f"[explorer] LLM 提取失败，回退到启发式: {e}")
+            return self._search_tool.extract_method_candidates(
+                search_results, math_task
+            )
+
+    @staticmethod
+    def _format_search_results(results: list[dict]) -> str:
+        """格式化搜索结果供 LLM 阅读。"""
+        lines: list[str] = []
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "")
+            url = r.get("url", "")
+            content = r.get("content", "")
+            # 截取内容，避免 prompt 过长
+            content = content[:500] + "..." if len(content) > 500 else content
+            lines.append(
+                f"### 结果 {i}\n- 标题: {title}\n- URL: {url}\n- 内容: {content}\n"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _convert_web_candidates(
+        web_candidates: list[WebMethodCandidate],
+    ) -> list[dict]:
+        """将 WebMethodCandidate 转换为方法目录格式。
+
+        外部方法候选的 data_requirements 设为宽松（不设硬性要求），
+        以避免被硬过滤淘汰。通过 source 字段标记来源。
+        """
+        catalog_candidates: list[dict] = []
+        for wc in web_candidates:
+            candidate = {
+                "name": wc.name,
+                "family": wc.family,
+                "description": wc.description,
+                "required_data": wc.required_data if wc.required_data else ["待确认"],
+                "assumptions": wc.assumptions,
+                "pros": wc.pros,
+                "cons": wc.cons,
+                "elimination_conditions": [],  # 外部方法无淘汰条件
+                "implementation_difficulty": wc.implementation_difficulty,
+                "data_requirements": {
+                    "min_samples": 0,  # 宽松要求，不设硬性门槛
+                    "min_features": 0,
+                    "needs_time": False,
+                },
+                "validation_method": wc.validation_method or "交叉验证、敏感性分析",
+                "source": "web_search",
+                "source_url": wc.source_url,
+                "source_title": wc.source_title,
+                "relevance_score": wc.relevance_score,
+            }
+            catalog_candidates.append(candidate)
+        return catalog_candidates
+
+    def _load_prompt(self, name: str) -> str:
+        """加载 prompt 模板文件。"""
+        path = self._prompt_dir / f"{name}.md"
+        if not path.exists():
+            raise FileNotFoundError(f"Prompt template not found: {path}")
+        return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _render_prompt(template: str, **kwargs: Any) -> str:
+        """渲染 prompt 模板（替换 {var} 占位符）。"""
+        result = template
+        for key, value in kwargs.items():
+            result = result.replace(f"{{{key}}}", str(value))
+        return result
+
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -326,6 +519,12 @@ def _heuristic_score(
 
     # text_match: 题目文本与方法的匹配度
     score += 0.20 * _text_match_score(method, interpretation)
+
+    # 外部方法（网络搜索）的微调：根据搜索相关性调整
+    # 相关性高的外部方法可以接近内置方法，相关性低的则适当降分
+    if method.get("source") == "web_search":
+        relevance = method.get("relevance_score", 0.5)
+        score *= (0.75 + 0.25 * relevance)  # 0.75-1.0 的系数
 
     return round(score, 4)
 

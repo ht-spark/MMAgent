@@ -16,15 +16,26 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.shared import Inches, Pt, Cm, RGBColor
-from docx.oxml.ns import qn, nsdecls
-from docx.oxml import parse_xml
+try:
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.shared import Inches, Pt, Cm, RGBColor
+    from docx.oxml.ns import qn, nsdecls
+    from docx.oxml import parse_xml
+except ImportError as _e:
+    # 可能安装了旧版 docx.py（Python 2 遗留单文件）而非 python-docx 包
+    _msg = (
+        f"无法导入 python-docx 包: {_e}\n"
+        "可能原因：环境中存在旧版 docx.py 单文件（Python 2 遗留），"
+        "遮蔽了正确的 python-docx 包。\n"
+        "解决方法：pip install --force-reinstall python-docx"
+    )
+    raise ImportError(_msg) from _e
 
 __all__ = [
     "markdown_to_docx",
@@ -166,6 +177,431 @@ def parse_markdown(md_text: str) -> list[MarkdownBlock]:
 
 
 # ---------------------------------------------------------------------------
+# LaTeX → OMML 递归下降解析器
+# ---------------------------------------------------------------------------
+
+class _LatexParser:
+    """LaTeX 公式递归下降解析器，输出 OMML XML 片段列表。
+
+    支持：
+      - 分数 \\frac{num}{den}
+      - 求和/积分/乘积 \\sum_{a}^{b} \\int_{a}^{b} \\prod_{a}^{b}
+      - 上下标 _{...} ^{...} 以及 _x ^x 单字符形式
+      - 文本 \\text{...} \\mathrm{...} \\mathbf{...} \\mathcal{...} \\mathbb{...}
+      - 重音 \\hat{x} \\bar{x} \\tilde{x} \\vec{x}
+      - 希腊字母和数学运算符（自动替换为 Unicode）
+      - 括号分组 { ... }
+      - \\xrightarrow{...} \\xleftarrow{...}
+      - \\tag{...} 公式编号
+    """
+
+    M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+    GREEK = {
+        r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
+        r"\epsilon": "ε", r"\varepsilon": "ε", r"\zeta": "ζ", r"\eta": "η",
+        r"\theta": "θ", r"\vartheta": "ϑ", r"\lambda": "λ", r"\mu": "μ",
+        r"\nu": "ν", r"\xi": "ξ", r"\pi": "π", r"\rho": "ρ",
+        r"\sigma": "σ", r"\tau": "τ", r"\phi": "φ", r"\varphi": "φ",
+        r"\chi": "χ", r"\psi": "ψ", r"\omega": "ω",
+        r"\Gamma": "Γ", r"\Delta": "Δ", r"\Theta": "Θ", r"\Lambda": "Λ",
+        r"\Sigma": "Σ", r"\Phi": "Φ", r"\Psi": "Ψ", r"\Omega": "Ω",
+    }
+
+    OPERATORS = {
+        r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\ne": "≠",
+        r"\times": "×", r"\div": "÷", r"\pm": "±", r"\mp": "∓",
+        r"\infty": "∞", r"\partial": "∂",
+        r"\forall": "∀", r"\exists": "∃", r"\nexists": "∄",
+        r"\in": "∈", r"\notin": "∉", r"\ni": "∋",
+        r"\cdot": "·", r"\ldots": "…", r"\cdots": "⋯", r"\vdots": "⋮", r"\ddots": "⋱",
+        r"\to": "→", r"\rightarrow": "→", r"\leftarrow": "←", r"\leftrightarrow": "↔",
+        r"\Rightarrow": "⇒", r"\Leftarrow": "⇐", r"\Leftrightarrow": "⇔",
+        r"\cup": "∪", r"\cap": "∩", r"\subset": "⊂", r"\supset": "⊃",
+        r"\subseteq": "⊆", r"\supseteq": "⊇",
+        r"\approx": "≈", r"\equiv": "≡", r"\sim": "∼", r"\propto": "∝",
+        r"\nabla": "∇", r"\angle": "∠", r"\perp": "⊥", r"\parallel": "∥",
+        r"\land": "∧", r"\lor": "∨", r"\lnot": "¬", r"\neg": "¬",
+        r"\oplus": "⊕", r"\ominus": "⊖", r"\otimes": "⊗", r"\odot": "⊙",
+        r"\emptyset": "∅", r"\varnothing": "∅",
+        r"\leqslant": "≤", r"\geqslant": "≥",
+        r"\doteq": "≐", r"\models": "⊨", r"\vdash": "⊢", r"\dashv": "⊣",
+    }
+
+    # 文本类命令（提取 {} 内容作为普通文本）
+    TEXT_CMDS = {r"\text", r"\mathrm", r"\mathbf", r"\mathcal",
+                 r"\boldsymbol", r"\textbf", r"\textit", r"\operatorname"}
+
+    # 重音命令
+    ACCENT_MAP = {
+        r"\hat": "\u0302",    # ̂
+        r"\bar": "\u0304",    # ̄
+        r"\tilde": "\u0303",  # ~
+        r"\vec": "\u20D7",    # →
+        r"\dot": "\u0307",    # ̇
+        r"\ddot": "\u0308",   # ̈
+    }
+
+    # N元运算符（求和、积分、乘积）
+    NARY_MAP = {
+        r"\sum": "sum", r"\int": "int", r"\prod": "prod",
+        r"\bigcup": "cup", r"\bigcap": "cap", r"\oint": "int",
+    }
+
+    # 函数名（直接输出为文本）
+    FUNC_NAMES = {
+        r"\min": "min", r"\max": "max", r"\ln": "ln", r"\log": "log",
+        r"\exp": "exp", r"\sin": "sin", r"\cos": "cos", r"\tan": "tan",
+        r"\arcsin": "arcsin", r"\arccos": "arccos", r"\arctan": "arctan",
+        r"\sup": "sup", r"\inf": "inf", r"\arg": "arg", r"\deg": "deg",
+        r"\det": "det", r"\dim": "dim", r"\gcd": "gcd", r"\lim": "lim",
+    }
+
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+        self.n = len(text)
+
+    def parse(self) -> list[str]:
+        """解析整个公式，返回 OMML 片段列表。"""
+        parts: list[str] = []
+        while self.pos < self.n:
+            part = self._parse_atom()
+            if part:
+                parts.append(part)
+        return parts
+
+    def _peek(self, offset: int = 0) -> str:
+        idx = self.pos + offset
+        if idx < self.n:
+            return self.text[idx]
+        return ""
+
+    def _match(self, s: str) -> bool:
+        """尝试匹配字符串，成功则前进。"""
+        if self.text[self.pos:self.pos + len(s)] == s:
+            self.pos += len(s)
+            return True
+        return False
+
+    def _read_command(self) -> str:
+        """读取一个 \\ 命令（如 \\frac, \\alpha 等），返回含 \\ 的完整命令。"""
+        start = self.pos
+        self.pos += 1  # 跳过 \
+        while self.pos < self.n and self.text[self.pos].isalpha():
+            self.pos += 1
+        # 处理单字符非字母命令（如 \!, \,, \;, \:）
+        if self.pos == start + 1 and self.pos < self.n:
+            ch = self.text[self.pos]
+            if ch in "!,:;":
+                self.pos += 1
+        return self.text[start:self.pos]
+
+    def _read_braced_group(self) -> str:
+        """读取 {...} 分组内容（不含外层花括号），pos 停在 } 之后。"""
+        # 跳过空白
+        while self.pos < self.n and self.text[self.pos] in " \t":
+            self.pos += 1
+        if self.pos >= self.n or self.text[self.pos] != "{":
+            return ""
+        self.pos += 1  # 跳过 {
+        depth = 1
+        start = self.pos
+        while self.pos < self.n and depth > 0:
+            if self.text[self.pos] == "{":
+                depth += 1
+            elif self.text[self.pos] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            self.pos += 1
+        content = self.text[start:self.pos]
+        if self.pos < self.n:
+            self.pos += 1  # 跳过 }
+        return content
+
+    def _parse_atom(self) -> str:
+        """解析单个原子，返回 OMML 片段。"""
+        if self.pos >= self.n:
+            return ""
+
+        ch = self.text[self.pos]
+
+        # 空白
+        if ch in " \t\n":
+            self.pos += 1
+            return ""
+
+        # 反斜杠命令
+        if ch == "\\":
+            return self._parse_command()
+
+        # 下标 _
+        if ch == "_":
+            return self._parse_subscript()
+
+        # 上标 ^
+        if ch == "^":
+            return self._parse_superscript()
+
+        # 花括号分组
+        if ch == "{":
+            content = self._read_braced_group()
+            sub_parser = _LatexParser(content)
+            inner_parts = sub_parser.parse()
+            return "".join(inner_parts)
+
+        # 普通字符
+        self.pos += 1
+        return self._make_run(ch)
+
+    def _parse_command(self) -> str:
+        """解析 \\ 命令。"""
+        cmd = self._read_command()
+
+        # 符号替换（希腊字母、运算符）
+        if cmd in self.GREEK:
+            return self._make_run(self.GREEK[cmd])
+        if cmd in self.OPERATORS:
+            return self._make_run(self.OPERATORS[cmd])
+
+        # 文本类命令
+        if cmd in self.TEXT_CMDS:
+            content = self._read_braced_group()
+            sub_parser = _LatexParser(content)
+            inner = sub_parser.parse()
+            return f'<m:r xmlns:m="{self.M_NS}"><m:rPr><m:sty m:val="p"/></m:rPr><m:t>{self._escape_xml("".join(self._extract_text(inner)))}</m:t></m:r>'
+
+        # 分数 \frac{num}{den}
+        if cmd == r"\frac":
+            num_str = self._read_braced_group()
+            den_str = self._read_braced_group()
+            num_parser = _LatexParser(num_str)
+            den_parser = _LatexParser(den_str)
+            num_omml = "".join(num_parser.parse())
+            den_omml = "".join(den_parser.parse())
+            return (
+                f'<m:f xmlns:m="{self.M_NS}">'
+                f'<m:num>{num_omml}</m:num>'
+                f'<m:den>{den_omml}</m:den>'
+                f'</m:f>'
+            )
+
+        # \sqrt{...}
+        if cmd == r"\sqrt":
+            content = self._read_braced_group()
+            sub_parser = _LatexParser(content)
+            inner = "".join(sub_parser.parse())
+            return f'<m:rad xmlns:m="{self.M_NS}"><m:deg></m:deg><m:e>{inner}</m:e></m:rad>'
+
+        # \sqrt[n]{...}
+        if cmd == r"\root" or (cmd == r"\sqrt" and self._peek() == "["):
+            pass  # 简化处理
+
+        # 重音命令
+        if cmd in self.ACCENT_MAP:
+            # 读取下一个原子作为被修饰的字符
+            base = self._parse_atom()
+            accent_char = self.ACCENT_MAP[cmd]
+            return f'<m:acc xmlns:m="{self.M_NS}"><m:accPr><m:chr m:val="{accent_char}"/></m:accPr><m:e>{base}</m:e></m:acc>'
+
+        # N元运算符（求和、积分等）
+        if cmd in self.NARY_MAP:
+            return self._parse_nary(cmd)
+
+        # 函数名
+        if cmd in self.FUNC_NAMES:
+            return self._make_run(self.FUNC_NAMES[cmd])
+
+        # \xrightarrow{} \xleftarrow{}
+        if cmd in (r"\xrightarrow", r"\xleftarrow"):
+            label = self._read_braced_group()
+            arrow = "→" if "rightarrow" in cmd else "←"
+            # 如果有标签（如 P, d），将标签作为上标显示
+            label = label.strip()
+            # 去掉间距命令
+            label = label.replace(r"\;", "").replace(r"\,", "").replace(r"\!", "").strip()
+            if label:
+                label_omml = self._make_run(label)
+                return (
+                    f'<m:sSup xmlns:m="{self.M_NS}">'
+                    f'<m:e>{self._make_run(arrow)}</m:e>'
+                    f'<m:sup>{label_omml}</m:sup>'
+                    f'</m:sSup>'
+                )
+            return self._make_run(arrow)
+
+        # \tag{...}
+        if cmd == r"\tag":
+            tag_content = self._read_braced_group()
+            return self._make_run(f"  ({tag_content})")
+
+        # \quad \qquad
+        if cmd == r"\quad":
+            return self._make_run("  ")
+        if cmd == r"\qquad":
+            return self._make_run("    ")
+
+        # 间距命令（不产生输出或产生细小间距）
+        if cmd in (r"\!", r"\thinspace", r"\medspace", r"\thickspace"):
+            return ""
+        if cmd in (r"\,", r"\;", r"\:"):
+            return self._make_run(" ")
+
+        # \left \right （已预处理，但如果残留则跳过）
+        if cmd in (r"\left", r"\right"):
+            return ""
+
+        # 括号尺寸命令（忽略尺寸，直接输出后续括号）
+        if cmd in (r"\bigl", r"\bigr", r"\Bigl", r"\Bigr",
+                    r"\big", r"\Big", r"\biggl", r"\biggr",
+                    r"\Biggl", r"\Biggr", r"\biggm", r"\Bigm"):
+            return ""
+
+        # \stackrel{above}{below} — 将 above 作为 below 的上标
+        if cmd == r"\stackrel":
+            above = self._read_braced_group()
+            below = self._parse_atom()
+            above_parser = _LatexParser(above)
+            above_omml = " ".join(above_parser.parse())
+            return (
+                f'<m:sSup xmlns:m="{self.M_NS}">'
+                f'<m:e>{below}</m:e>'
+                f'<m:sup>{above_omml}</m:sup>'
+                f'</m:sSup>'
+            )
+
+        # \mathbb{1} 等特殊字符
+        if cmd == r"\mathbb":
+            content = self._read_braced_group()
+            # 黑板粗体映射
+            bb_map = {"1": "𝟙", "0": "𝟘", "R": "ℝ", "N": "ℕ", "Z": "ℤ",
+                       "Q": "ℚ", "C": "ℂ", "P": "ℙ", "E": "𝔼", "H": "ℍ"}
+            mapped = bb_map.get(content.strip(), content)
+            return self._make_run(mapped)
+
+        # 未知命令：静默忽略，避免输出原始命令名
+        return ""
+
+    def _parse_nary(self, cmd: str) -> str:
+        """解析 N元运算符（求和、积分等），支持 _{...}^{...} 上下限。"""
+        nary_val = self.NARY_MAP[cmd]
+        lower = ""
+        upper = ""
+
+        # 读取下标
+        if self.pos < self.n and self.text[self.pos] == "_":
+            self.pos += 1
+            if self.pos < self.n and self.text[self.pos] == "{":
+                lower = self._read_braced_group()
+            else:
+                lower = self.text[self.pos] if self.pos < self.n else ""
+                self.pos += 1
+
+        # 读取上标
+        if self.pos < self.n and self.text[self.pos] == "^":
+            self.pos += 1
+            if self.pos < self.n and self.text[self.pos] == "{":
+                upper = self._read_braced_group()
+            else:
+                upper = self.text[self.pos] if self.pos < self.n else ""
+                self.pos += 1
+
+        # 读取运算符后的表达式（一个原子）
+        body = self._parse_atom()
+
+        # 构建 OMML
+        lower_omml = ""
+        if lower:
+            sub_parser = _LatexParser(lower)
+            lower_omml = f'<m:sub>{" ".join(sub_parser.parse())}</m:sub>'
+
+        upper_omml = ""
+        if upper:
+            sub_parser = _LatexParser(upper)
+            upper_omml = f'<m:sup>{" ".join(sub_parser.parse())}</m:sup>'
+
+        return (
+            f'<m:nary xmlns:m="{self.M_NS}" m:val="{nary_val}">'
+            f'{lower_omml}{upper_omml}'
+            f'<m:e>{body}</m:e>'
+            f'</m:nary>'
+        )
+
+    def _parse_subscript(self) -> str:
+        """解析下标 _{...} 或 _x。"""
+        self.pos += 1  # 跳过 _
+        base = ""
+
+        # 收集之前的 base（实际上是后续处理）
+        if self.pos < self.n:
+            if self.text[self.pos] == "{":
+                content = self._read_braced_group()
+                sub_parser = _LatexParser(content)
+                sub_omml = " ".join(sub_parser.parse())
+            else:
+                ch = self.text[self.pos]
+                self.pos += 1
+                sub_omml = self._make_run(ch)
+
+            return (
+                f'<m:sSub xmlns:m="{self.M_NS}">'
+                f'<m:e></m:e>'
+                f'<m:sub>{sub_omml}</m:sub>'
+                f'</m:sSub>'
+            )
+        return ""
+
+    def _parse_superscript(self) -> str:
+        """解析上标 ^{...} 或 ^x。"""
+        self.pos += 1  # 跳过 ^
+        if self.pos < self.n:
+            if self.text[self.pos] == "{":
+                content = self._read_braced_group()
+                sub_parser = _LatexParser(content)
+                sup_omml = " ".join(sub_parser.parse())
+            else:
+                ch = self.text[self.pos]
+                self.pos += 1
+                sup_omml = self._make_run(ch)
+
+            return (
+                f'<m:sSup xmlns:m="{self.M_NS}">'
+                f'<m:e></m:e>'
+                f'<m:sup>{sup_omml}</m:sup>'
+                f'</m:sSup>'
+            )
+        return ""
+
+    @staticmethod
+    def _make_run(text: str) -> str:
+        """生成 OMML 文本运行元素。"""
+        escaped = _LatexParser._escape_xml(text)
+        if not escaped:
+            return ""
+        return f'<m:r xmlns:m="{_LatexParser.M_NS}"><m:t>{escaped}</m:t></m:r>'
+
+    @staticmethod
+    def _escape_xml(text: str) -> str:
+        """转义 XML 特殊字符。"""
+        return (text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    @staticmethod
+    def _extract_text(omml_parts: list[str]) -> list[str]:
+        """从 OMML 片段中粗略提取文本内容（用于 text 类命令）。"""
+        texts: list[str] = []
+        for part in omml_parts:
+            # 提取 <m:t>...</m:t> 中的内容
+            import re as _re
+            matches = _re.findall(r'<m:t[^>]*>([^<]*)</m:t>', part)
+            texts.extend(matches)
+        return texts
+
+
+# ---------------------------------------------------------------------------
 # DOCX 生成器
 # ---------------------------------------------------------------------------
 
@@ -269,13 +705,29 @@ class DocxBuilder:
 
     def _add_paragraph(self, text: str):
         """添加段落，处理行内格式。"""
+        # 检测图注/表注行（**图 N**：或 **表 N**：）
+        stripped = text.strip()
+        is_caption = False
+        if stripped.startswith("**图 ") or stripped.startswith("**表 "):
+            is_caption = True
+
         p = self.doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        if is_caption:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(3)
+            p.paragraph_format.space_after = Pt(8)
+            p.paragraph_format.first_line_indent = Cm(0)
+        else:
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            # 首行缩进2字符（约0.74cm）
+            p.paragraph_format.first_line_indent = Cm(0.74)
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(6)
 
         # 处理行内格式：粗体、斜体、行内公式
-        self._add_formatted_runs(p, text)
+        self._add_formatted_runs(p, text, caption_style=is_caption)
 
-    def _add_formatted_runs(self, paragraph, text: str):
+    def _add_formatted_runs(self, paragraph, text: str, caption_style: bool = False):
         """添加格式化的文本运行（处理 **粗体**、*斜体*、$行内公式$）。"""
         # 分割文本，处理 **bold** 和 $formula$
         parts = re.split(r"(\*\*[^*]+\*\*|\$[^$]+\$|`[^`]+`)", text)
@@ -286,6 +738,8 @@ class DocxBuilder:
             if part.startswith("**") and part.endswith("**"):
                 run = paragraph.add_run(part[2:-2])
                 run.bold = True
+                if caption_style:
+                    run.font.size = Pt(10.5)
             elif part.startswith("$") and part.endswith("$"):
                 run = paragraph.add_run(part)
                 run.italic = True
@@ -324,6 +778,22 @@ class DocxBuilder:
         # 创建表格
         table = self.doc.add_table(rows=len(rows_data), cols=n_cols)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = True
+
+        # 计算各列最大宽度（用于自适应）
+        col_max_len = [0] * n_cols
+        for r in rows_data:
+            for j, cell in enumerate(r):
+                col_max_len[j] = max(col_max_len[j], len(cell))
+
+        # 设置列宽（基于内容长度，但有上下限）
+        total_len = sum(col_max_len)
+        for j in range(n_cols):
+            if total_len > 0:
+                ratio = col_max_len[j] / total_len
+                width_cm = max(2.0, min(8.0, ratio * 15.0))
+                for row in table.rows:
+                    row.cells[j].width = Cm(width_cm)
 
         # 填充数据
         for i, row_data in enumerate(rows_data):
@@ -348,6 +818,23 @@ class DocxBuilder:
                 if i == 0 or bold:
                     run.bold = True
 
+                # 设置单元格内边距
+                tc = cell._tc
+                tcPr = tc.get_or_add_tcPr()
+                tcMar = parse_xml(f'''<w:tcMar {nsdecls("w")}>
+                    <w:top w:w="50" w:type="dxa"/>
+                    <w:bottom w:w="50" w:type="dxa"/>
+                    <w:left w:w="100" w:type="dxa"/>
+                    <w:right w:w="100" w:type="dxa"/>
+                </w:tcMar>''')
+                tcPr.append(tcMar)
+
+                # 设置最小行高
+                tr = table.rows[i]
+                trPr = tr._tr.get_or_add_trPr()
+                trHeight = parse_xml(f'<w:trHeight {nsdecls("w")} w:val="340" w:hRule="atLeast"/>')
+                trPr.append(trHeight)
+
         # 三线表样式：顶部、表头下方、底部有线，其余无线
         self._format_three_line_table(table)
 
@@ -364,10 +851,10 @@ class DocxBuilder:
         if existing_borders is not None:
             tblPr.remove(existing_borders)
 
-        # 设置三线表边框
+        # 设置三线表边框（1.5磅顶线、1.5磅底线、0.75磅表头线）
         borders_xml = f'''<w:tblBorders {nsdecls("w")}>
-            <w:top w:val="single" w:sz="12" w:space="0" w:color="000000"/>
-            <w:bottom w:val="single" w:sz="12" w:space="0" w:color="000000"/>
+            <w:top w:val="single" w:sz="18" w:space="0" w:color="000000"/>
+            <w:bottom w:val="single" w:sz="18" w:space="0" w:color="000000"/>
             <w:left w:val="nil"/>
             <w:right w:val="nil"/>
             <w:insideH w:val="nil"/>
@@ -382,74 +869,126 @@ class DocxBuilder:
                 tc = cell._tc
                 tcPr = tc.get_or_add_tcPr()
                 tcBorders = parse_xml(f'''<w:tcBorders {nsdecls("w")}>
-                    <w:bottom w:val="single" w:sz="6" w:space="0" w:color="000000"/>
+                    <w:bottom w:val="single" w:sz="9" w:space="0" w:color="000000"/>
                 </w:tcBorders>''')
                 tcPr.append(tcBorders)
 
     def _add_formula(self, formula_text: str):
-        """添加居中公式段落。"""
+        """添加居中公式段落（MathType 风格，使用 OMML 渲染）。
+
+        将 LaTeX 公式转换为 OMML (Office Math Markup Language)，
+        在 Word 中以原生数学公式格式显示，效果接近 MathType。
+        """
         p = self.doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(6)
-        p.paragraph_format.space_after = Pt(6)
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(8)
 
-        # 尝试将 LaTeX 转换为可读的 Unicode 数学符号
+        # 尝试将 LaTeX 转换为 OMML 并插入
+        omml_xml = self._latex_to_omml(formula_text)
+        if omml_xml:
+            try:
+                from lxml import etree
+                omath_element = etree.fromstring(omml_xml)
+                p._p.append(omath_element)
+                return
+            except Exception:
+                pass
+
+        # 回退：使用 Unicode 近似
         readable = self._latex_to_unicode(formula_text)
         run = p.add_run(readable)
         run.font.name = "Cambria Math"
         run.font.size = Pt(12)
         run.italic = False
 
+    # ------------------------------------------------------------------
+    # LaTeX → OMML 递归下降解析器
+    # ------------------------------------------------------------------
+
+    # OMML 命名空间
+    _M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+    # 符号映射表
+    _GREEK = {
+        r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
+        r"\epsilon": "ε", r"\varepsilon": "ε", r"\zeta": "ζ", r"\eta": "η",
+        r"\theta": "θ", r"\vartheta": "ϑ", r"\lambda": "λ", r"\mu": "μ",
+        r"\nu": "ν", r"\xi": "ξ", r"\pi": "π", r"\rho": "ρ",
+        r"\sigma": "σ", r"\tau": "τ", r"\phi": "φ", r"\varphi": "φ",
+        r"\chi": "χ", r"\psi": "ψ", r"\omega": "ω",
+        r"\Gamma": "Γ", r"\Delta": "Δ", r"\Theta": "Θ", r"\Lambda": "Λ",
+        r"\Sigma": "Σ", r"\Phi": "Φ", r"\Psi": "Ψ", r"\Omega": "Ω",
+    }
+
+    _OPERATORS = {
+        r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\ne": "≠",
+        r"\times": "×", r"\div": "÷", r"\pm": "±", r"\mp": "∓",
+        r"\infty": "∞", r"\partial": "∂",
+        r"\forall": "∀", r"\exists": "∃", r"\nexists": "∄",
+        r"\in": "∈", r"\notin": "∉", r"\ni": "∋",
+        r"\cdot": "·", r"\ldots": "…", r"\cdots": "⋯", r"\vdots": "⋮", r"\ddots": "⋱",
+        r"\to": "→", r"\rightarrow": "→", r"\leftarrow": "←", r"\leftrightarrow": "↔",
+        r"\Rightarrow": "⇒", r"\Leftarrow": "⇐", r"\Leftrightarrow": "⇔",
+        r"\cup": "∪", r"\cap": "∩", r"\subset": "⊂", r"\supset": "⊃",
+        r"\subseteq": "⊆", r"\supseteq": "⊇",
+        r"\approx": "≈", r"\equiv": "≡", r"\sim": "∼", r"\propto": "∝",
+        r"\nabla": "∇", r"\angle": "∠", r"\perp": "⊥", r"\parallel": "∥",
+    }
+
+    _SYMBOL_MAP = {**_GREEK, **_OPERATORS}
+
+    def _latex_to_omml(self, latex: str) -> str:
+        """将 LaTeX 公式转换为 OMML XML（Office MathML）。
+
+        使用递归下降解析器正确处理嵌套结构：
+        分数 \\frac{}{}、求和 \\sum_{}^{}、上下标 _{} ^{}、
+        文本 \\text{}、重音 \\hat{} \\bar{} 等。
+        """
+        M_NS = self._M_NS
+
+        # 预处理：移除 \left \right \quad \qquad
+        text = latex
+        text = text.replace(r"\left", "").replace(r"\right", "")
+        text = text.replace(r"\quad", "  ").replace(r"\qquad", "    ")
+
+        # 解析为 OMML 片段列表
+        parser = _LatexParser(text)
+        omml_parts = parser.parse()
+
+        if not omml_parts:
+            return ""
+
+        # 包装在 oMath 元素中
+        inner = "".join(omml_parts)
+        return f'<m:oMath xmlns:m="{M_NS}">{inner}</m:oMath>'
+
     def _latex_to_unicode(self, latex: str) -> str:
-        """将 LaTeX 公式转换为 Unicode 近似文本。"""
-        replacements = {
-            # 希腊字母
-            r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
-            r"\epsilon": "ε", r"\zeta": "ζ", r"\eta": "η", r"\theta": "θ",
-            r"\lambda": "λ", r"\mu": "μ", r"\nu": "ν", r"\xi": "ξ",
-            r"\pi": "π", r"\rho": "ρ", r"\sigma": "σ", r"\tau": "τ",
-            r"\phi": "φ", r"\chi": "χ", r"\psi": "ψ", r"\omega": "ω",
-            r"\Gamma": "Γ", r"\Delta": "Δ", r"\Theta": "Θ", r"\Lambda": "Λ",
-            r"\Sigma": "Σ", r"\Phi": "Φ", r"\Psi": "Ψ", r"\Omega": "Ω",
-            r"\xi": "ξ", r"\eta": "η",
-            # 数学运算符
-            r"\sum": "∑", r"\prod": "∏", r"\int": "∫",
-            r"\leq": "≤", r"\geq": "≥", r"\neq": "≠",
-            r"\times": "×", r"\div": "÷", r"\pm": "±",
-            r"\infty": "∞", r"\partial": "∂",
-            r"\forall": "∀", r"\exists": "∃",
-            r"\in": "∈", r"\notin": "∉", r"\subset": "⊂", r"\supset": "⊃",
-            r"\cup": "∪", r"\cap": "∩", r"\emptyset": "∅",
-            # 上下标相关
-            r"\sqrt": "√",
-            # 文本
-            r"\text": "", r"\mathrm": "", r"\mathbf": "", r"\mathbb": "",
-            r"\quad": "  ", r"\qquad": "    ",
-            r"\left": "", r"\right": "",
-            r"\cdot": "·", r"\ldots": "…", r"\cdots": "⋯",
-            r"\hat": "", r"\bar": "", r"\tilde": "",
-            r"\frac": "",
-            r"\min": "min", r"\max": "max", r"\arg": "arg",
-            r"\ln": "ln", r"\log": "log", r"\exp": "exp",
-        }
-
-        result = latex
-        for latex_str, unicode_str in replacements.items():
-            result = result.replace(latex_str, unicode_str)
-
-        # 处理上下标 ^{...} 和 _{...}
-        result = re.sub(r"\^\{([^}]+)\}", r"↑(\1)", result)
-        result = re.sub(r"_\{([^}]+)\}", r"↓(\1)", result)
-        result = re.sub(r"\^(\S)", r"↑\1", result)
-        result = re.sub(r"_(\S)", r"↓\1", result)
-
-        # 清理多余的花括号
-        result = result.replace("{", "").replace("}", "")
-
-        # 清理多余空格
-        result = re.sub(r"  +", " ", result).strip()
-
-        return result
+        """将 LaTeX 公式转换为 Unicode 近似文本（回退方案）。"""
+        text = latex
+        # 移除命令
+        text = re.sub(r"\\text\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\mathbf\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\mathcal\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\boldsymbol\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\mathbb\{([^}]*)\}", r"\1", text)
+        text = text.replace(r"\left", "").replace(r"\right", "")
+        text = text.replace(r"\quad", "  ").replace(r"\qquad", "    ")
+        # 替换符号
+        for latex_sym, unicode_sym in self._SYMBOL_MAP.items():
+            text = text.replace(latex_sym, unicode_sym)
+        # 简单命令
+        text = text.replace(r"\sum", "∑").replace(r"\int", "∫")
+        text = text.replace(r"\prod", "∏").replace(r"\min", "min")
+        text = text.replace(r"\max", "max").replace(r"\ln", "ln")
+        text = text.replace(r"\log", "log").replace(r"\exp", "exp")
+        text = text.replace(r"\frac", "/")
+        # 移除剩余的 LaTeX 命令
+        text = re.sub(r"\\[a-zA-Z]+", "", text)
+        # 清理括号
+        text = text.replace("{", "(").replace("}", ")")
+        return text.strip()
 
     def _add_image(self, image_path: str, alt_text: str = ""):
         """添加图片（不自动添加图注，由 Markdown 正文中的图注段落处理）。"""

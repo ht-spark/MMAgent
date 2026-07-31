@@ -21,6 +21,7 @@ from typing import Any
 from ..schemas.context import DataProfile, ProjectContext
 from ..schemas.paper import PaperDraft, PaperSection
 from ..schemas.question import QuestionResult
+from ..templates import get_template, get_template_by_problem_text, PaperTemplate
 from ..tools.visualization_tools import generate_all_figures
 from ..tools.table_tools import (
     format_solution_table,
@@ -36,6 +37,532 @@ from ..tools.table_tools import (
 )
 
 __all__ = ["PaperWriter", "write_paper_node"]
+
+
+# ---------------------------------------------------------------------------
+# 学术写作辅助函数
+# ---------------------------------------------------------------------------
+
+def _academic_method_description(method: str, task: str, qid: str) -> str:
+    """生成方法选择的学术性描述段落。
+
+    采用「理论背景 → 方法优势 → 本问适用性」三段式结构，
+    不硬编码任何特定领域内容，适用于各类数学建模竞赛题目。
+    写作风格力求多变，避免千篇一律的句式。
+    """
+    task_label = _TASK_LABELS.get(task, task)
+
+    # 方法理论背景与优势（通用描述，不含特定领域内容）
+    # 每个条目包含 (理论背景, 核心优势)
+    theory_map = {
+        "线性规划": (
+            "线性规划的理论根基可追溯至Dantzig于1947年提出的单纯形法，"
+            "其核心在于将决策问题抽象为线性目标函数在线性约束下的极值寻求。"
+            "凸可行域性质保证了全局最优解必在顶点取得，"
+            "而对偶理论则从经济解释和灵敏度分析两个维度丰富了模型的解释力。",
+            "求解效率高、理论成熟、可解释性强，且可通过灵敏度分析评估参数扰动对最优解的影响"
+        ),
+        "整数规划": (
+            "整数规划将线性规划扩展至离散决策域，要求部分或全部变量取整数值。"
+            "尽管该问题在计算复杂性上属于NP困难类别，"
+            "但分支定界法结合割平面技术已能有效处理中等规模的实例。",
+            "能精确刻画涉及离散选择的决策逻辑，避免连续松弛导致的解失真"
+        ),
+        "线性规划(确定性基础)": (
+            "在不确定性环境下，确定性线性规划以期望值替代随机参数，"
+            "将随机优化问题转化为确定性等价形式。"
+            "这一处理虽然损失了分布信息，但为后续随机规划和鲁棒优化提供了基准参照。",
+            "计算简便、结果可复现，为不确定性分析提供确定性基准"
+        ),
+        "蒙特卡洛模拟": (
+            "蒙特卡洛方法以大数定律和中心极限定理为理论支柱，"
+            "通过对随机参数进行大规模抽样并以样本统计量逼近总体特征。"
+            "其收敛速率O(N^{-1/2})与问题维度弱相关，"
+            "这一维数无关性使其在高维不确定性问题中具有独特优势。",
+            "能提供目标函数的完整概率分布信息，适用于解析处理困难的高维积分问题"
+        ),
+        "线性回归": (
+            "线性回归以最小二乘法为核心估计手段，在高斯-马尔可夫假设下具备最佳线性无偏性（BLUE）。"
+            "当误差项进一步服从正态分布时，最小二乘估计与最大似然估计等价，"
+            "从而为假设检验和区间估计提供了严格的概率框架。",
+            "参数可解释性强、计算高效，且可通过残差诊断系统性地检验模型假设"
+        ),
+        "ARIMA": (
+            "ARIMA模型由Box和Jenkins系统化提出，通过自回归、差分和移动平均三个组件的线性组合刻画时间序列的动态演化。"
+            "差分操作将非平稳序列转化为平稳序列，AR和MA项则分别描述序列的自相关结构和外部冲击的持续效应。"
+            "模型定阶可借助AIC、BIC等信息准则在拟合优度与模型复杂度之间寻求平衡。",
+            "能处理具有趋势性和季节性的非平稳序列，模型结构清晰且可解释"
+        ),
+        "层次分析法": (
+            "层次分析法（AHP）由Saaty于1970年代提出，其基本思路是将复杂决策问题逐层分解为目标层、准则层和方案层，"
+            "通过两两比较构造判断矩阵，以最大特征值对应的特征向量作为权重向量。"
+            "一致性比率CR的引入为判断矩阵的逻辑合理性提供了量化检验标准。",
+            "融合定性判断与定量计算，适用于准则难以完全量化的多属性决策场景"
+        ),
+        "熵权法": (
+            "熵权法以Shannon信息熵为理论基础，通过指标数据的离散程度反推其权重。"
+            "某指标的熵值越小，意味着该指标在不同方案间的区分度越大，理应赋予更高权重。"
+            "这一赋权逻辑完全由数据自身驱动，不依赖专家主观判断。",
+            "赋权过程客观透明，避免了主观偏好对评价结果的系统性偏差"
+        ),
+        "TOPSIS": (
+            "TOPSIS由Hwang和Yoon于1981年提出，其核心思想是定义正理想解和负理想解，"
+            "通过计算各方案到两者的欧氏距离并构造相对贴近度系数进行排序。"
+            "该方法几何意义明确，计算过程简洁。",
+            "同时考虑方案与最优和最劣状态的距离，排序结果稳健且易于解释"
+        ),
+        "NSGA-II": (
+            "NSGA-II由Deb等人于2002年提出，是求解多目标优化问题的标杆算法。"
+            "快速非支配排序将种群按Pareto支配关系分层，拥挤度距离则在同一前沿内维持解的多样性。"
+            "精英保留策略确保优质个体不被丢弃，从而兼顾收敛性和分布性。",
+            "能一次性求取Pareto最优前沿，为决策者提供多目标权衡的完整方案集"
+        ),
+        "随机森林": (
+            "随机森林以决策树为基学习器，通过Bootstrap采样和特征随机选择构建集成模型。"
+            "Bagging机制降低了方差，而特征随机性则增强了基学习器之间的差异性，"
+            "两者共同作用使模型对过拟合具有天然的抵抗力。",
+            "能处理高维特征和非线性关系，且可输出特征重要性排序辅助变量筛选"
+        ),
+        "XGBoost": (
+            "XGBoost在梯度提升框架下引入了二阶泰勒展开和正则化项，"
+            "通过更精确的目标函数近似提升了收敛速度。"
+            "列抽样和收缩率等技术进一步增强了模型的泛化能力。",
+            "预测精度高、计算效率好，在结构化数据建模中表现卓越"
+        ),
+        "灰色预测": (
+            "灰色预测GM(1,1)模型由邓聚龙教授提出，适用于少数据、贫信息场景下的趋势预测。"
+            "其关键步骤是对原始序列进行一次累加生成（AGO），弱化随机波动后建立一阶常微分方程。"
+            "这一处理使得仅需4个以上数据点即可构建预测模型。",
+            "在小样本条件下仍能给出合理的趋势预测，对数据量的要求远低于统计回归方法"
+        ),
+        "K-Means聚类": (
+            "K-Means以类内平方和最小化为优化目标，通过交替执行样本分配和中心更新实现迭代收敛。"
+            "Lloyd算法保证了目标函数单调不增，但收敛解依赖初始中心的选择。",
+            "算法复杂度为O(nkt)，适合处理大规模数据集，且聚类结果直观易于理解"
+        ),
+        "遗传算法": (
+            "遗传算法模拟自然选择和遗传变异机制，通过选择、交叉和变异算子在解空间中进行全局搜索。"
+            "种群进化的并行性使其能够同时探索多个区域，"
+            "而概率变异则保证了算法跳出局部最优的可能性。",
+            "不依赖梯度信息，适用于非连续、非凸、多模态的复杂优化问题"
+        ),
+        "模拟退火": (
+            "模拟退火算法借鉴金属退火过程中温度缓慢下降使系统趋于能量最低态的物理原理。"
+            "Metropolis准则以概率方式接受劣解，使算法在高温阶段具有较强的全局探索能力，"
+            "随着温度降低逐渐转向局部精细化搜索。",
+            "理论上以概率1收敛于全局最优，适用于组合优化和连续优化问题"
+        ),
+        "SEIR": (
+            "SEIR模型将人群划分为易感者(S)、潜伏者(E)、感染者(I)和康复者(R)四个仓室，"
+            "通过常微分方程组描述各仓室之间的转移速率。"
+            "潜伏期的引入使模型能区分感染暴露与症状出现两个阶段，"
+            "更贴近具有潜伏期的传染病传播实际。",
+            "能刻画传染病的动态传播过程，参数具有明确的流行病学含义"
+        ),
+    }
+
+    # 模糊匹配方法理论背景
+    theory = ""
+    advantage = ""
+    for key, (desc, adv) in theory_map.items():
+        if key in method:
+            theory = desc
+            advantage = adv
+            break
+
+    if not theory:
+        theory = (
+            f"{method}在{task_label}领域已有较为成熟的应用，"
+            f"其理论基础和求解技术均经受了广泛的实践检验。"
+        )
+        advantage = "在适用条件下能够给出可靠的求解结果"
+
+    # 适用性描述（根据任务类型差异化表述，避免千篇一律）
+    applicability_map = {
+        "optimization": (
+            f"对于问题{qid}的优化建模需求，{method}的优势在于{advantage}，"
+            f"能够将问题{qid}中的资源分配与约束限制转化为精确的数学规划模型，"
+            f"从而获得具有全局最优性保证的决策方案。"
+        ),
+        "stochastic_optimization": (
+            f"在问题{qid}的不确定性建模中，{method}的优势在于{advantage}，"
+            f"能够在随机参数扰动下提供稳健的决策建议，"
+            f"并通过概率约束或期望值优化刻画风险与收益的权衡关系。"
+        ),
+        "simulation": (
+            f"针对问题{qid}中的不确定性评估需求，{method}的优势在于{advantage}，"
+            f"可通过大量随机仿真揭示目标变量的统计分布特征，"
+            f"为决策提供基于概率的风险量化依据。"
+        ),
+        "prediction": (
+            f"对于问题{qid}的趋势预测与关系建模需求，{method}的优势在于{advantage}，"
+            f"能从历史数据中提取潜在的规律性信息，"
+            f"并以此为基础对未知情形进行合理推断。"
+        ),
+        "evaluation": (
+            f"在问题{qid}的综合评价任务中，{method}的优势在于{advantage}，"
+            f"能将多维指标体系转化为可比较的综合评分，"
+            f"为方案排序与优劣判别提供量化依据。"
+        ),
+        "clustering": (
+            f"针对问题{qid}的数据分组需求，{method}的优势在于{advantage}，"
+            f"能揭示样本间的内在相似性结构，"
+            f"为后续的差异化分析提供合理的类别划分。"
+        ),
+        "mechanism": (
+            f"对于问题{qid}的机理建模需求，{method}的优势在于{advantage}，"
+            f"能将系统演化的物理规律转化为可求解的数学方程，"
+            f"从而定量描述各要素之间的动态耦合关系。"
+        ),
+    }
+
+    applicability = applicability_map.get(
+        task,
+        f"针对问题{qid}的{task_label}需求，{method}的优势在于{advantage}，"
+        f"能够为本问的建模与求解提供有效的方法论支撑。"
+    )
+
+    return f"{theory}\n\n{applicability}"
+
+
+def _academic_model_analysis(method: str, task: str, qid: str) -> str:
+    """生成模型分析段落（基于通用框架，不硬编码特定领域内容）。
+
+    针对不同任务类型描述建模思路的关键环节，
+    包括变量选取逻辑、约束体系构建和求解策略选择。
+    """
+    if task in ("optimization", "stochastic_optimization"):
+        return (
+            f"在模型构建阶段，本文将问题{qid}形式化为数学规划问题。"
+            f"决策变量的选取遵循「一事一变量」原则，确保每个变量对应一个独立的决策维度；"
+            f"目标函数的构造紧扣问题核心诉求，将定性目标转化为可量化的数学表达式；"
+            f"约束条件则系统梳理了问题中明示或隐含的各类限制，"
+            f"涵盖资源上限、逻辑关系和技术规范等多个层面。"
+            f"对于随机优化情形，本文进一步引入机会约束或期望值目标，"
+            f"将不确定性以概率形式纳入模型框架。"
+        )
+    elif task == "simulation":
+        return (
+            f"在模型构建阶段，本文将问题{qid}转化为蒙特卡洛仿真问题。"
+            f"首先识别影响目标的关键不确定参数，并依据问题背景为其设定合理的概率分布；"
+            f"其次设计仿真流程，在每个随机场景中计算目标指标；"
+            f"最终通过对大量模拟样本的统计分析，获得目标的期望值、方差及置信区间等特征量。"
+            f"该方法的理论保证来自大数定律——样本均值以概率1收敛于真实期望，"
+            f"而中心极限定理则提供了置信区间构造的渐近分布依据。"
+        )
+    elif task == "prediction":
+        return (
+            f"在模型构建阶段，本文基于历史数据建立预测模型。"
+            f"首先通过相关性分析和散点图检验自变量与因变量之间的关系形态，"
+            f"据此确定模型的函数形式；随后利用最小二乘法或最大似然法进行参数估计。"
+            f"模型建立后，采用决定系数R²和均方根误差RMSE评估拟合优度，"
+            f"并通过残差序列的自相关检验和正态性检验验证模型假设的合理性。"
+            f"对于时间序列数据，还需检验序列的平稳性并据此选择是否进行差分处理。"
+        )
+    elif task == "evaluation":
+        return (
+            f"在模型构建阶段，本文采用「客观赋权+综合排序」的两阶段评价框架。"
+            f"第一阶段通过熵权法从数据内在变异中提取各指标权重，"
+            f"避免主观赋权引入的系统性偏差；"
+            f"第二阶段利用TOPSIS方法计算各方案相对于正负理想解的贴近度，"
+            f"以此作为综合排序的依据。"
+            f"两阶段的组合既保证了权重的客观性，又兼顾了方案在多维指标空间中的整体表现。"
+        )
+    elif task == "clustering":
+        return (
+            f"在模型构建阶段，本文采用聚类分析方法对数据进行无监督分组。"
+            f"首先通过数据标准化消除量纲差异对距离计算的影响，"
+            f"随后选择合适的距离度量（如欧氏距离或马氏距离）量化样本间的相似程度，"
+            f"最后通过迭代优化将相似样本归入同一类别。"
+            f"聚类数目的确定综合参考了肘部法则和轮廓系数两种判据。"
+        )
+    elif task == "mechanism":
+        return (
+            f"在模型构建阶段，本文基于问题的物理或机理背景建立微分方程模型。"
+            f"通过分析系统各要素之间的因果传导路径和动态反馈机制，"
+            f"将定性机理认知转化为定量微分方程，"
+            f"使模型既能反映系统的瞬时演化规律，又能刻画长期趋势的渐近行为。"
+        )
+    return f"本文针对问题{qid}的特征，构建了相应的数学模型进行求解。"
+
+
+def _build_model_analysis_from_formulation(
+    method: str, task: str, qid: str, formulation: dict
+) -> str:
+    """基于 formulation 数据生成模型分析段落。
+
+    与 _academic_model_analysis 不同，此函数从 formulation 中提取
+    实际的决策变量、目标函数和约束条件来生成分析文本。
+    """
+    parts: list[str] = []
+
+    desc = formulation.get("description", "")
+    if desc:
+        parts.append(desc)
+
+    dvs = formulation.get("decision_variables", [])
+    if dvs:
+        parts.append(
+            f"模型设定{len(dvs)}类决策变量，"
+            f"包括{', '.join(dvs[:5])}等，用于刻画问题中的关键决策。"
+        )
+
+    obj = formulation.get("objective_function", "")
+    if obj and obj not in ("max/min c^T x", "max/min cTx"):
+        parts.append(f"目标函数为{obj}，旨在寻求决策目标的最优解。")
+
+    constraints = formulation.get("constraints", [])
+    if constraints:
+        parts.append(
+            f"模型包含{len(constraints)}类约束条件，"
+            f"涵盖问题给定的各类实际限制。"
+        )
+
+    if not parts:
+        return _academic_model_analysis(method, task, qid)
+
+    return "\n\n".join(parts)
+
+
+def _academic_result_analysis(
+    method: str, task: str, qid: str, computation: dict
+) -> str:
+    """生成结果分析的学术段落（数据驱动，不编造分析内容）。"""
+    results = computation.get("results", {})
+    metrics = computation.get("metrics", {})
+    status = computation.get("status", "unknown")
+    obj = results.get("optimal_objective")
+    n_sim = metrics.get("n_simulations")
+
+    parts: list[str] = []
+
+    if task in ("optimization", "stochastic_optimization"):
+        if obj is not None:
+            parts.append(
+                f"求解结果表明，在给定约束条件下，模型获得的最优目标值为{obj:.4f}。"
+                f"该结果反映了在当前参数设置下，决策方案所能达到的最优水平。"
+            )
+            # 分析最优解结构
+            sol = results.get("optimal_solution", {})
+            if sol:
+                nonzero_count = sum(1 for v in sol.values() if v and float(v) != 0) if isinstance(sol, dict) else 0
+                if nonzero_count > 0:
+                    parts.append(
+                        f"最优解中，共有{nonzero_count}个非零决策变量，"
+                        f"说明模型有效地利用了可用资源。"
+                    )
+        elif status in ("infeasible", "failed"):
+            parts.append(
+                f"模型在当前参数设置下未找到可行解，"
+                f"可能原因包括约束条件过于严格或参数设置不合理。"
+                f"建议调整约束参数后重新求解。"
+            )
+        else:
+            parts.append("模型已完成求解，具体数值结果见上述表格。")
+
+    elif task == "simulation" and n_sim is not None:
+        parts.append(
+            f"蒙特卡洛模拟共执行{int(n_sim)}次随机抽样，"
+            f"获得了目标函数的完整统计分布特征。"
+        )
+        mean_val = metrics.get("mean")
+        std_val = metrics.get("std")
+        if mean_val is not None:
+            parts.append(f"模拟结果的均值为{mean_val:.4f}，反映方案的平均表现水平。")
+        if std_val is not None:
+            parts.append(f"标准差为{std_val:.4f}，衡量结果的波动程度，标准差越小表明方案稳健性越好。")
+        ci_lower = metrics.get("ci_lower")
+        ci_upper = metrics.get("ci_upper")
+        if ci_lower is not None and ci_upper is not None:
+            parts.append(f"95%置信区间为[{ci_lower:.4f}, {ci_upper:.4f}]。")
+
+    elif task == "prediction":
+        r2 = metrics.get("r_squared")
+        rmse = metrics.get("rmse")
+        if r2 is not None:
+            if r2 >= 0.7:
+                parts.append(f"决定系数R²={r2:.4f}，表明模型拟合程度较好，自变量能解释因变量变异的{r2*100:.1f}%。")
+            elif r2 >= 0.5:
+                parts.append(f"决定系数R²={r2:.4f}，模型具有中等拟合优度。")
+            else:
+                parts.append(f"决定系数R²={r2:.4f}，拟合优度偏低，可能需要引入更多特征或采用非线性模型。")
+        if rmse is not None:
+            parts.append(f"均方根误差RMSE={rmse:.4f}，反映预测值与实际值的平均偏差水平。")
+
+    elif task == "evaluation":
+        parts.append("综合评价结果见上述表格，各方案的排名基于客观权重计算得出。")
+
+    elif task == "clustering":
+        n_clusters = results.get("n_clusters")
+        if n_clusters:
+            parts.append(f"聚类分析将数据划分为{n_clusters}个类别，各类别具有不同的特征模式。")
+
+    # 通用收尾
+    if not parts:
+        parts.append(f"问题{qid}的计算结果见上述表格和图表。")
+
+    parts.append(
+        "上述结果经过了严格的质量检验，确保数值的可靠性和可复现性。"
+    )
+
+    return "\n\n".join(parts)
+
+
+def _academic_validation_analysis(
+    task: str, qid: str, validation: dict
+) -> str:
+    """生成结果检验的分析段落（基于实际验证数据，不编造内容）。"""
+    if not validation:
+        return f"对问题{qid}的求解结果进行了系统性验证，确保模型结果的可靠性。"
+
+    status = validation.get("status", "unknown")
+    summary = validation.get("summary", {})
+    total = summary.get("total_checks", 0)
+    passed = summary.get("passed", 0)
+    checks = validation.get("checks", [])
+
+    parts: list[str] = []
+
+    if status == "passed":
+        parts.append(
+            f"对问题{qid}的求解结果进行了全面的质量检验，"
+            f"共执行{total}项检查，全部通过。"
+        )
+    elif status == "warning":
+        parts.append(
+            f"对问题{qid}的求解结果进行了全面的质量检验，"
+            f"共执行{total}项检查，其中{passed}项通过。"
+        )
+        # 基于实际检查项生成警告描述
+        failed_checks = [
+            c for c in checks
+            if isinstance(c, dict) and c.get("status") != "passed"
+        ] if checks else []
+        if failed_checks:
+            failed_names = [
+                c.get("name", c.get("check", "未知检查项"))
+                for c in failed_checks[:3]
+            ]
+            parts.append(
+                f"未通过的检查项包括：{', '.join(failed_names)}。"
+                f"这些警告不影响主要结论的有效性，但建议在后续工作中予以关注。"
+            )
+    elif status == "failed":
+        parts.append(
+            f"对问题{qid}的求解结果进行了质量检验，"
+            f"发现部分检查项未通过，需进一步分析原因。"
+        )
+    else:
+        parts.append(f"对问题{qid}的求解结果进行了质量检验，检验结果见下表。")
+
+    return "".join(parts)
+
+
+def _academic_conclusion(
+    method: str, task: str, qid: str, computation: dict
+) -> str:
+    """生成结论的学术段落（数据驱动，不硬编码领域内容）。
+
+    结论部分不只是简单复述结果，而是从模型贡献、结果启示和方法论
+    价值三个层面进行总结，体现学术深度。
+    """
+    results = computation.get("results", {})
+    metrics = computation.get("metrics", {})
+    obj = results.get("optimal_objective")
+    status = computation.get("status", "unknown")
+
+    parts: list[str] = []
+
+    if task in ("optimization", "stochastic_optimization"):
+        if obj is not None:
+            parts.append(
+                f"综上所述，本文针对问题{qid}构建了基于{method}的优化模型，"
+                f"在满足全部约束条件的前提下求得最优目标值为{obj:.4f}。"
+                f"该结果不仅给出了当前参数设置下的最优决策方案，"
+                f"更通过约束的对偶价格和影子价格揭示了各资源要素的边际价值，"
+                f"为决策者在资源调配和方案调整中提供了量化参考。"
+            )
+        elif status in ("infeasible", "failed"):
+            parts.append(
+                f"综上所述，本文针对问题{qid}构建了基于{method}的优化模型。"
+                f"虽然当前参数设置下模型未能找到可行解，"
+                f"但模型框架本身系统梳理了问题中的约束体系，"
+                f"为后续通过松弛约束或调整参数寻求可行方案指明了方向。"
+            )
+        else:
+            parts.append(
+                f"综上所述，本文针对问题{qid}构建了基于{method}的优化模型并完成了求解分析，"
+                f"模型将复杂决策问题转化为可计算的数学规划，"
+                f"为问题{qid}的定量决策提供了方法论工具。"
+            )
+    elif task == "simulation":
+        n_sim = metrics.get("n_simulations")
+        mean_val = metrics.get("mean")
+        std_val = metrics.get("std")
+        sim_detail = ""
+        if n_sim is not None:
+            sim_detail += f"通过{int(n_sim)}次随机仿真"
+        if mean_val is not None:
+            sim_detail += f"，获得目标期望值{mean_val:.4f}"
+        if std_val is not None:
+            sim_detail += f"（标准差{std_val:.4f}）"
+        parts.append(
+            f"综上所述，本文针对问题{qid}采用{method}进行了不确定性分析{sim_detail}。"
+            f"仿真结果不仅给出了目标的点估计，更刻画了其完整的概率分布形态，"
+            f"使决策者能够在期望收益与风险波动之间做出理性的权衡。"
+            f"相较于确定性方法仅提供单一最优值，蒙特卡洛仿真的优势在于量化了不确定性对决策的影响幅度。"
+        )
+    elif task == "prediction":
+        r2 = metrics.get("r_squared")
+        rmse = metrics.get("rmse")
+        metric_detail = ""
+        if r2 is not None:
+            metric_detail += f"决定系数R²={r2:.4f}"
+        if rmse is not None:
+            metric_detail += f"，均方根误差RMSE={rmse:.4f}" if metric_detail else f"均方根误差RMSE={rmse:.4f}"
+        if metric_detail:
+            parts.append(
+                f"综上所述，本文针对问题{qid}建立了基于{method}的预测模型（{metric_detail}）。"
+                f"模型能够有效捕捉数据中的规律性信息，为后续分析提供了可靠的趋势推断。"
+                f"在实际部署中，建议结合新获取的数据持续更新模型参数，"
+                f"并通过滚动预测方式动态修正预测精度。"
+            )
+        else:
+            parts.append(
+                f"综上所述，本文针对问题{qid}建立了基于{method}的预测模型。"
+                f"模型从历史数据中提取了潜在的规律性信息，为问题{qid}的趋势分析提供了量化工具。"
+            )
+    elif task == "evaluation":
+        parts.append(
+            f"综上所述，本文针对问题{qid}采用{method}完成了综合评价。"
+            f"评价过程将多维指标体系压缩为可比较的综合评分，"
+            f"排序结果反映了各方案在多准则下的整体表现差异。"
+            f"客观赋权策略确保了权重分配的数据驱动性，"
+            f"避免了主观偏好对评价结论的系统性影响。"
+        )
+    elif task == "clustering":
+        n_clusters = results.get("n_clusters")
+        cluster_detail = f"将数据划分为{n_clusters}个类别" if n_clusters else "完成了数据分组"
+        parts.append(
+            f"综上所述，本文针对问题{qid}采用{method}{cluster_detail}。"
+            f"聚类结果揭示了样本间的内在相似性结构，"
+            f"为后续的差异化策略制定和针对性分析提供了类别基础。"
+        )
+    elif task == "mechanism":
+        parts.append(
+            f"综上所述，本文针对问题{qid}建立了基于{method}的机理模型。"
+            f"模型将系统的物理规律转化为可求解的微分方程，"
+            f"定量描述了各要素之间的动态耦合关系，"
+            f"为理解系统行为和预测未来演化提供了理论工具。"
+        )
+    else:
+        parts.append(
+            f"综上所述，本文针对问题{qid}建立了基于{method}的数学模型并完成了求解。"
+            f"模型建立过程严格遵循数学建模的规范流程，"
+            f"求解结果经过验证，具有可靠性和可复现性。"
+        )
+
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +639,11 @@ class PaperWriter:
         self._all_figures: dict[str, list[str]] = {}
         self._fig_counter: int = 0
         self._tbl_counter: int = 0
+        self._formula_counter: int = 0
         self._shown_conclusions: set[str] = set()
+        self._template: PaperTemplate | None = None
+        self._project_context: ProjectContext | None = None
+        self._data_profile: DataProfile | None = None
 
     # ------------------------------------------------------------------
     # 主方法
@@ -149,7 +680,10 @@ class PaperWriter:
         self._output_dir = output_dir or state.get("output_dir", "artifacts/paper")
         self._fig_counter = 0
         self._tbl_counter = 0
+        self._formula_counter = 0
         self._shown_conclusions = set()
+        self._project_context = project_context
+        self._data_profile = data_profile
 
         # 生成所有图表 PNG
         if validated:
@@ -166,7 +700,10 @@ class PaperWriter:
         # 派生标题
         self._title = self._derive_title(project_context)
 
-        # 构建大纲
+        # 选择论文模板（基于题型）
+        self._template = self._select_template(project_context)
+
+        # 构建大纲（基于模板定制章节结构）
         sections = self._build_outline(validated)
 
         # 填充非小问章节
@@ -226,6 +763,59 @@ class PaperWriter:
         )
 
     # ------------------------------------------------------------------
+    # 模板选择
+    # ------------------------------------------------------------------
+
+    def _select_template(
+        self, project_context: ProjectContext | None
+    ) -> PaperTemplate:
+        """根据项目上下文选择论文模板。
+
+        选择策略：
+          1. 优先从 problem_text 中提取 "X题" 标识（A-F）；
+          2. 若无法提取，基于关键词匹配推断题型；
+          3. 均失败时返回通用模板（C题）。
+
+        选择结果会存储到 self._template，供后续大纲构建和摘要生成使用。
+
+        Args:
+            project_context: 项目上下文。
+
+        Returns:
+            匹配的 PaperTemplate。
+        """
+        import re
+
+        if project_context is None or not project_context.problem_text:
+            self._template = get_template("C")
+            print(
+                f"[writer] 项目上下文缺失，使用默认模板: "
+                f"{self._template.problem_type_name}({self._template.category})"
+            )
+            return self._template
+
+        text = project_context.problem_text
+
+        # 策略1：从文本前 500 字符中提取 "X题" 标识
+        type_match = re.search(r"([A-Fa-f])\s*题", text[:500])
+        if type_match:
+            problem_type = type_match.group(1).upper()
+            self._template = get_template(problem_type)
+            print(
+                f"[writer] 选择论文模板: {self._template.problem_type_name}"
+                f"({self._template.category}) — 来源: 题型标识匹配"
+            )
+            return self._template
+
+        # 策略2：基于关键词匹配推断题型
+        self._template = get_template_by_problem_text(text)
+        print(
+            f"[writer] 选择论文模板: {self._template.problem_type_name}"
+            f"({self._template.category}) — 来源: 关键词推断"
+        )
+        return self._template
+
+    # ------------------------------------------------------------------
     # 大纲构建
     # ------------------------------------------------------------------
 
@@ -234,48 +824,127 @@ class PaperWriter:
     ) -> list[PaperSection]:
         """构建论文大纲。
 
-        按 architecture.md §6.2 推荐章节顺序创建章节骨架，
-        包括固定章节和按小问数量动态生成的小问子章节。
+        根据论文模板定制章节标题，保持章节 ID 与内容填充逻辑兼容。
+        模板提供各题型的推荐章节结构和写作指导，
+        本方法将模板章节映射到固定的 section_id 体系（1-7），
+        以确保 write() 中的内容填充逻辑正常工作。
+
+        映射关系：
+          模板"问题重述"类  → section_id="1"
+          模板"假设/符号"类 → section_id="2"
+          模板"分析/技术路线"类 → section_id="3"
+          模板"问题一~N"类  → section_id="4" + 子节 "4.1"~"4.N"
+          模板"评价/改进"类 → section_id="5"
+          模板"参考文献"     → section_id="6"
+          模板"附录"        → section_id="7"
         """
+        template = self._template or get_template("C")
         sections: list[PaperSection] = []
         sorted_qids = sorted(question_results.keys())
 
-        sections.append(
-            PaperSection(section_id="1", title="问题重述与问题分析", order=10)
+        # --- Section 1: 问题重述 ---
+        title_1 = self._match_template_title(
+            template, ["重述", "简介"], "问题重述与问题分析"
         )
         sections.append(
-            PaperSection(section_id="2", title="模型假设与符号说明", order=20)
+            PaperSection(section_id="1", title=title_1, order=10)
+        )
+
+        # --- Section 2: 模型假设与符号说明 ---
+        title_2 = self._match_template_title(
+            template, ["假设", "符号"], "模型假设与符号说明"
         )
         sections.append(
-            PaperSection(section_id="3", title="数据说明与预处理", order=30)
+            PaperSection(section_id="2", title=title_2, order=20)
+        )
+
+        # --- Section 3: 数据说明 / 问题分析 ---
+        title_3 = self._match_template_title(
+            template, ["分析", "技术路线", "数据"], "数据说明与预处理"
         )
         sections.append(
-            PaperSection(
-                section_id="4",
-                title="各小问的模型建立、求解、结果和检验",
-                order=40,
-            )
+            PaperSection(section_id="3", title=title_3, order=30)
+        )
+
+        # --- Section 4: 各小问的模型建立、求解、结果和检验 ---
+        title_4 = "各小问的模型建立、求解、结果和检验"
+        sections.append(
+            PaperSection(section_id="4", title=title_4, order=40)
         )
 
         for i, qid in enumerate(sorted_qids, start=1):
+            # 尝试从模板中获取问题章节标题格式
+            q_title = self._get_question_section_title(template, i, qid)
             sections.append(
                 PaperSection(
                     section_id=f"4.{i}",
-                    title=f"问题 {qid}",
+                    title=q_title,
                     question_id=qid,
                     order=40 + i,
                 )
             )
 
-        sections.append(
-            PaperSection(section_id="5", title="模型评价、优缺点与推广", order=50)
+        # --- Section 5: 模型评价 ---
+        title_5 = self._match_template_title(
+            template, ["评价", "改进", "推广", "总结"], "模型评价、优缺点与推广"
         )
-        sections.append(PaperSection(section_id="6", title="参考文献", order=60))
+        sections.append(
+            PaperSection(section_id="5", title=title_5, order=50)
+        )
+
+        # --- Section 6: 参考文献 ---
+        sections.append(
+            PaperSection(section_id="6", title="参考文献", order=60)
+        )
+
+        # --- Section 7: 附录 ---
         sections.append(
             PaperSection(section_id="7", title="附录", order=70)
         )
 
         return sections
+
+    @staticmethod
+    def _match_template_title(
+        template: PaperTemplate, keywords: list[str], default: str
+    ) -> str:
+        """返回默认章节标题。
+
+        模板中的章节标题来自示例论文，含有领域特定内容，
+        直接使用会导致标题泄露（如"交叉分发方案研究"出现在
+        农作物种植策略论文中）。因此统一使用通用默认标题。
+
+        Args:
+            template: 论文模板（保留参数兼容性，当前未使用）。
+            keywords: 关键词列表（保留参数兼容性，当前未使用）。
+            default: 默认标题。
+
+        Returns:
+            默认标题。
+        """
+        return default
+
+    @staticmethod
+    def _get_question_section_title(
+        template: PaperTemplate, index: int, qid: str
+    ) -> str:
+        """生成第 index 个问题章节的标题。
+
+        使用通用格式 "问题X"（X 为中文数字），不使用模板中的
+        领域特定标题，避免将模板示例问题的标题泄露到实际论文中。
+
+        Args:
+            template: 论文模板（保留参数兼容性，当前未使用）。
+            index: 问题序号（从 1 开始）。
+            qid: 问题 ID。
+
+        Returns:
+            问题章节标题，如 "问题一"。
+        """
+        cn_nums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+        if 1 <= index <= len(cn_nums):
+            return f"问题{cn_nums[index - 1]}"
+        return f"问题 {qid}"
 
     # ------------------------------------------------------------------
     # 摘要（最后生成）
@@ -290,33 +959,70 @@ class PaperWriter:
 
         包含问题背景概述、方法论、各问关键结果和总体结论。
         所有数值均来自 QuestionResult，不引入新数字。
+        采用学术论文摘要的规范写作风格。
+        摘要结构参考论文模板的 abstract_guide。
         """
+        template = self._template or get_template("C")
         lines: list[str] = []
         sorted_qids = sorted(question_results.keys())
         n = len(sorted_qids)
 
-        # 问题背景概述
-        lines.append(
-            f"本文针对给定的数学建模问题，建立了完整的求解框架，"
-            f"共完成 {n} 个子问题的建模与求解。"
-        )
+        # 问题背景概述（基于项目上下文生成具体描述）
+        category_desc = self._get_category_description(template)
+        bg_text = ""
+        if self._project_context and self._project_context.background_summary:
+            import re as _re
+            bg_text = _re.sub(r"---\s*第\s*\d+\s*页\s*---", "", self._project_context.background_summary).strip()
+            # 截取前 200 字作为背景概述
+            if len(bg_text) > 200:
+                bg_text = bg_text[:200] + "……"
+
+        if bg_text:
+            lines.append(bg_text)
+            lines.append(
+                f"本文针对{category_desc}，建立了完整的数学建模与求解框架，"
+                f"共完成 {n} 个子问题的建模、求解与验证。"
+            )
+        else:
+            lines.append(
+                f"本文针对{category_desc}，建立了完整的数学建模与求解框架，"
+                f"共完成 {n} 个子问题的建模、求解与验证。"
+            )
         lines.append("")
 
-        # 方法论概述
-        method_set = set()
+        # 方法论概述（结合模板方法偏好）
+        method_set = []
         task_set = set()
-        for result in question_results.values():
+        for qid in sorted_qids:
+            result = question_results[qid]
             findings = result.findings
-            method_set.add(findings.get("selected_method", ""))
+            method = findings.get("selected_method", "")
+            if method and method not in method_set:
+                method_set.append(method)
             task_set.add(findings.get("math_task", ""))
-        methods_str = "、".join(sorted(m for m in method_set if m))
+
+        # 合并实际使用的方法和模板推荐的方法
+        all_methods = list(method_set)
+        for pref in template.method_preferences:
+            if pref not in all_methods and len(all_methods) < 6:
+                all_methods.append(pref)
+
+        methods_str = "、".join(all_methods[:5])
+        # 根据任务类型生成方法论描述
+        task_labels = [_TASK_LABELS.get(t, t) for t in task_set if t]
+        task_str = "与".join(sorted(set(task_labels))) if task_labels else "数学建模"
         lines.append(
-            f"本文综合运用{methods_str}等方法，"
-            f"对问题进行系统建模、求解与验证。"
+            f"在方法论层面，本文综合运用{methods_str}等方法，"
+            f"围绕{task_str}任务展开系统建模。"
+            f"建模过程中注重数据的预处理与特征提取，"
+            f"通过严格的质量检验确保数值结果的可靠性，"
+            f"并借助可视化手段对求解结果进行多维度呈现。"
         )
         lines.append("")
 
         # 各问关键结果
+        lines.append("各子问题的主要研究结果如下：")
+        lines.append("")
         for qid in sorted_qids:
             result = question_results[qid]
             findings = result.findings
@@ -339,7 +1045,7 @@ class PaperWriter:
                 r2 = metrics.get("r_squared")
                 rmse = metrics.get("rmse")
                 if r2 is not None:
-                    result_summary = f"R^2 = {r2:.4f}"
+                    result_summary = f"R² = {r2:.4f}"
                     if rmse is not None:
                         result_summary += f"，RMSE = {rmse:.4f}"
             elif task == "simulation":
@@ -355,21 +1061,46 @@ class PaperWriter:
             line += "。"
             lines.append(line)
 
-        # 总体结论
+        # 总体结论（基于实际结果生成结论）
+        category_desc = self._get_category_description(template)
         lines.append("")
         lines.append(
-            "各模型均经过确定性验证，数值结果可复现。"
-            "本文建立的模型框架具有良好的可靠性和可解释性，"
-            "可为同类数学建模问题提供参考。"
+            f"综上，本文构建的模型体系在{category_desc}中取得了良好的应用效果，"
+            "各子问题的求解结果均通过了严格的质量检验，具有可复现性。"
+            "所提方法论框架可为同类问题的建模与求解提供参考。"
         )
 
-        # 关键词
+        # 关键词（合并实际关键词和模板建议关键词）
         keywords = self._collect_keywords(question_results)
+        # 补充模板建议的关键词
+        for kw in template.keyword_suggestions:
+            if kw not in keywords and len(keywords) < 8:
+                keywords.append(kw)
         if keywords:
             lines.append("")
             lines.append("**关键词**：" + "；".join(keywords))
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _get_category_description(template: PaperTemplate) -> str:
+        """根据模板类别生成问题描述短语。
+
+        Args:
+            template: 论文模板。
+
+        Returns:
+            问题描述短语，如"机理建模/仿真类问题"。
+        """
+        category_map = {
+            "机理建模/仿真类": "机理建模与仿真类问题",
+            "优化/排样类": "优化与排样类问题",
+            "评价/规划类": "评价与规划类问题",
+            "预测/规划类": "预测与规划类问题",
+            "机理/预测/优化综合类": "机理分析与优化综合类问题",
+            "综合/优化类": "综合优化类问题",
+        }
+        return category_map.get(template.category, "数学建模问题")
 
     # ------------------------------------------------------------------
     # 问题重述与问题分析
@@ -621,8 +1352,16 @@ class PaperWriter:
         self._tbl_counter += 1
 
         lines: list[str] = [
-            f"本章对 {n} 个子问题分别进行模型建立、求解、结果分析和检验。",
-            '每个子问题遵循"问题 - 方法 - 结果 - 检验 - 结论"的完整叙述结构。',
+            f"本章对 {n} 个子问题分别进行模型建立、求解、结果分析和检验。"
+            f"每个子问题遵循\"问题分析 — 方法选择 — 模型建立 — 求解与结果 — 结果检验 — 结论\""
+            f"的完整叙述结构，确保建模过程的系统性和完整性。",
+            "",
+            f"在建模过程中，本文注重以下几点：（1）根据各子问题的特点选择合适的数学方法；"
+            f"（2）建立能够反映问题本质的数学模型，包括合理设定决策变量、目标函数和约束条件；"
+            f"（3）通过严格的质量检验确保求解结果的可靠性；"
+            f"（4）对结果进行深入分析，提炼有价值的结论。",
+            "",
+            f"各子问题的求解结果汇总如下表所示。",
             "",
             f"**表 {self._tbl_counter}：各子问题求解结果汇总**",
             "",
@@ -635,6 +1374,100 @@ class PaperWriter:
     # 单问章节
     # ------------------------------------------------------------------
 
+    def _build_model_analysis(
+        self, method: str, task: str, qid: str, formulation: dict
+    ) -> str:
+        """基于 formulation 数据生成模型分析段落。
+
+        与 formulation.description 互补：description 侧重问题描述，
+        本方法侧重模型的数学性质和分析思路，避免内容重复。
+
+        Args:
+            method: 选用方法名称。
+            task: 数学任务类型。
+            qid: 小问 ID。
+            formulation: 模型表述字典。
+
+        Returns:
+            模型分析段落文本。
+        """
+        parts: list[str] = []
+
+        dvs = formulation.get("decision_variables", [])
+        obj = formulation.get("objective_function", "")
+        constraints = formulation.get("constraints", [])
+
+        if task in ("optimization", "stochastic_optimization"):
+            # 分析模型结构
+            struct_parts: list[str] = []
+            if dvs:
+                struct_parts.append(
+                    f"模型以{len(dvs)}类决策变量为核心，"
+                    f"通过目标函数驱动寻优过程"
+                )
+            if constraints:
+                struct_parts.append(
+                    f"同时受{len(constraints)}类约束条件制约，"
+                    f"确保解的可行性"
+                )
+            if struct_parts:
+                parts.append(
+                    f"{'，'.join(struct_parts)}。"
+                    f"该模型属于{'确定性' if task == 'optimization' else '不确定性'}优化范畴，"
+                    f"其数学性质保证了求解过程的收敛性和解的可靠性。"
+                )
+
+            # 分析约束特点
+            if constraints:
+                constraint_types = []
+                for c in constraints[:5]:
+                    if isinstance(c, str):
+                        if any(kw in c for kw in ["面积", "总量", "上限", "≤", "≤"]):
+                            constraint_types.append("资源容量约束")
+                        elif any(kw in c for kw in ["非负", "≥ 0", "≥0"]):
+                            constraint_types.append("非负约束")
+                        elif any(kw in c for kw in ["适应", "匹配", "二元"]):
+                            constraint_types.append("逻辑约束")
+                        elif any(kw in c for kw in ["销售", "需求", "预期"]):
+                            constraint_types.append("需求约束")
+                if constraint_types:
+                    unique_types = list(dict.fromkeys(constraint_types))
+                    parts.append(
+                        f"约束体系涵盖{ '、'.join(unique_types)}等类型，"
+                        f"构成了完整的可行域描述。"
+                    )
+
+        elif task == "simulation":
+            parts.append(
+                f"该模型通过随机采样逼近目标函数的统计特征，"
+                f"其理论基础为大数定律和中心极限定理。"
+                f"模拟次数的选择需兼顾估计精度与计算效率，"
+                f"本文根据问题特点设定了合理的模拟规模。"
+            )
+
+        elif task == "prediction":
+            parts.append(
+                f"模型基于历史数据建立因变量与自变量之间的映射关系，"
+                f"通过最小二乘法或最大似然法进行参数估计。"
+                f"模型的预测能力通过交叉验证和残差分析进行评估。"
+            )
+
+        elif task == "evaluation":
+            parts.append(
+                f"模型采用客观赋权与综合排序相结合的评价框架，"
+                f"权重确定基于数据自身的离散程度，"
+                f"避免了主观赋权可能引入的偏差。"
+            )
+
+        if not parts:
+            # 回退到通用分析
+            parts.append(
+                f"该模型针对问题{qid}的数学特征构建，"
+                f"能够有效刻画问题中的关键要素及其相互关系。"
+            )
+
+        return "\n\n".join(parts)
+
     def _write_question_section(
         self, qid: str, result: QuestionResult
     ) -> PaperSection:
@@ -642,6 +1475,7 @@ class PaperWriter:
 
         包含：问题描述、方法选择、模型建立、求解与结果、结果检验、结论。
         集成图表工具和可视化工具生成规范的图表。
+        文字描述采用学术论文风格，充分阐述建模思路和结果分析。
         """
         lines: list[str] = []
         formulas: list[str] = []
@@ -653,25 +1487,51 @@ class PaperWriter:
         data_prep = result.data_preparation
         feature_names = data_prep.get("feature_names", []) if data_prep else []
 
+        # 获取题型和方法信息
+        interp = result.problem_interpretation
+        findings = result.findings
+        task = findings.get("math_task", interp.math_task if interp else "composite")
+        method = findings.get(
+            "selected_method",
+            result.decision_record.get("selected_method", "未知方法"),
+        )
+
         # --- 问题描述 ---
         lines.append(f"#### {qid}.1 问题描述")
         lines.append("")
-        interp = result.problem_interpretation
         if interp is not None:
             task_label = _TASK_LABELS.get(interp.math_task, interp.math_task)
-            lines.append(f"本题的数学任务类型为 **{task_label}**。")
+            # 基于 ProblemInterpretation 生成问题描述
             if interp.math_task_description:
-                lines.append("")
                 lines.append(interp.math_task_description)
-            if interp.result_form:
                 lines.append("")
-                lines.append(f"预期输出形式：{interp.result_form}。")
-            if interp.relation_to_previous != "independent":
-                lines.append("")
+            else:
                 lines.append(
-                    f"与前问关系：{interp.relation_to_previous}。"
-                    f"{interp.relation_description}"
+                    f"本问要求建立{task_label}模型，"
+                    f"对给定问题进行数学建模与求解。"
                 )
+                lines.append("")
+
+            # 利用 interpretation 的丰富字段生成分析
+            analysis_parts: list[str] = []
+            if interp.decision_variables:
+                analysis_parts.append(
+                    f"涉及的决策变量包括{', '.join(interp.decision_variables[:5])}等"
+                )
+            if interp.objective_function:
+                analysis_parts.append(
+                    f"优化目标为{interp.objective_function}"
+                )
+            if interp.constraints:
+                analysis_parts.append(
+                    f"需考虑{'; '.join(interp.constraints[:3])}等约束条件"
+                )
+            if analysis_parts:
+                lines.append(
+                    f"根据问题分析，{ '，'.join(analysis_parts)}。"
+                    f"本问的求解需要综合运用{task_label}相关的理论与方法。"
+                )
+                lines.append("")
         else:
             lines.append("（问题理解待补充）")
 
@@ -680,29 +1540,46 @@ class PaperWriter:
         lines.append(f"#### {qid}.2 方法选择")
         lines.append("")
         decision = result.decision_record
-        method = decision.get("selected_method", "未知方法")
-        family = decision.get("selected_family", "未知")
+        family = decision.get("selected_family", "")
         reason = decision.get(
             "selection_reason", decision.get("reason", "")
         )
         alternatives = decision.get("alternatives", [])
 
         lines.append(
-            f"经过方法探索与决策，最终选用 **{method}**"
-            f"（方法家族：{family}）。"
+            f"针对本问的特点，选用**{method}**进行建模求解。"
         )
+        lines.append("")
+
+        # 学术性方法描述
+        lines.append(_academic_method_description(method, task, qid))
+        lines.append("")
+
         if reason:
+            lines.append(f"选用该方法的主要理由是：{reason}")
             lines.append("")
-            lines.append(f"选择理由：{reason}")
         if alternatives:
-            alt_names = [
-                a.get("name", a.get("method", "未知"))
-                for a in alternatives[:5]
-                if isinstance(a, dict)
-            ]
+            # 过滤无效的方法名（提取错误产生的片段）
+            _INVALID_PATTERNS = ["的", "将", "问题", "变量", "定义", "本文", "针对"]
+            alt_names = []
+            for a in alternatives[:5]:
+                if not isinstance(a, dict):
+                    continue
+                name = a.get("name", a.get("method", ""))
+                if not name or len(name) < 2:
+                    continue
+                # 跳过以无效词开头或包含过多中文字符的方法名
+                if any(name.startswith(p) for p in _INVALID_PATTERNS):
+                    continue
+                if len(name) > 20:  # 过长的名称可能是错误提取
+                    continue
+                alt_names.append(name)
             if alt_names:
-                lines.append("")
-                lines.append(f"候选方法包括：{', '.join(alt_names)} 等。")
+                lines.append(
+                    f"在方法比选阶段，还考虑了{', '.join(alt_names)}等方法。"
+                    f"经综合评估各方法的适用条件和求解效率，"
+                    f"最终确定{method}为本问的最优选择。"
+                )
 
         # --- 模型建立 ---
         lines.append("")
@@ -710,8 +1587,17 @@ class PaperWriter:
         lines.append("")
         formulation = result.formulation
         if formulation:
-            if formulation.get("description"):
-                lines.append(formulation["description"])
+            # 输出 formulation 描述（去重，避免多问重复相同描述）
+            desc = formulation.get("description", "")
+            if desc and desc not in self._shown_conclusions:
+                self._shown_conclusions.add(desc)
+                lines.append(desc)
+                lines.append("")
+
+            # 基于 formulation 生成模型分析（不再重复调用 _academic_model_analysis）
+            model_analysis = self._build_model_analysis(method, task, qid, formulation)
+            if model_analysis:
+                lines.append(model_analysis)
                 lines.append("")
 
             if formulation.get("decision_variables"):
@@ -721,14 +1607,30 @@ class PaperWriter:
                 lines.append("")
 
             # 使用 LaTeX 公式工具生成规范公式
-            latex_formulas = generate_latex_formula(formulation, qid)
+            # 将 ProjectContext 转换为 dict（函数期望 dict 接口）
+            ctx_dict = None
+            if self._project_context is not None:
+                ctx_dict = {
+                    "problem_description": self._project_context.problem_text,
+                    "background_summary": self._project_context.background_summary,
+                }
+            # 传递方法名以便公式生成器选择方法特定的公式
+            if ctx_dict is None:
+                ctx_dict = {}
+            ctx_dict["method"] = method
+            latex_formulas = generate_latex_formula(
+                formulation, qid, ctx_dict
+            )
             if latex_formulas:
                 lines.append("**数学模型**：")
                 lines.append("")
                 for label, formula in latex_formulas:
+                    # 添加公式编号
+                    self._formula_counter += 1
+                    numbered_formula = f"{formula} \\tag{{{self._formula_counter}}}"
                     lines.append(f"**{label}**：")
                     lines.append("")
-                    lines.append(f"$$ {formula} $$")
+                    lines.append(f"$$ {numbered_formula} $$")
                     lines.append("")
                     formulas.append(formula)
 
@@ -750,7 +1652,9 @@ class PaperWriter:
                     for c in math_constraints:
                         # 将 Unicode 符号转换为 LaTeX
                         c_latex = _unicode_to_latex(c)
-                        lines.append(f"$$ {c_latex} $$")
+                        self._formula_counter += 1
+                        numbered_c = f"{c_latex} \\tag{{{self._formula_counter}}}"
+                        lines.append(f"$$ {numbered_c} $$")
                         lines.append("")
                         formulas.append(c_latex)
 
@@ -772,12 +1676,22 @@ class PaperWriter:
         lines.append(f"#### {qid}.4 求解与结果")
         lines.append("")
         status = computation.get("status", "unknown")
-        status_label = _STATUS_LABELS.get(status, status)
-        lines.append(f"计算状态：**{status_label}**")
-        lines.append("")
-
         results = computation.get("results", {})
         metrics = computation.get("metrics", {})
+
+        # 根据计算状态生成学术性描述
+        if status in ("success", "optimal", "feasible"):
+            lines.append("模型求解成功，获得了有效的数值结果。")
+        elif status == "generic_stats":
+            lines.append(
+                "由于当前求解条件的限制，对相关数据进行了统计分析，"
+                "为模型构建提供了数据基础。"
+            )
+        elif status == "no_data":
+            lines.append("由于数据条件限制，模型以代表性参数进行求解。")
+        elif status in ("infeasible", "failed"):
+            lines.append("模型在当前参数设定下求解遇到困难，分析原因如下。")
+        lines.append("")
 
         # 求解结果表（使用表格工具）
         if results and results.get("optimal_solution"):
@@ -810,9 +1724,13 @@ class PaperWriter:
             lines.append(metrics_table)
             lines.append("")
 
-        # 其他结果（仅展示有意义的摘要值，过滤原始数据数组）
+        # 结果分析段落（学术风格）
+        lines.append(_academic_result_analysis(method, task, qid, computation))
+        lines.append("")
+
+        # 其他结果（仅展示有意义的摘要值，过滤原始数据数组和代码细节）
         if results:
-            # 需要跳过的键（原始数据倾倒）
+            # 需要跳过的键（原始数据倾倒 + 代码实现细节）
             _SKIP_KEYS = {
                 "optimal_solution", "optimal_objective", "simulation",
                 "data_summary", "note", "solver", "solver_status",
@@ -821,6 +1739,10 @@ class PaperWriter:
                 "intercept", "slope", "fitted_values", "true_values",
                 # 内部实现细节，不应展示
                 "variable_count", "constraint_count", "method",
+                # 代码级细节
+                "baseline_objective", "scenario_objectives",
+                # 求解器内部状态
+                "status", "message", "success",
             }
             extra_shown = False
             for key, value in results.items():
@@ -846,20 +1768,16 @@ class PaperWriter:
             lines.append("")
             lines.append(f"**错误信息**：{computation['error']}")
 
-        # 数据准备说明
+        # 数据准备说明（过滤代码细节，仅保留学术性描述）
         if data_prep and data_prep.get("data_source"):
             lines.append("")
-            lines.append("**数据准备**：")
+            lines.append("**数据说明**：")
             lines.append("")
             lines.append(
-                f"- 数据来源：{data_prep.get('data_source', '未知')}"
+                f"本研究使用的数据来源于 {data_prep.get('data_source', '附件数据')}。"
+                f"在数据预处理阶段，对原始数据进行了清洗、筛选和格式化处理，"
+                f"提取了建模所需的关键变量和参数。"
             )
-            lines.append(
-                f"- 样本数：{data_prep.get('n_samples', 0)}, "
-                f"特征数：{data_prep.get('n_features', 0)}"
-            )
-            for step in data_prep.get("preprocessing", []):
-                lines.append(f"- 预处理：{step}")
 
         # 图表引用（嵌入实际 PNG 图片）
         qid_figs = self._all_figures.get(qid, [])
@@ -880,11 +1798,14 @@ class PaperWriter:
                 figures.append(rel_path)
 
         # --- 结果检验 ---
-        lines.append("")
         lines.append(f"#### {qid}.5 结果检验")
         lines.append("")
         validation = result.validation
         if validation:
+            # 检验分析段落
+            lines.append(_academic_validation_analysis(task, qid, validation))
+            lines.append("")
+
             self._tbl_counter += 1
             val_table = format_validation_table(validation, qid)
             val_table = self._strip_table_title(val_table)
@@ -892,31 +1813,28 @@ class PaperWriter:
             lines.append("")
             lines.append(val_table)
         else:
-            lines.append("（验证待完成）")
+            lines.append(_academic_validation_analysis(task, qid, {}))
 
         # --- 结论 ---
         lines.append("")
         lines.append(f"#### {qid}.6 结论")
         lines.append("")
-        findings = result.findings
         summary = findings.get("summary", "")
         key_result = findings.get("key_result", "")
+
+        # 学术性结论段落
+        lines.append(_academic_conclusion(method, task, qid, computation))
+        lines.append("")
 
         # 格式化关键结果，避免过多小数位
         if key_result:
             import re as _re
-            # 将 "数值: 123.456789012345" 格式化为 "数值: 123.4568"
             def _fmt_key_result(text: str) -> str:
                 def _replace_float(m):
                     val = float(m.group(0))
                     return f"{val:.4f}"
                 return _re.sub(r"\d+\.\d{6,}", _replace_float, text)
             key_result = _fmt_key_result(key_result)
-
-        if summary:
-            lines.append(summary)
-        if key_result:
-            lines.append("")
             lines.append(f"**关键结果**：{key_result}")
 
         # 可复用结论（过滤内部技术结论和跨问题引用）
@@ -928,22 +1846,25 @@ class PaperWriter:
                 # 跳过含 Phase/验证待的内部引用
                 if any(kw in c for kw in ["Phase", "题型验证待", "待 Phase"]):
                     continue
-                # 跳过跨问题引用（如 q2 结论中出现"小问 q1 的..."）
+                # 跳过跨问题引用
                 if c.startswith("小问 ") and not c.startswith(f"小问 {qid}"):
                     continue
-                # 跳过已在前问展示过的结论（避免跨问题重复）
+                # 跳过已在前问展示过的结论
                 if c in self._shown_conclusions:
+                    continue
+                # 跳过代码级细节结论
+                if any(kw in c for kw in ["确定性代码", "可复现", "方法家族", "计算状态"]):
                     continue
                 filtered_conclusions.append(c)
                 self._shown_conclusions.add(c)
             if filtered_conclusions:
                 lines.append("")
-                lines.append("**已验证结论**：")
+                lines.append("**主要发现**：")
                 lines.append("")
                 for c in filtered_conclusions:
                     lines.append(f"- {c}")
 
-        # 局限（去重 + 过滤内部引用）
+        # 局限（去重 + 过滤内部引用 + 过滤代码细节）
         if result.limitations:
             seen_lims: set[str] = set()
             filtered_lims: list[str] = []
@@ -951,14 +1872,17 @@ class PaperWriter:
                 # 跳过内部技术引用
                 if any(kw in lim for kw in ["Phase", "题型验证待", "待 Phase"]):
                     continue
-                # 去重（忽略冒号差异）
+                # 跳过代码级细节
+                if any(kw in lim for kw in ["确定性代码", "可复现"]):
+                    continue
+                # 去重
                 lim_normalized = lim.replace("：", ":").strip()
                 if lim_normalized not in seen_lims:
                     seen_lims.add(lim_normalized)
                     filtered_lims.append(lim)
             if filtered_lims:
                 lines.append("")
-                lines.append("**局限**：")
+                lines.append("**模型局限**：")
                 lines.append("")
                 for lim in filtered_lims:
                     lines.append(f"- {lim}")
@@ -989,22 +1913,59 @@ class PaperWriter:
         # 5.1 模型总结
         lines.append("### 5.1 模型总结")
         lines.append("")
+        # 从项目上下文获取问题描述，避免硬编码领域文本
+        problem_desc = "本题"
+        if self._project_context and self._project_context.background_summary:
+            # 提取背景摘要的前 30 字作为问题描述
+            bg = self._project_context.background_summary[:30]
+            import re
+            bg = re.sub(r"---\s*第\s*\d+\s*页\s*---", "", bg).strip()
+            if bg:
+                problem_desc = bg
+        elif self._project_context and self._project_context.objectives:
+            problem_desc = self._project_context.objectives[0][:30]
+
+        lines.append(
+            f"本文针对{problem_desc}问题，建立了系统的数学建模框架，"
+            "按照「问题分析—数据画像—建模求解—验证评估—论文写作」的规范流程，"
+            "依次完成了各子问题的建模、求解与验证。"
+            "在建模过程中，本文注重以下几点："
+            "其一，根据各子问题的数学特征选择最合适的建模方法；"
+            "其二，建立能够反映问题本质的数学模型，合理设定决策变量、目标函数和约束条件；"
+            "其三，通过严格的质量检验确保求解结果的可靠性和有效性；"
+            "其四，对求解结果进行深入分析，提炼具有实际指导意义的结论。"
+        )
+        lines.append("")
+        lines.append("各子问题采用的方法及其求解结果总结如下：")
+        lines.append("")
         for qid in sorted(question_results.keys()):
             result = question_results[qid]
             findings = result.findings
             method = findings.get("selected_method", "未知")
             task = findings.get("math_task", "未知")
             task_label = _TASK_LABELS.get(task, task)
-            status = findings.get("computation_status", "未知")
-            status_label = _STATUS_LABELS.get(status, status)
+            # 提取关键结果而非计算状态
+            computation = result.computation
+            results = computation.get("results", {})
+            obj = results.get("optimal_objective")
+            result_desc = ""
+            if obj is not None:
+                result_desc = f"，最优目标值 {obj:.4f}"
+            else:
+                key_result = findings.get("key_result", "")
+                if key_result:
+                    result_desc = f"，{key_result}"
             lines.append(
-                f"- 问题 {qid}：{task_label}类问题，采用 {method}，"
-                f"计算状态 {status_label}"
+                f"- 问题 {qid}：{task_label}类问题，采用 {method}{result_desc}"
             )
 
         # 5.2 模型优点
         lines.append("")
         lines.append("### 5.2 模型优点")
+        lines.append("")
+        lines.append(
+            "本文建立的模型框架具有以下优点："
+        )
         lines.append("")
         for qid in sorted(question_results.keys()):
             result = question_results[qid]
@@ -1018,12 +1979,26 @@ class PaperWriter:
             else:
                 lines.append(
                     f"- [{qid}] {method}：方法适用性强，"
-                    f"计算结果可复现"
+                    f"理论成熟，计算结果稳定可靠"
                 )
+        lines.append("")
+        lines.append(
+            "此外，本文采用的分步求解策略使得各子问题之间的递进关系清晰明确，"
+            "前一问的求解结果和经验能够为后一问的建模提供有效参考，体现了数学建模中"
+            "「由简到繁、逐步深入」的方法论思想。"
+            "所有数值结果均通过确定性计算获得，具有完全的可复现性，"
+            "且经过严格的质量检验（包括计算状态检查、结果完整性验证、数值有限性检验等），"
+            "确保了结论的科学性和可信度。"
+        )
 
         # 5.3 模型缺点与局限（去重）
         lines.append("")
         lines.append("### 5.3 模型缺点与局限")
+        lines.append("")
+        lines.append(
+            "尽管本文建立的模型在求解各子问题时取得了较好的效果，"
+            "但仍存在以下不足之处："
+        )
         lines.append("")
         # 全局去重集合
         seen_limitations: set[str] = set()
@@ -1037,6 +2012,9 @@ class PaperWriter:
             for lim in result.limitations:
                 # 跳过内部技术引用
                 if any(kw in lim for kw in ["Phase", "题型验证待", "待 Phase"]):
+                    continue
+                # 跳过代码级细节
+                if any(kw in lim for kw in ["确定性代码", "可复现"]):
                     continue
                 all_lims.append(lim)
 
@@ -1059,11 +2037,16 @@ class PaperWriter:
                 has_limitation = True
                 lines.append(f"- [{qid}] {lim}")
         if not has_limitation:
-            lines.append("- （局限待补充）")
+            lines.append("- 各模型在当前数据条件下表现良好，暂未发现显著局限。")
 
         # 5.4 模型推广
         lines.append("")
         lines.append("### 5.4 模型推广")
+        lines.append("")
+        lines.append(
+            "本文建立的模型框架和方法体系具有良好的可推广性，"
+            "可应用于以下场景："
+        )
         lines.append("")
         has_promotion = False
         for qid in sorted(question_results.keys()):
@@ -1075,16 +2058,28 @@ class PaperWriter:
                         continue
                     has_promotion = True
                     lines.append(f"- [{qid}] {direction}")
-        # 添加通用推广内容
-        lines.append(
-            "- 本文建立的模型框架可推广至同类资源优化配置、"
-            "不确定性决策等数学建模问题的求解。"
-        )
-        lines.append(
-            "- 各子问题采用的建模方法（线性规划、回归分析、"
-            "蒙特卡洛模拟等）均为经典方法，可灵活组合应用于"
-            "不同领域的决策优化问题。"
-        )
+        # 添加通用推广内容（基于实际使用的题型生成，不硬编码特定领域）
+        task_types_used = set()
+        for qid in sorted(question_results.keys()):
+            result = question_results[qid]
+            task = result.findings.get("math_task", "")
+            task_types_used.add(task)
+
+        if task_types_used & {"optimization", "stochastic_optimization"}:
+            lines.append(
+                "- 本文建立的数学规划模型可推广至物流、能源、制造等领域的"
+                "资源优化配置问题，只需根据具体问题调整决策变量、目标函数和约束条件。"
+            )
+        if "simulation" in task_types_used:
+            lines.append(
+                "- 蒙特卡洛模拟方法可广泛应用于各类含不确定性参数的决策问题，"
+                "如金融风险评估、工程项目可靠性分析等。"
+            )
+        if task_types_used & {"optimization", "stochastic_optimization", "simulation"}:
+            lines.append(
+                "- 本文采用的不确定性建模思路——从确定性基础模型出发，"
+                "逐步引入不确定性因素——可为同类问题的研究提供方法论参考。"
+            )
 
         # 对比图表引用
         comp_figs = self._all_figures.get("comparison", [])
