@@ -21,7 +21,9 @@ dependencies = [
     "tenacity",
     "openpyxl",
     "pytest",
-    "pytest-asyncio"
+    "pytest-asyncio",
+    "python-docx",
+    "tavily-python"
 ]
 
 [tool.pytest.ini_options]

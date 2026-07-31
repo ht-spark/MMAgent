@@ -1468,6 +1468,81 @@ class PaperWriter:
 
         return "\n\n".join(parts)
 
+    def _professional_method_rationale(
+        self, qid: str, method: str, task: str, result: QuestionResult
+    ) -> str:
+        """Build a concise method-fit paragraph for one question."""
+        task_label = _TASK_LABELS.get(task, task)
+        data_prep = result.computation.get("data_preparation", {})
+        data_source = data_prep.get("data_source", "")
+        source_text = (
+            f"数据来源为{data_source}，"
+            if data_source
+            else "结合题目条件与已整理的数据结构，"
+        )
+        return (
+            f"从建模目标看，问题{qid}不仅需要给出可计算结果，还需要保证模型假设、变量含义与约束条件能够被追溯。"
+            f"{source_text}本文将该问抽象为{task_label}问题，并采用{method}作为主要求解框架。"
+            f"该处理方式能够在保持数学表达清晰的同时，将参数估计、模型求解和结果检验纳入同一分析链条，"
+            f"有利于后续对结果的稳定性和可解释性进行讨论。"
+        )
+
+    def _professional_formula_lead(self, qid: str, formulation: dict) -> str:
+        """Build a lead-in paragraph before formula display."""
+        variables = formulation.get("decision_variables") or []
+        parameters = formulation.get("parameters") or {}
+        variable_text = (
+            f"其中，核心决策变量包括{', '.join(variables[:4])}；"
+            if variables
+            else "其中，变量和参数均由题意约束及数据字段确定；"
+        )
+        parameter_text = (
+            f"参数体系主要由{', '.join(list(parameters.keys())[:4])}等量刻画。"
+            if parameters
+            else "相关参数在数据预处理和模型计算阶段统一给定。"
+        )
+        return (
+            f"为保证问题{qid}的模型表述具有可复现性，本文将目标函数、约束条件和关键变量统一写成数学形式。"
+            f"{variable_text}{parameter_text}"
+        )
+
+    def _professional_solution_lead(
+        self, qid: str, method: str, status: str, computation: dict
+    ) -> str:
+        """Build a polished solving paragraph based on computation status."""
+        results = computation.get("results", {})
+        metrics = computation.get("metrics", {})
+        evidence = []
+        if results:
+            evidence.append("求解结果")
+        if metrics:
+            evidence.append("评价指标")
+        evidence_text = "、".join(evidence) if evidence else "中间计算记录"
+
+        if status in ("success", "optimal", "feasible"):
+            return (
+                f"基于上述{method}模型，本文按照“数据整理-参数确定-模型求解-结果校验”的流程完成问题{qid}的计算。"
+                f"本节展示的{evidence_text}均由模型计算过程直接生成，避免在论文写作阶段对数值结论进行主观修饰。"
+            )
+        if status == "generic_stats":
+            return (
+                f"在当前可获得数据和求解条件下，问题{qid}首先进行描述性统计与结构化整理，"
+                f"以提取后续建模所需的尺度、分布和变化特征。"
+            )
+        if status == "no_data":
+            return (
+                f"由于问题{qid}缺少足够的外部观测数据，本文采用题目条件和代表性参数完成模型演算，"
+                f"并在结论部分明确该结果依赖的前提范围。"
+            )
+        if status in ("infeasible", "failed"):
+            return (
+                f"问题{qid}在当前参数与约束设定下未能直接得到可行解，因此本文将求解状态、冲突来源和可能的约束调整方向一并列出，"
+                f"以避免将不可行计算误写为确定性结论。"
+            )
+        return (
+            f"问题{qid}已完成模型计算，本节从结果表、关键指标和检验信息三个层面呈现求解过程。"
+        )
+
     def _write_question_section(
         self, qid: str, result: QuestionResult
     ) -> PaperSection:
@@ -1554,6 +1629,8 @@ class PaperWriter:
         # 学术性方法描述
         lines.append(_academic_method_description(method, task, qid))
         lines.append("")
+        lines.append(self._professional_method_rationale(qid, method, task, result))
+        lines.append("")
 
         if reason:
             lines.append(f"选用该方法的主要理由是：{reason}")
@@ -1622,6 +1699,8 @@ class PaperWriter:
                 formulation, qid, ctx_dict
             )
             if latex_formulas:
+                lines.append(self._professional_formula_lead(qid, formulation))
+                lines.append("")
                 lines.append("**数学模型**：")
                 lines.append("")
                 for label, formula in latex_formulas:
@@ -1680,17 +1759,19 @@ class PaperWriter:
         metrics = computation.get("metrics", {})
 
         # 根据计算状态生成学术性描述
+        lines.append(self._professional_solution_lead(qid, method, status, computation))
+        lines.append("")
         if status in ("success", "optimal", "feasible"):
-            lines.append("模型求解成功，获得了有效的数值结果。")
+            lines.append("计算结果表明，模型在当前数据与约束条件下能够形成稳定的数值输出。")
         elif status == "generic_stats":
             lines.append(
-                "由于当前求解条件的限制，对相关数据进行了统计分析，"
-                "为模型构建提供了数据基础。"
+                "统计结果用于刻画样本的基本分布和变量关系，"
+                "为后续模型解释提供量化依据。"
             )
         elif status == "no_data":
-            lines.append("由于数据条件限制，模型以代表性参数进行求解。")
+            lines.append("因此，相关结论应理解为在代表性参数假设下的模型推演结果。")
         elif status in ("infeasible", "failed"):
-            lines.append("模型在当前参数设定下求解遇到困难，分析原因如下。")
+            lines.append("该结果提示当前约束体系或参数组合存在需要进一步放松或校准的部分。")
         lines.append("")
 
         # 求解结果表（使用表格工具）

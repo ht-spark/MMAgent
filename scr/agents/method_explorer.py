@@ -329,10 +329,38 @@ class MethodExplorer:
             print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
             return candidates
         except Exception as e:
-            print(f"[explorer] LLM 提取失败，回退到启发式: {e}")
+            print(f"[explorer] LLM 结构化提取失败，尝试 JSON 文本提取: {e}")
+            candidates = self._llm_extract_methods_as_json(prompt)
+            if candidates:
+                print(f"[explorer] LLM JSON 提取: {len(candidates)} 个方法候选")
+                return candidates
+
+            print("[explorer] LLM JSON 提取失败，回退到启发式")
             return self._search_tool.extract_method_candidates(
                 search_results, math_task
             )
+
+    def _llm_extract_methods_as_json(self, prompt: str) -> list[WebMethodCandidate]:
+        """Retry method extraction without provider-native response_format."""
+        json_prompt = (
+            f"{prompt}\n\n"
+            "请只返回一个 JSON 对象，不要添加解释、Markdown 标题或额外文本。"
+            "JSON 顶层必须是 {\"candidates\": [...]}。"
+        )
+        try:
+            response = self._llm.invoke(json_prompt)
+            content = getattr(response, "content", response)
+            data = _extract_json_object(str(content))
+            if data is None:
+                return []
+            try:
+                parsed = WebMethodCandidateList.model_validate(data)
+            except AttributeError:
+                parsed = WebMethodCandidateList.parse_obj(data)
+            return parsed.candidates
+        except Exception as e:
+            print(f"[explorer] LLM JSON 提取失败: {e}")
+            return []
 
     @staticmethod
     def _format_search_results(results: list[dict]) -> str:
@@ -398,6 +426,28 @@ class MethodExplorer:
         for key, value in kwargs.items():
             result = result.replace(f"{{{key}}}", str(value))
         return result
+
+
+def _extract_json_object(text: str) -> dict | None:
+    """Extract the first JSON object from an LLM text response."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    decoder = json.JSONDecoder()
+    for start in [i for i, ch in enumerate(cleaned) if ch == "{"]:
+        try:
+            obj, _ = decoder.raw_decode(cleaned[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
 
 
 # ---------------------------------------------------------------------------

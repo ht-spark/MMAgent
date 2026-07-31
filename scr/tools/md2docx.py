@@ -255,6 +255,7 @@ class _LatexParser:
         r"\arcsin": "arcsin", r"\arccos": "arccos", r"\arctan": "arctan",
         r"\sup": "sup", r"\inf": "inf", r"\arg": "arg", r"\deg": "deg",
         r"\det": "det", r"\dim": "dim", r"\gcd": "gcd", r"\lim": "lim",
+        r"\top": "T",
     }
 
     def __init__(self, text: str):
@@ -334,7 +335,7 @@ class _LatexParser:
 
         # 反斜杠命令
         if ch == "\\":
-            return self._parse_command()
+            return self._parse_script_chain(self._parse_command())
 
         # 下标 _
         if ch == "_":
@@ -349,9 +350,71 @@ class _LatexParser:
             content = self._read_braced_group()
             sub_parser = _LatexParser(content)
             inner_parts = sub_parser.parse()
-            return "".join(inner_parts)
+            return self._parse_script_chain("".join(inner_parts))
 
         # 普通字符
+        self.pos += 1
+        return self._parse_script_chain(self._make_run(ch))
+
+    def _parse_script_chain(self, base: str) -> str:
+        """Attach following _ and ^ markers to the parsed base atom."""
+        if not base:
+            return base
+
+        while self.pos < self.n and self.text[self.pos] in "_^":
+            sub_omml = ""
+            sup_omml = ""
+
+            while self.pos < self.n and self.text[self.pos] in "_^":
+                marker = self.text[self.pos]
+                self.pos += 1
+                script = self._read_script_omml()
+                if marker == "_":
+                    sub_omml = script
+                else:
+                    sup_omml = script
+
+            if sub_omml and sup_omml:
+                base = (
+                    f'<m:sSubSup xmlns:m="{self.M_NS}">'
+                    f'<m:e>{base}</m:e>'
+                    f'<m:sub>{sub_omml}</m:sub>'
+                    f'<m:sup>{sup_omml}</m:sup>'
+                    f'</m:sSubSup>'
+                )
+            elif sub_omml:
+                base = (
+                    f'<m:sSub xmlns:m="{self.M_NS}">'
+                    f'<m:e>{base}</m:e>'
+                    f'<m:sub>{sub_omml}</m:sub>'
+                    f'</m:sSub>'
+                )
+            elif sup_omml:
+                base = (
+                    f'<m:sSup xmlns:m="{self.M_NS}">'
+                    f'<m:e>{base}</m:e>'
+                    f'<m:sup>{sup_omml}</m:sup>'
+                    f'</m:sSup>'
+                )
+
+        return base
+
+    def _read_script_omml(self) -> str:
+        """Read the expression that follows _ or ^ as an OMML fragment."""
+        while self.pos < self.n and self.text[self.pos] in " \t":
+            self.pos += 1
+        if self.pos >= self.n:
+            return ""
+
+        if self.text[self.pos] == "{":
+            content = self._read_braced_group()
+            sub_parser = _LatexParser(content)
+            return "".join(sub_parser.parse())
+
+        if self.text[self.pos] == "\\":
+            return self._parse_command()
+
+        ch = self.text[self.pos]
         self.pos += 1
         return self._make_run(ch)
 
@@ -506,6 +569,9 @@ class _LatexParser:
             else:
                 upper = self.text[self.pos] if self.pos < self.n else ""
                 self.pos += 1
+
+        while self.pos < self.n and self.text[self.pos] in " \t\n":
+            self.pos += 1
 
         # 读取运算符后的表达式（一个原子）
         body = self._parse_atom()
@@ -741,9 +807,11 @@ class DocxBuilder:
                 if caption_style:
                     run.font.size = Pt(10.5)
             elif part.startswith("$") and part.endswith("$"):
-                run = paragraph.add_run(part)
-                run.italic = True
-                run.font.name = "Cambria Math"
+                formula = self._clean_formula_text(part)
+                if not self._append_omml_to_paragraph(paragraph, formula):
+                    run = paragraph.add_run(self._latex_to_unicode(formula))
+                    run.font.name = "Cambria Math"
+                    run.font.size = Pt(12)
             elif part.startswith("`") and part.endswith("`"):
                 run = paragraph.add_run(part[1:-1])
                 run.font.name = "Consolas"
@@ -883,17 +951,10 @@ class DocxBuilder:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(8)
         p.paragraph_format.space_after = Pt(8)
+        formula_text = self._clean_formula_text(formula_text)
 
-        # 尝试将 LaTeX 转换为 OMML 并插入
-        omml_xml = self._latex_to_omml(formula_text)
-        if omml_xml:
-            try:
-                from lxml import etree
-                omath_element = etree.fromstring(omml_xml)
-                p._p.append(omath_element)
-                return
-            except Exception:
-                pass
+        if self._append_omml_to_paragraph(p, formula_text):
+            return
 
         # 回退：使用 Unicode 近似
         readable = self._latex_to_unicode(formula_text)
@@ -901,6 +962,29 @@ class DocxBuilder:
         run.font.name = "Cambria Math"
         run.font.size = Pt(12)
         run.italic = False
+
+    def _append_omml_to_paragraph(self, paragraph, formula_text: str) -> bool:
+        """Append a native Word math node to a paragraph."""
+        omml_xml = self._latex_to_omml(formula_text)
+        if not omml_xml:
+            return False
+        try:
+            paragraph._p.append(parse_xml(omml_xml))
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _clean_formula_text(formula_text: str) -> str:
+        """Remove Markdown math delimiters before LaTeX parsing."""
+        formula = formula_text.strip()
+        if formula.startswith("$$") and formula.endswith("$$"):
+            formula = formula[2:-2].strip()
+        elif formula.startswith("$") and formula.endswith("$"):
+            formula = formula[1:-1].strip()
+        if formula.startswith(r"\[") and formula.endswith(r"\]"):
+            formula = formula[2:-2].strip()
+        return re.sub(r"\s+", " ", formula).strip()
 
     # ------------------------------------------------------------------
     # LaTeX → OMML 递归下降解析器

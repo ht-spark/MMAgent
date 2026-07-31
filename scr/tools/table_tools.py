@@ -747,7 +747,7 @@ def _build_stochastic_formulas(
     # ----- 机会约束 -----
     formulas.append((
         "机会约束",
-        rf"P\left( g_i(\mathbf{x}, \boldsymbol{{\xi}}) \leq 0 \right) "
+        rf"P\left( g_i(\mathbf{{x}}, \boldsymbol{{\xi}}) \leq 0 \right) "
         rf"\geq 1 - \alpha, \quad \alpha = {alpha}, \; i = 1, \ldots, m",
     ))
 
