@@ -120,17 +120,21 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 当前源码位于 `scr/` 目录，使用以下命令运行：
 
 ```bash
-uv run python -m scr.math_modeling_agent.main run \
-  --problem examples/problem.md \
-  --data examples/附件1.xlsx examples/附件2.xlsx
+# 无 LLM 模式（确定性测试）
+python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx --no-llm
+
+# 有 LLM 模式（需配置 .env）
+python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx
 ```
 
 使用 LangGraph 演示编排：
 
 ```bash
-uv run python -m scr.math_modeling_agent.main run-graph \
-  --problem examples/problem.md \
-  --data examples/附件1.xlsx examples/附件2.xlsx
+# 无 LLM 模式（确定性测试）
+python -m scr.math_modeling_agent.main run-graph --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx --no-llm
+
+# 有 LLM 模式（需配置 .env）
+python -m scr.math_modeling_agent.main run-graph --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx
 ```
 
 不调用 LLM 的演示模式：

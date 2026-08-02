@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..agents.decomposition_fallback import (
+    fallback_subproblems_from_analysis,
+    short_error,
+)
 from ..schemas.context import DataProfile, ProjectContext, QuestionInfo
 from ..schemas.problem import ProblemAnalysis, SubProblem
 
@@ -127,7 +131,7 @@ def _run_problem_analysis(
     try:
         subproblems = analyst.decompose(analysis)
     except Exception as e:
-        print(f"[context] decompose 失败: {e}")
+        print(f"[context] decompose 结构化输出不可用，已自动降级: {short_error(e)}")
         subproblems = _create_fallback_subproblems(analysis)
     
     # 如果 decompose 返回空，使用应急子问题
@@ -275,21 +279,4 @@ def _create_fallback_subproblems(analysis: ProblemAnalysis) -> list[SubProblem]:
 
     确保 expected_outputs 非空，避免 G0 门因 expected_output_empty 失败。
     """
-    questions = analysis.explicit_questions or ["综合分析"]
-    subproblems: list[SubProblem] = []
-    for i, q in enumerate(questions, 1):
-        # 确保 expected_outputs 非空：优先用 analysis 的，否则生成默认值
-        if analysis.expected_outputs:
-            expected_outputs = analysis.expected_outputs[:3]
-        else:
-            expected_outputs = [f"问题{i}的计算结果与分析报告"]
-
-        subproblems.append(SubProblem(
-            id=f"q{i}",
-            task=q,
-            input_requirements=analysis.keywords[:3] if analysis.keywords else [],
-            expected_outputs=expected_outputs,
-            dependencies=[f"q{i-1}"] if i > 1 else [],
-            parallelizable=False,
-        ))
-    return subproblems
+    return fallback_subproblems_from_analysis(analysis)

@@ -95,6 +95,7 @@ def check_gq(state: dict) -> GateResult:
         comp_status = current_result.computation.get("status", "")
         if comp_status == "error":
             failed_checks.append("computation_error")
+        failed_checks.extend(_check_task_deliverables(current_result))
 
     # 检查: 完成题型相符的验证（Phase 5）
     if not current_result.validation:
@@ -227,3 +228,75 @@ def _build_gate_result(failed_checks: list[str], state: dict) -> GateResult:
         budget_used=retry_count,
         budget_remaining=0,
     )
+
+
+def _check_task_deliverables(result: QuestionResult) -> list[str]:
+    """Check task-specific minimum deliverables.
+
+    This prevents descriptive statistics from being treated as a solved model.
+    """
+    interp = result.problem_interpretation
+    if interp is None:
+        return []
+
+    task = interp.math_task
+    computation = result.computation or {}
+    status = computation.get("status", "")
+    results = computation.get("results", {}) or {}
+    metrics = computation.get("metrics", {}) or {}
+    intermediate = computation.get("intermediate_values", {}) or {}
+    failures: list[str] = []
+
+    if task in {
+        "evaluation",
+        "prediction",
+        "optimization",
+        "stochastic_optimization",
+        "simulation",
+    } and status == "generic_stats":
+        failures.append(f"{task}_generic_stats_not_sufficient")
+
+    if task == "evaluation":
+        if not any(k in results for k in ("weights", "scores", "ranking", "relative_closeness")):
+            failures.append("evaluation_outputs_missing")
+    elif task == "prediction":
+        has_predictions = any(k in results for k in ("predictions", "forecast", "fitted_values"))
+        has_error_metric = any(k in metrics for k in ("r_squared", "rmse", "mse", "mae", "mape"))
+        if not has_predictions or not has_error_metric:
+            failures.append("prediction_outputs_missing")
+    elif task == "optimization":
+        has_solution = any(k in results for k in ("optimal_solution", "best_solution", "decision_solution"))
+        has_objective = any(k in results for k in ("optimal_objective", "objective_value")) or "objective_value" in metrics
+        if not has_solution or not has_objective:
+            failures.append("optimization_solution_missing")
+    elif task == "stochastic_optimization":
+        has_scenario = (
+            any(k in results for k in (
+                "simulation",
+                "scenario_solutions",
+                "scenario_objectives",
+                "robust_solution",
+                "n_scenarios",
+            ))
+            or "scenario_objectives" in intermediate
+        )
+        has_risk_metric = any(k in metrics for k in ("expected_objective", "objective_std", "worst_case", "cvar"))
+        if not has_scenario or not has_risk_metric:
+            failures.append("stochastic_outputs_missing")
+    elif task == "simulation":
+        has_simulation = "simulation" in results or "n_simulations" in metrics
+        has_interval = (
+            "confidence_interval" in results
+            or "confidence_interval_90" in str(results)
+            or "confidence_interval" in metrics
+        )
+        if not has_simulation or not has_interval:
+            failures.append("simulation_outputs_missing")
+
+    formulation = result.formulation or {}
+    if task in {"optimization", "stochastic_optimization"}:
+        ir = formulation.get("ir", {})
+        if not ir or not ir.get("variables") or not ir.get("objective"):
+            failures.append("formulation_ir_incomplete")
+
+    return failures

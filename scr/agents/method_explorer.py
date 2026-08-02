@@ -27,6 +27,7 @@ from ..tools.tavily_search import (
     WebMethodCandidateList,
 )
 from .method_catalog import get_candidates_for_task
+from .method_registry import annotate_candidate
 
 
 class MethodExplorer:
@@ -80,6 +81,11 @@ class MethodExplorer:
         external_candidates = self._search_external_methods(context, interpretation)
         if external_candidates:
             candidates.extend(external_candidates)
+
+        candidates = [
+            annotate_candidate(c, math_task)
+            for c in candidates
+        ]
 
         # 硬过滤
         data_info = _extract_data_info(data_profile, context)
@@ -179,6 +185,10 @@ class MethodExplorer:
         decision = {
             "selected_method": selected["name"],
             "selected_family": selected.get("family", ""),
+            "canonical_method": selected.get("canonical_method", ""),
+            "canonical_family": selected.get("canonical_family", selected.get("family", "")),
+            "required_outputs": selected.get("required_outputs", []),
+            "validation_requirements": selected.get("validation_requirements", []),
             "selected_reason": _build_selection_reason(selected, interpretation, context),
             "alternatives": [
                 {

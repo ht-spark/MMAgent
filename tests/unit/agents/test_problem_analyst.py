@@ -227,6 +227,19 @@ class TestDecompose:
         analyst.decompose(sample_analysis)
         # 调用成功即说明 prompt 渲染正确（占位符被替换）
 
+    def test_decompose_falls_back_when_llm_output_unusable(self, sample_analysis):
+        """结构化分解不可用时，仍应返回可执行的通用子问题。"""
+        analyst = ProblemAnalyst(llm=FakeLLM())
+
+        result = analyst.decompose(sample_analysis)
+
+        assert len(result) == 2
+        assert result[0].id == "q1"
+        assert result[0].task.startswith("问题一")
+        assert result[0].expected_outputs
+        assert result[1].id == "q2"
+        assert result[1].expected_outputs
+
 
 # ---------------------------------------------------------------------------
 # classify 测试

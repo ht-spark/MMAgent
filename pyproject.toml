@@ -1,7 +1,7 @@
 [project]
 name = "MMAgent"
 version = "1.1.0"
-description = "用于数学建模题目的专用智能体"
+description = "通用数学建模竞赛智能体"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -21,7 +21,9 @@ from typing import Any
 import numpy as np
 
 from ..schemas.context import DataProfile
+from ..schemas.formulation import MODELING_TASKS, ConstraintIR, FormulationIR, VariableIR
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
+from .method_registry import CANONICAL_METHODS, canonicalize_method
 
 
 class ModelBuilder:
@@ -53,11 +55,12 @@ class ModelBuilder:
             包含 formulation, data_preparation, computation, figures, tables 的字典。
         """
         selected_method = decision_record.get("selected_method", "未知方法")
+        method_key = decision_record.get("canonical_method", "")
         math_task = interpretation.math_task
 
         # 步骤 1: 构建模型表述
         formulation = self._build_formulation(
-            selected_method, math_task, interpretation, context
+            selected_method, math_task, interpretation, context, method_key
         )
 
         # 步骤 2: 准备数据
@@ -67,7 +70,7 @@ class ModelBuilder:
 
         # 步骤 3: 执行计算
         computation = self._execute(
-            selected_method, math_task, data_preparation, formulation, context
+            selected_method, math_task, data_preparation, formulation, context, method_key
         )
 
         # 步骤 4: 生成输出
@@ -99,10 +102,12 @@ class ModelBuilder:
         math_task: str,
         interpretation: ProblemInterpretation,
         context: CurrentQuestionContext,
+        method_key: str = "",
     ) -> dict:
         """构建数学模型表述。"""
         formulation = {
             "method": method_name,
+            "method_key": method_key,
             "math_task": math_task,
             "decision_variables": [],
             "objective_function": "",
@@ -130,7 +135,130 @@ class ModelBuilder:
         else:
             formulation.update(self._formulation_composite(method_name, interpretation))
 
+        return self._attach_ir(formulation, method_name, math_task, interpretation, context, method_key)
+
+    def _attach_ir(
+        self,
+        formulation: dict,
+        method_name: str,
+        math_task: str,
+        interpretation: ProblemInterpretation,
+        context: CurrentQuestionContext,
+        method_key: str = "",
+    ) -> dict:
+        """Attach a generic modeling IR while preserving legacy fields."""
+        spec = CANONICAL_METHODS.get(method_key)
+        if spec is None:
+            spec = canonicalize_method(method_name, formulation.get("family", ""), math_task)
+        if spec is not None:
+            method_key = spec.key
+            formulation["method_key"] = spec.key
+            formulation["canonical_method"] = spec.key
+            formulation.setdefault("required_outputs", list(spec.required_outputs))
+            formulation.setdefault("validation_requirements", list(spec.validation_requirements))
+
+        variables = [
+            self._variable_ir_from_text(v)
+            for v in formulation.get("decision_variables", [])
+        ]
+        if not variables:
+            variables = self._default_variables_for_task(math_task)
+
+        constraints = [
+            ConstraintIR(expression=str(c), meaning=str(c), role=self._constraint_role(str(c)))
+            for c in formulation.get("constraints", [])
+        ]
+
+        objective = formulation.get("objective_function") or interpretation.objective_function
+        ir = FormulationIR(
+            question_id=context.question_id,
+            math_task=math_task if math_task in MODELING_TASKS else "composite",
+            method_key=method_key,
+            method_name=method_name,
+            sets=self._infer_sets(context, interpretation),
+            indices=self._infer_indices(context, interpretation),
+            parameters=formulation.get("parameters", {}),
+            variables=variables,
+            objective=objective,
+            objective_sense=self._objective_sense(objective, math_task),
+            constraints=constraints,
+            assumptions=list(interpretation.necessary_assumptions),
+            required_outputs=list(formulation.get("required_outputs", [])),
+            validation_requirements=list(formulation.get("validation_requirements", [])),
+        )
+        formulation["ir"] = ir.model_dump()
         return formulation
+
+    @staticmethod
+    def _variable_ir_from_text(text: str) -> VariableIR:
+        symbol, _, meaning = str(text).partition(":")
+        symbol = symbol.strip() or str(text).strip()
+        return VariableIR(symbol=symbol, meaning=meaning.strip(), domain="real")
+
+    @staticmethod
+    def _default_variables_for_task(math_task: str) -> list[VariableIR]:
+        defaults = {
+            "evaluation": [VariableIR(symbol="s_i", meaning="evaluation score")],
+            "prediction": [VariableIR(symbol="y_hat", meaning="predicted value")],
+            "optimization": [VariableIR(symbol="x_j", meaning="decision variable")],
+            "stochastic_optimization": [VariableIR(symbol="x_j", meaning="first-stage decision variable")],
+            "simulation": [VariableIR(symbol="theta_hat", meaning="simulated statistic")],
+        }
+        return defaults.get(math_task, [VariableIR(symbol="z", meaning="model output")])
+
+    @staticmethod
+    def _constraint_role(expression: str) -> str:
+        text = expression.lower()
+        if "≥ 0" in expression or "\\geq 0" in text or "nonnegative" in text:
+            return "domain"
+        if "sum" in text or "Σ" in expression or "容量" in expression or "capacity" in text:
+            return "resource"
+        if "概率" in expression or "probability" in text or "p(" in text:
+            return "risk"
+        return "generic"
+
+    @staticmethod
+    def _objective_sense(objective: str, math_task: str) -> str:
+        text = (objective or "").lower()
+        if "max" in text or "最大" in objective:
+            return "max"
+        if "min" in text or "最小" in objective:
+            return "min"
+        if math_task == "evaluation":
+            return "score"
+        if math_task == "prediction":
+            return "estimate"
+        if math_task == "simulation":
+            return "simulate"
+        return "none"
+
+    @staticmethod
+    def _infer_sets(
+        context: CurrentQuestionContext,
+        interpretation: ProblemInterpretation,
+    ) -> list[str]:
+        sets = []
+        if context.required_data or interpretation.available_data:
+            sets.append("data_records")
+        if interpretation.decision_variables:
+            sets.append("decision_options")
+        if "年" in context.question_text or "time" in context.question_text.lower():
+            sets.append("time_periods")
+        return sets
+
+    @staticmethod
+    def _infer_indices(
+        context: CurrentQuestionContext,
+        interpretation: ProblemInterpretation,
+    ) -> list[str]:
+        indices = []
+        if interpretation.decision_variables:
+            indices.append("j")
+        if context.required_data or interpretation.available_data:
+            indices.append("i")
+        if "年" in context.question_text or "time" in context.question_text.lower():
+            indices.append("t")
+        return indices
 
     def _formulation_evaluation(self, method: str, interp: ProblemInterpretation) -> dict:
         """评价类模型表述。"""
@@ -463,10 +591,13 @@ class ModelBuilder:
         data_prep: dict,
         formulation: dict,
         context: CurrentQuestionContext,
+        method_key: str = "",
     ) -> dict:
         """执行模型计算。"""
+        method_key = method_key or formulation.get("method_key", "")
         computation = {
             "method": method_name,
+            "method_key": method_key,
             "status": "not_executed",
             "results": {},
             "metrics": {},
@@ -482,18 +613,25 @@ class ModelBuilder:
                 data = np.array(data_matrix, dtype=float)
 
                 # 按方法分发
-                if "熵权法" in method_name:
+                if method_key == "entropy_weight" or "熵权法" in method_name:
                     computation.update(self._compute_entropy_weight(data))
-                elif "TOPSIS" in method_name:
+                elif method_key == "topsis" or "TOPSIS" in method_name:
                     computation.update(self._compute_topsis(data))
-                elif "线性回归" in method_name:
+                elif method_key == "linear_regression" or "线性回归" in method_name:
                     computation.update(self._compute_linear_regression(data))
-                elif "灰色" in method_name or "GM" in method_name:
+                elif method_key == "gm11" or "灰色" in method_name or "GM" in method_name:
                     computation.update(self._compute_gm11(data))
-                elif "线性规划" in method_name or "整数规划" in method_name:
+                elif method_key in ("linear_programming", "integer_programming") or "线性规划" in method_name or "整数规划" in method_name:
                     computation.update(self._compute_lp_stub(data, formulation))
-                elif any(kw in method_name for kw in ["随机规划", "鲁棒", "蒙特卡洛+优化", "机会约束", "确定性基础"]):
+                elif method_key in (
+                    "stochastic_programming",
+                    "robust_optimization",
+                    "monte_carlo_optimization",
+                    "chance_constrained_programming",
+                ) or any(kw in method_name for kw in ["随机规划", "鲁棒", "蒙特卡洛+优化", "机会约束", "确定性基础"]):
                     computation.update(self._compute_stochastic_lp(data, formulation, method_name))
+                elif method_key == "monte_carlo_simulation":
+                    computation.update(self._compute_generic(data, "蒙特卡洛模拟"))
                 else:
                     computation.update(self._compute_generic(data, method_name))
             else:

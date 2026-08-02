@@ -22,6 +22,11 @@ from ..schemas.problem import (
     SubProblemList,
 )
 from .base import BaseAgent
+from .decomposition_fallback import (
+    fallback_subproblems_from_analysis,
+    sanitize_subproblems,
+    short_error,
+)
 
 __all__ = ["ProblemAnalyst"]
 
@@ -94,8 +99,30 @@ class ProblemAnalyst(BaseAgent):
         template = self._load_prompt("task_decomposition")
         pa_str = problem_analysis.model_dump_json(indent=2)
         prompt = self._render_prompt(template, problem_analysis=pa_str)
-        result = self._call_structured(SubProblemList, prompt)
-        return result.subproblems
+        errors: list[Exception] = []
+
+        try:
+            result = self._call_structured(SubProblemList, prompt)
+            return sanitize_subproblems(result.subproblems, problem_analysis)
+        except Exception as error:
+            errors.append(error)
+
+        try:
+            result = self._call_structured_json_fallback(SubProblemList, prompt)
+            return sanitize_subproblems(result.subproblems, problem_analysis)
+        except Exception as error:
+            errors.append(error)
+
+        fallback = fallback_subproblems_from_analysis(problem_analysis)
+        if fallback:
+            print(
+                "[problem_analyst] decompose 结构化输出不可用，已使用通用兜底分解: "
+                f"{short_error(errors[-1])}"
+            )
+            return fallback
+
+        details = "; ".join(short_error(error) for error in errors)
+        raise ValueError(f"decompose failed and fallback produced no subproblems: {details}")
 
     # ------------------------------------------------------------------
     # classify — 题型分类
