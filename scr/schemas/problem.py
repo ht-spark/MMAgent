@@ -92,7 +92,7 @@ class DataInventory(BaseModel):
 
     file_name: str
     file_path: str
-    file_type: Literal["csv", "excel", "json"]
+    file_type: Literal["csv", "excel", "json", "mat"]
     n_rows: int = Field(ge=0)
     n_cols: int = Field(ge=0)
     fields: list[DataField] = Field(default_factory=list)

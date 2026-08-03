@@ -99,3 +99,34 @@ def constant_csv(tmp_path: Path) -> Path:
     path = tmp_path / "const.csv"
     df.to_csv(path, index=False)
     return path
+
+
+@pytest.fixture
+def sample_mat(tmp_path: Path) -> Path:
+    """小型 MAT 文件：含 2D 数值数组和 1D 向量两个变量。"""
+    import numpy as np
+    from scipy.io import savemat
+
+    data = {
+        "matrix": np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]),
+        "vector": np.array([10.0, 20.0, 30.0, 40.0]),
+    }
+    path = tmp_path / "sample.mat"
+    savemat(str(path), data)
+    return path
+
+
+@pytest.fixture
+def sample_mat_multi_var(tmp_path: Path) -> Path:
+    """多变量 MAT 文件：含矩阵、向量和标量。"""
+    import numpy as np
+    from scipy.io import savemat
+
+    data = {
+        "data_matrix": np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+        "labels": np.array(["A", "B", "C"]),
+        "count": np.array(42),
+    }
+    path = tmp_path / "multi.mat"
+    savemat(str(path), data)
+    return path

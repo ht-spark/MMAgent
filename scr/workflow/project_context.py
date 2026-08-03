@@ -101,7 +101,7 @@ def _run_problem_analysis(
         data_inventory = DataInventory(
             file_name=first_table.source_file,
             file_path=first_table.source_file,
-            file_type="excel" if first_table.source_file.endswith((".xlsx", ".xls")) else "csv",
+            file_type="excel" if first_table.source_file.endswith((".xlsx", ".xls")) else "mat" if first_table.source_file.endswith(".mat") else "csv",
             n_rows=first_table.n_rows,
             n_cols=first_table.n_cols,
             fields=[],

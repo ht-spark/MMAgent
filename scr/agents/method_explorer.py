@@ -3,14 +3,15 @@
 对应 architecture.md §5.3-5.4 方法探索与方法决策。
 
 职责：
-  1. explore — 基于问题澄清和数据画像，从方法目录中生成候选方法
+  1. explore — 基于问题澄清和数据画像，通过联网搜索+LLM思考生成候选方法
   2. decide — 对候选方法评分和排序，选择最佳方法
   3. generate_assumptions — 为选中方法生成假设列表
 
 设计要点：
+  - 纯联网+LLM驱动：不依赖预设方法目录，方法候选完全由搜索+LLM生成
   - 确定性硬过滤：根据数据要求淘汰不满足条件的方法
-  - 启发式评分：无 LLM 时用规则评分（数据匹配度、实现难度、适用性）
-  - LLM 增强：有 LLM 时用 LLM 精调候选和评分
+  - 启发式评分：用规则评分（数据匹配度、实现难度、适用性、文本匹配）
+  - 降级处理：无网络或LLM不可用时提供通用候选
   - 决策可追溯：记录选择理由、备选方案和淘汰原因
 """
 from __future__ import annotations
@@ -26,8 +27,6 @@ from ..tools.tavily_search import (
     WebMethodCandidate,
     WebMethodCandidateList,
 )
-from .method_catalog import get_candidates_for_task
-from .method_registry import annotate_candidate
 
 
 class MethodExplorer:
@@ -47,6 +46,9 @@ class MethodExplorer:
         self._llm = llm
         self._search_tool = search_tool or TavilySearchTool.from_env()
         self._prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
+        # 缓存标志：一旦发现 LLM 不支持 json_schema response_format，
+        # 后续直接使用 json_mode，避免每次都尝试失败并打印错误日志。
+        self._json_schema_unsupported: bool = False
 
     # ------------------------------------------------------------------
     # explore — 候选生成
@@ -60,11 +62,12 @@ class MethodExplorer:
     ) -> list[dict]:
         """基于问题澄清生成候选方法。
 
+        完全由联网搜索+LLM思考驱动，不依赖预设方法目录。
+
         步骤：
-          1. 从方法目录中获取 math_task 对应的候选方法
+          1. 联网搜索获取方法候选（LLM提取或启发式提取）
           2. 硬过滤：淘汰不满足数据要求的方法
           3. 为每个候选添加评分信息
-          4. 如果有 LLM，用 LLM 精调候选列表
 
         Args:
             context: 当前小问上下文。
@@ -72,20 +75,14 @@ class MethodExplorer:
             data_profile: 数据画像（用于硬过滤）。
 
         Returns:
-            候选方法列表，每个方法包含目录字段 + score + eliminated + reason。
+            候选方法列表，每个方法包含字段 + score + eliminated + reason。
         """
-        math_task = interpretation.math_task
-        candidates = get_candidates_for_task(math_task)
+        # 联网搜索+LLM生成候选方法
+        candidates = self._search_external_methods(context, interpretation)
 
-        # 联网搜索补充候选方法（不依赖方法目录）
-        external_candidates = self._search_external_methods(context, interpretation)
-        if external_candidates:
-            candidates.extend(external_candidates)
-
-        candidates = [
-            annotate_candidate(c, math_task)
-            for c in candidates
-        ]
+        if not candidates:
+            # 降级：当无网络或LLM不可用时，提供一个通用候选
+            candidates = [_fallback_candidate(interpretation)]
 
         # 硬过滤
         data_info = _extract_data_info(data_profile, context)
@@ -245,16 +242,16 @@ class MethodExplorer:
         context: CurrentQuestionContext,
         interpretation: ProblemInterpretation,
     ) -> list[dict]:
-        """联网搜索补充方法候选。
+        """联网搜索+LLM生成方法候选。
 
         流程：
           1. 检查搜索工具是否可用
           2. 构造搜索查询并执行搜索
           3. 从搜索结果中提取方法候选（LLM 优先，启发式回退）
-          4. 转换为方法目录格式
+          4. 转换为候选方法字典格式
 
         Returns:
-            方法候选列表（与 METHOD_CATALOG 格式兼容）。
+            方法候选列表。
         """
         if not self._search_tool or not self._search_tool.available:
             return []
@@ -290,12 +287,12 @@ class MethodExplorer:
         if not web_candidates:
             return []
 
-        # 转换为方法目录格式
-        catalog_candidates = self._convert_web_candidates(web_candidates)
+        # 转换为候选方法字典格式
+        method_candidates = self._convert_web_candidates(web_candidates)
 
-        print(f"[explorer] 联网搜索补充: {len(catalog_candidates)} 个外部方法候选")
+        print(f"[explorer] 联网搜索生成: {len(method_candidates)} 个方法候选")
 
-        return catalog_candidates
+        return method_candidates
 
     def _llm_extract_methods(
         self,
@@ -331,42 +328,86 @@ class MethodExplorer:
                 search_results, math_task
             )
 
-        # 调用 LLM
+        # 调用 LLM — 方案 1：尝试 structured output（默认方式，使用 json_schema）
+        # 若已缓存"不支持 json_schema"标志，则跳过
+        if not self._json_schema_unsupported:
+            try:
+                structured_llm = self._llm.with_structured_output(WebMethodCandidateList)
+                result = structured_llm.invoke(prompt)
+                candidates = result.candidates
+                print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
+                return candidates
+            except Exception as e:
+                err_msg = str(e)
+                if "response_format" in err_msg or "BadRequestError" in str(type(e).__name__):
+                    # 记住此 LLM 不支持 json_schema，后续直接走 json_mode
+                    self._json_schema_unsupported = True
+                    print(f"[explorer] LLM 不支持 json_schema，切换到 json_mode: {e}")
+                else:
+                    raise  # 非结构化输出相关错误，直接抛出
+
+        # 方案 2：尝试 json_mode（兼容 DeepSeek 等仅支持 json_object 的模型）
         try:
-            structured_llm = self._llm.with_structured_output(WebMethodCandidateList)
+            structured_llm = self._llm.with_structured_output(
+                WebMethodCandidateList, method="json_mode"
+            )
             result = structured_llm.invoke(prompt)
             candidates = result.candidates
-            print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
+            print(f"[explorer] LLM json_mode 提取: {len(candidates)} 个方法候选")
             return candidates
         except Exception as e:
-            print(f"[explorer] LLM 结构化提取失败，尝试 JSON 文本提取: {e}")
-            candidates = self._llm_extract_methods_as_json(prompt)
-            if candidates:
-                print(f"[explorer] LLM JSON 提取: {len(candidates)} 个方法候选")
-                return candidates
+            print(f"[explorer] LLM json_mode 提取失败，尝试 JSON 文本提取: {e}")
 
-            print("[explorer] LLM JSON 提取失败，回退到启发式")
-            return self._search_tool.extract_method_candidates(
-                search_results, math_task
-            )
+        # 方案 3：JSON 文本提取（最终回退）
+        candidates = self._llm_extract_methods_as_json(prompt)
+        if candidates:
+            print(f"[explorer] LLM JSON 提取: {len(candidates)} 个方法候选")
+            return candidates
+
+        print("[explorer] LLM 全部提取方式失败，回退到启发式")
+        return self._search_tool.extract_method_candidates(
+            search_results, math_task
+        )
 
     def _llm_extract_methods_as_json(self, prompt: str) -> list[WebMethodCandidate]:
-        """Retry method extraction without provider-native response_format."""
+        """Retry method extraction without provider-native response_format.
+
+        通过在 prompt 中嵌入 JSON Schema 示例，引导 LLM 返回符合结构的纯 JSON 文本，
+        然后手动解析并校验。兼容所有支持文本生成的 LLM 模型。
+        """
+        # 生成 schema 示例，帮助 LLM 理解期望的输出结构
+        schema_json = WebMethodCandidateList.model_json_schema()
+        example = _schema_to_example_str(schema_json)
+
         json_prompt = (
             f"{prompt}\n\n"
-            "请只返回一个 JSON 对象，不要添加解释、Markdown 标题或额外文本。"
-            "JSON 顶层必须是 {\"candidates\": [...]}。"
+            "---\n**重要**：你必须用纯 JSON 格式回答，不要用 Markdown 代码块，不要加解释。\n"
+            f"JSON 格式和字段说明：\n```json\n{example}\n```\n"
+            "直接返回 JSON，不要 ```json 包裹。"
         )
         try:
             response = self._llm.invoke(json_prompt)
             content = getattr(response, "content", response)
             data = _extract_json_object(str(content))
             if data is None:
+                print("[explorer] JSON 文本提取：未找到有效 JSON 对象")
                 return []
             try:
                 parsed = WebMethodCandidateList.model_validate(data)
-            except AttributeError:
-                parsed = WebMethodCandidateList.parse_obj(data)
+            except Exception:
+                # 尝试逐条解析 candidates，跳过不合规的条目
+                raw_candidates = data.get("candidates", []) if isinstance(data, dict) else []
+                valid: list[WebMethodCandidate] = []
+                for item in raw_candidates:
+                    if isinstance(item, dict):
+                        try:
+                            valid.append(WebMethodCandidate.model_validate(item))
+                        except Exception:
+                            continue
+                if valid:
+                    return valid
+                print(f"[explorer] JSON 文本提取：数据校验失败，原始数据: {str(data)[:200]}")
+                return []
             return parsed.candidates
         except Exception as e:
             print(f"[explorer] LLM JSON 提取失败: {e}")
@@ -391,12 +432,12 @@ class MethodExplorer:
     def _convert_web_candidates(
         web_candidates: list[WebMethodCandidate],
     ) -> list[dict]:
-        """将 WebMethodCandidate 转换为方法目录格式。
+        """将 WebMethodCandidate 转换为候选方法字典格式。
 
         外部方法候选的 data_requirements 设为宽松（不设硬性要求），
         以避免被硬过滤淘汰。通过 source 字段标记来源。
         """
-        catalog_candidates: list[dict] = []
+        method_candidates: list[dict] = []
         for wc in web_candidates:
             candidate = {
                 "name": wc.name,
@@ -406,21 +447,25 @@ class MethodExplorer:
                 "assumptions": wc.assumptions,
                 "pros": wc.pros,
                 "cons": wc.cons,
-                "elimination_conditions": [],  # 外部方法无淘汰条件
+                "elimination_conditions": [],
                 "implementation_difficulty": wc.implementation_difficulty,
                 "data_requirements": {
-                    "min_samples": 0,  # 宽松要求，不设硬性门槛
+                    "min_samples": 0,
                     "min_features": 0,
                     "needs_time": False,
                 },
                 "validation_method": wc.validation_method or "交叉验证、敏感性分析",
+                "required_outputs": wc.required_outputs,
+                "validation_requirements": wc.validation_requirements,
+                "canonical_method": "",
+                "canonical_family": wc.family,
                 "source": "web_search",
                 "source_url": wc.source_url,
                 "source_title": wc.source_title,
                 "relevance_score": wc.relevance_score,
             }
-            catalog_candidates.append(candidate)
-        return catalog_candidates
+            method_candidates.append(candidate)
+        return method_candidates
 
     def _load_prompt(self, name: str) -> str:
         """加载 prompt 模板文件。"""
@@ -439,15 +484,30 @@ class MethodExplorer:
 
 
 def _extract_json_object(text: str) -> dict | None:
-    """Extract the first JSON object from an LLM text response."""
+    """Extract the first JSON object from an LLM text response.
+
+    Handles markdown code fences (```...``` or ```json...```) appearing
+    anywhere in the text, as well as raw JSON embedded in prose.
+    """
     cleaned = text.strip()
-    if cleaned.startswith("```"):
+    # Strip markdown code fences — handle both leading and embedded code blocks
+    if "```" in cleaned:
         lines = cleaned.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        cleaned = "\n".join(lines).strip()
+        start_idx = None
+        end_idx = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("```"):
+                if start_idx is None:
+                    start_idx = i
+                else:
+                    end_idx = i
+                    break
+        if start_idx is not None:
+            if end_idx is not None:
+                cleaned = "\n".join(lines[start_idx + 1:end_idx]).strip()
+            else:
+                cleaned = "\n".join(lines[start_idx + 1:]).strip()
 
     decoder = json.JSONDecoder()
     for start in [i for i, ch in enumerate(cleaned) if ch == "{"]:
@@ -460,9 +520,132 @@ def _extract_json_object(text: str) -> dict | None:
     return None
 
 
+def _schema_to_example_str(schema_json: dict) -> str:
+    """从 JSON Schema 生成简化的示例 JSON 字符串，供 LLM prompt 使用。
+
+    支持 ``$ref`` 引用解析（如 ``#/$defs/SomeModel``）。
+    """
+    defs = schema_json.get("$defs", {})
+    example = _props_to_example(schema_json.get("properties", {}), defs)
+    return json.dumps(example, ensure_ascii=False, indent=2)
+
+
+def _props_to_example(props: dict, defs: dict) -> dict:
+    """递归地将 JSON Schema properties 转为示例字典。"""
+    example: dict = {}
+    for key, prop in props.items():
+        example[key] = _prop_to_example(prop, defs)
+    return example
+
+
+def _prop_to_example(prop: dict, defs: dict) -> Any:
+    """将单个 JSON Schema property 转为示例值。"""
+    # 解析 $ref
+    if "$ref" in prop:
+        ref_path = prop["$ref"]
+        ref_name = ref_path.split("/")[-1]
+        ref_schema = defs.get(ref_name, {})
+        return _props_to_example(ref_schema.get("properties", {}), defs)
+
+    ptype = prop.get("type", "string")
+
+    if ptype == "array":
+        items = prop.get("items", {})
+        item_val = _prop_to_example(items, defs)
+        return [item_val]
+    elif ptype == "object":
+        return _props_to_example(prop.get("properties", {}), defs)
+    elif ptype in ("integer", "number"):
+        return 0
+    elif ptype == "boolean":
+        return False
+    else:
+        enum = prop.get("enum")
+        return enum[0] if enum else "示例文本"
+
+
 # ---------------------------------------------------------------------------
 # 辅助函数
 # ---------------------------------------------------------------------------
+
+
+def _fallback_candidate(interpretation: ProblemInterpretation) -> dict:
+    """当联网搜索和LLM均不可用时，根据任务类型提供一个通用候选。
+
+    这是一个最小化的降级方案，确保工作流不会因无候选而中断。
+    """
+    math_task = interpretation.math_task
+    task_defaults: dict[str, dict] = {
+        "evaluation": {
+            "name": "综合评价方法",
+            "family": "多属性决策",
+            "description": "基于多指标的综合评价方法，可根据数据特点选择熵权法或TOPSIS",
+            "required_outputs": ["indicator_weights", "scores_or_ranking"],
+            "validation_requirements": ["weight_sensitivity", "ranking_stability"],
+            "assumptions": ["指标间相互独立或相关性可接受", "数据标准化后具有可比性"],
+        },
+        "prediction": {
+            "name": "回归预测模型",
+            "family": "线性模型",
+            "description": "基于历史数据的回归预测方法",
+            "required_outputs": ["predictions", "error_metrics"],
+            "validation_requirements": ["residual_analysis", "error_metrics"],
+            "assumptions": ["历史数据能反映未来趋势", "变量间存在线性或可线性化的关系"],
+        },
+        "optimization": {
+            "name": "数学规划",
+            "family": "数学规划",
+            "description": "基于目标和约束的数学优化方法",
+            "required_outputs": ["decision_solution", "objective_value", "constraint_check"],
+            "validation_requirements": ["objective_recompute", "constraint_feasibility"],
+            "assumptions": ["目标函数和约束条件可线性化", "决策变量为连续或整数"],
+        },
+        "stochastic_optimization": {
+            "name": "随机优化",
+            "family": "随机优化",
+            "description": "考虑不确定性的优化方法",
+            "required_outputs": ["scenario_solutions", "expected_objective", "risk_metrics"],
+            "validation_requirements": ["scenario_sensitivity", "baseline_comparison"],
+            "assumptions": ["不确定参数的分布已知或可估计", "场景集合具有代表性"],
+        },
+        "simulation": {
+            "name": "蒙特卡洛模拟",
+            "family": "仿真模型",
+            "description": "基于随机采样的仿真模拟方法",
+            "required_outputs": ["simulation_summary", "confidence_interval"],
+            "validation_requirements": ["seed_reproducibility", "sample_size_sensitivity"],
+            "assumptions": ["随机变量的分布已知或可拟合", "采样次数足够保证收敛"],
+        },
+    }
+    defaults = task_defaults.get(
+        math_task,
+        task_defaults["optimization"],  # 通用回退
+    )
+    return {
+        "name": defaults["name"],
+        "family": defaults["family"],
+        "description": defaults["description"],
+        "required_data": ["待确认"],
+        "assumptions": defaults.get("assumptions", []),
+        "pros": [],
+        "cons": [],
+        "elimination_conditions": [],
+        "implementation_difficulty": "medium",
+        "data_requirements": {
+            "min_samples": 0,
+            "min_features": 0,
+            "needs_time": False,
+        },
+        "validation_method": "交叉验证、敏感性分析",
+        "required_outputs": defaults["required_outputs"],
+        "validation_requirements": defaults["validation_requirements"],
+        "canonical_method": "",
+        "canonical_family": defaults["family"],
+        "source": "fallback",
+        "source_url": "",
+        "source_title": "",
+        "relevance_score": 0.3,
+    }
 
 
 def _extract_data_info(

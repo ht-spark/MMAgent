@@ -1,7 +1,7 @@
 """Tavily 联网搜索工具。
 
-用于方法探索阶段，补充内置方法库的知识缺口。
-让方法探索不再只依赖预定义的方法目录，而是可以联网搜索更多适用方法。
+用于方法探索阶段，通过联网搜索获取方法候选。
+方法探索完全由联网搜索+LLM思考驱动，不依赖预设方法目录。
 
 功能：
   - TavilySearchTool.search: 通用搜索接口
@@ -12,11 +12,11 @@
 设计要点：
   - API key 从环境变量读取（Tavily_API_KEY / TAVILY_API_KEY）
   - 无 API key 或网络错误时优雅降级（返回空列表，不中断流程）
-  - 搜索结果可被 MethodExplorer 合并到候选列表中
+  - 搜索结果可被 MethodExplorer 用于生成候选方法
   - 支持中英文双语查询，提高搜索覆盖面
 
-对应 architecture.md §5.3 方法探索与决策的增强：
-  原流程仅从 METHOD_CATALOG 获取候选，现增加联网搜索补充。
+对应 architecture.md §5.3 方法探索与决策：
+  方法候选完全由联网搜索+LLM思考生成，不预设方法目录。
 """
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ __all__ = [
 
 
 class WebMethodCandidate(BaseModel):
-    """从网络搜索结果中提取的方法候选。
+    """从网络搜索结果+LLM推理生成的方法候选。
 
-    与 METHOD_CATALOG 中的方法格式兼容，可被 MethodExplorer 直接使用。
+    完全由联网搜索和大模型思考生成，不依赖预设方法目录。
 
     Attributes:
         name: 方法名称。
@@ -55,6 +55,8 @@ class WebMethodCandidate(BaseModel):
         required_data: 所需数据类型列表。
         implementation_difficulty: 实现难度（low/medium/high）。
         validation_method: 推荐的验证方法。
+        required_outputs: 该方法应产出的结果类型列表（如 ["decision_solution", "objective_value"]）。
+        validation_requirements: 验证该方法的检查项列表（如 ["constraint_feasibility", "sensitivity_analysis"]）。
         source_url: 来源 URL（用于追溯）。
         source_title: 来源标题。
         relevance_score: 搜索相关性分数（0-1，来自 Tavily）。
@@ -69,6 +71,8 @@ class WebMethodCandidate(BaseModel):
     required_data: list[str] = Field(default_factory=list)
     implementation_difficulty: str = "medium"
     validation_method: str = ""
+    required_outputs: list[str] = Field(default_factory=list)
+    validation_requirements: list[str] = Field(default_factory=list)
     source_url: str = ""
     source_title: str = ""
     relevance_score: float = Field(default=0.5, ge=0.0, le=1.0)

@@ -3,11 +3,11 @@
 确定性工具，不依赖 LLM，可单测、可复现。
 
 功能：
-  - 读取 CSV / Excel / Markdown 文件
+  - 读取 CSV / Excel / MATLAB(.mat) / Markdown 文件
   - 对数据文件生成确定性画像（data_inventory）
 
 对应 plan.md:
-  - Phase 3.1: tools/file_tools.py — CSV/Excel/JSON/Markdown 读取
+  - Phase 3.1: tools/file_tools.py — CSV/Excel/JSON/Markdown/MAT 读取
   - Phase 3.2: tools/data_tools.py 的 data_inventory — 附件确定性画像
 
 画像包含：行列数、字段类型、缺失率、单位线索、时间维度。
@@ -36,6 +36,8 @@ __all__ = [
     "read_csv",
     "read_excel",
     "read_excel_all_sheets",
+    "read_mat",
+    "read_mat_all_variables",
     "read_markdown",
     "read_file",
     "generate_data_inventory",
@@ -121,6 +123,197 @@ def read_excel_all_sheets(
     return {str(k): v for k, v in sheets.items()}
 
 
+def _mat_to_dataframe(data: Any, var_name: str) -> pd.DataFrame | None:
+    """将 MATLAB 变量转换为 DataFrame。
+
+    处理 2D 数组、结构体、字符串数组等常见类型。
+    """
+    # scipy.io.loadmat 返回的 numpy 数组
+    if isinstance(data, np.ndarray):
+        # 去掉 MATLAB 的多余维度（MATLAB 一律至少 2D）
+        squeezed = np.squeeze(data)
+
+        # 字符串/字符数组
+        if squeezed.dtype.kind in ("U", "S"):
+            if squeezed.ndim <= 1:
+                return pd.DataFrame({var_name: [str(squeezed)]})
+            # 多行字符串
+            return pd.DataFrame({var_name: [str(row) for row in squeezed]})
+
+        # 2D 数值数组 → DataFrame
+        if squeezed.ndim == 2:
+            rows, cols = squeezed.shape
+            if cols == 1:
+                return pd.DataFrame({var_name: squeezed.flatten()})
+            return pd.DataFrame(squeezed, columns=[f"{var_name}_{i}" for i in range(cols)])
+
+        # 1D 数组
+        if squeezed.ndim == 1:
+            return pd.DataFrame({var_name: squeezed})
+
+        # 多维数组展平为 2D
+        if squeezed.ndim > 2:
+            reshaped = squeezed.reshape(squeezed.shape[0], -1)
+            return pd.DataFrame(
+                reshaped,
+                columns=[f"{var_name}_{i}" for i in range(reshaped.shape[1])],
+            )
+
+    # 结构体：scipy 返回带 dtype 字段名的 numpy void
+    if hasattr(data, "dtype") and data.dtype.names:
+        cols = {}
+        for name in data.dtype.names:
+            sub = data[name[0]] if isinstance(name, tuple) else data[name]
+            sub_arr = np.squeeze(np.array(sub))
+            if sub_arr.ndim == 1:
+                cols[str(name)] = sub_arr
+            elif sub_arr.ndim == 2 and sub_arr.shape[1] == 1:
+                cols[str(name)] = sub_arr.flatten()
+            else:
+                cols[str(name)] = [str(sub_arr)]
+        if cols:
+            return pd.DataFrame(cols)
+
+    # 标量
+    if np.isscalar(data) or (isinstance(data, np.ndarray) and data.size == 1):
+        return pd.DataFrame({var_name: [np.squeeze(data).item()]})
+
+    return None
+
+
+def read_mat(
+    path: str | Path,
+    variable_name: str | None = None,
+) -> pd.DataFrame:
+    """读取 MATLAB .mat 文件中的单个变量为 DataFrame。
+
+    优先使用 scipy.io.loadmat（支持 v4/v6/v7/v7.2），
+    失败时回退到 h5py（支持 v7.3 HDF5 格式，若已安装）。
+
+    Args:
+        path: .mat 文件路径。
+        variable_name: 要读取的变量名。若为 None，自动选择第一个
+                       可转为 DataFrame 的变量。
+
+    Returns:
+        pandas DataFrame.
+
+    Raises:
+        FileNotFoundError: 文件不存在。
+        ValueError: 文件无法解析或指定变量不存在。
+        ImportError: 需要的依赖未安装。
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"MAT file not found: {p}")
+
+    variables = read_mat_all_variables(p)
+
+    if variable_name is not None:
+        if variable_name not in variables:
+            available = ", ".join(variables.keys())
+            raise ValueError(
+                f"Variable '{variable_name}' not found in {p.name}. "
+                f"Available: {available}"
+            )
+        return variables[variable_name]
+
+    # 自动选择：优先选行数最多的变量
+    best_df = None
+    best_rows = -1
+    for name, df in variables.items():
+        if len(df) > best_rows:
+            best_df = df
+            best_rows = len(df)
+
+    if best_df is None:
+        raise ValueError(f"No convertible variables found in {p.name}")
+    return best_df
+
+
+def read_mat_all_variables(
+    path: str | Path,
+) -> dict[str, pd.DataFrame]:
+    """读取 MATLAB .mat 文件的所有变量为 DataFrame 字典。
+
+    类似于 ``read_excel_all_sheets``，每个 MATLAB 变量对应一个 DataFrame。
+    自动跳过 MATLAB 内部元数据变量（以 ``__`` 开头）。
+
+    Args:
+        path: .mat 文件路径。
+
+    Returns:
+        {variable_name: DataFrame} 字典。
+
+    Raises:
+        FileNotFoundError: 文件不存在。
+        ValueError: 文件无法解析。
+        ImportError: 需要的依赖未安装。
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"MAT file not found: {p}")
+
+    # 尝试 scipy.io.loadmat（v4/v6/v7/v7.2）
+    try:
+        from scipy.io import loadmat
+        raw = loadmat(p, struct_as_record=True, squeeze_me=True)
+    except ImportError:
+        raise ImportError(
+            "scipy is required to read .mat files. "
+            "Install with: pip install scipy"
+        )
+    except NotImplementedError:
+        # v7.3 格式（HDF5），scipy 不支持，尝试 h5py
+        return _read_mat_v73(p)
+    except Exception as e:
+        raise ValueError(f"Failed to parse .mat file {p.name}: {e}")
+
+    result: dict[str, pd.DataFrame] = {}
+    for name, data in raw.items():
+        # 跳过 scipy 内部元数据
+        if name.startswith("__"):
+            continue
+        df = _mat_to_dataframe(data, name)
+        if df is not None:
+            result[name] = df
+
+    if not result:
+        raise ValueError(f"No convertible variables found in {p.name}")
+
+    return result
+
+
+def _read_mat_v73(path: Path) -> dict[str, pd.DataFrame]:
+    """读取 MATLAB v7.3 格式（HDF5）的 .mat 文件。
+
+    需要 h5py 库。
+    """
+    try:
+        import h5py
+    except ImportError:
+        raise ImportError(
+            "This .mat file appears to be v7.3 format (HDF5-based). "
+            "Install h5py to read it: pip install h5py"
+        )
+
+    result: dict[str, pd.DataFrame] = {}
+    with h5py.File(path, "r") as f:
+        for key in f.keys():
+            if key.startswith("#"):
+                # HDF5 内部引用
+                continue
+            data = f[key][()]
+            if isinstance(data, np.ndarray):
+                df = _mat_to_dataframe(data, key)
+                if df is not None:
+                    result[key] = df
+
+    if not result:
+        raise ValueError(f"No convertible variables found in {path.name}")
+    return result
+
+
 def read_markdown(path: str | Path, encoding: str = "utf-8") -> str:
     """读取 Markdown / 纯文本文件为字符串。
 
@@ -144,7 +337,7 @@ def read_file(path: str | Path) -> pd.DataFrame | str:
     """根据扩展名自动分发读取。
 
     Args:
-        path: 文件路径。支持 .csv / .xlsx / .xls / .md / .markdown / .txt。
+        path: 文件路径。支持 .csv / .xlsx / .xls / .mat / .md / .markdown / .txt。
 
     Returns:
         DataFrame（表格文件）或 str（文本文件）。
@@ -160,11 +353,13 @@ def read_file(path: str | Path) -> pd.DataFrame | str:
         return read_csv(p)
     if ext in (".xlsx", ".xls"):
         return read_excel(p)
+    if ext == ".mat":
+        return read_mat(p)
     if ext in (".md", ".markdown", ".txt"):
         return read_markdown(p)
     raise ValueError(
         f"Unsupported file type '{ext}'. "
-        f"Supported: .csv, .xlsx, .xls, .md, .markdown, .txt"
+        f"Supported: .csv, .xlsx, .xls, .mat, .md, .markdown, .txt"
     )
 
 
@@ -333,6 +528,7 @@ def generate_data_inventory(
     file_path: str | Path,
     output_path: str | Path | None = None,
     sheet_name: str | int = 0,
+    variable_name: str | None = None,
 ) -> DataInventory:
     """对数据文件生成确定性画像。
 
@@ -340,10 +536,11 @@ def generate_data_inventory(
     它是 L2 硬过滤的关键输入。
 
     Args:
-        file_path: 数据文件路径（.csv / .xlsx / .xls / .json）。
+        file_path: 数据文件路径（.csv / .xlsx / .xls / .mat / .json）。
         output_path: 可选，画像 JSON 写入路径。
                      若提供则创建父目录并写入 ``DataInventory.model_dump_json()``。
         sheet_name: Excel 工作表名称或索引，默认第一个。
+        variable_name: MAT 文件变量名，None 时自动选择行数最多的变量。
 
     Returns:
         DataInventory 对象。
@@ -364,13 +561,16 @@ def generate_data_inventory(
     elif ext in (".xlsx", ".xls"):
         df = read_excel(p, sheet_name=sheet_name)
         file_type = "excel"
+    elif ext == ".mat":
+        df = read_mat(p, variable_name=variable_name)
+        file_type = "mat"
     elif ext == ".json":
         df = pd.read_json(p)
         file_type = "json"
     else:
         raise ValueError(
             f"Cannot generate data inventory for '{ext}' files. "
-            f"Supported: .csv, .xlsx, .xls, .json"
+            f"Supported: .csv, .xlsx, .xls, .mat, .json"
         )
 
     n_rows, n_cols = df.shape
@@ -416,10 +616,11 @@ def generate_data_inventories(
     file_paths: list[str | Path],
     output_dir: str | Path | None = None,
 ) -> list[DataInventory]:
-    """对多个数据文件生成画像（Excel 文件自动展开所有 sheet）。
+    """对多个数据文件生成画像（Excel 展开 sheet，MAT 展开变量）。
 
-    每个文件每个 sheet 生成一个独立的 DataInventory。
+    每个文件每个 sheet/变量生成一个独立的 DataInventory。
     Excel 多 sheet 时 file_name 标注为 ``"filename.xlsx::sheet_name"``。
+    MAT 多变量时 file_name 标注为 ``"filename.mat::variable_name"``。
 
     Args:
         file_paths: 数据文件路径列表。
@@ -448,6 +649,21 @@ def generate_data_inventories(
                     # file_name 标注 sheet 名
                     inv = inv.model_copy(
                         update={"file_name": f"{p.name}::{sheet_name}"}
+                    )
+                    inventories.append(inv)
+                except Exception:
+                    continue
+        elif ext == ".mat":
+            # MAT：展开所有变量
+            try:
+                variables = read_mat_all_variables(p)
+            except Exception:
+                continue
+            for var_name in variables:
+                try:
+                    inv = generate_data_inventory(p, variable_name=var_name)
+                    inv = inv.model_copy(
+                        update={"file_name": f"{p.name}::{var_name}"}
                     )
                     inventories.append(inv)
                 except Exception:

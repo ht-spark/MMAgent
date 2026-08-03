@@ -23,7 +23,6 @@ import numpy as np
 from ..schemas.context import DataProfile
 from ..schemas.formulation import MODELING_TASKS, ConstraintIR, FormulationIR, VariableIR
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
-from .method_registry import CANONICAL_METHODS, canonicalize_method
 
 
 class ModelBuilder:
@@ -58,10 +57,20 @@ class ModelBuilder:
         method_key = decision_record.get("canonical_method", "")
         math_task = interpretation.math_task
 
+        # 从决策记录中获取 required_outputs 和 validation_requirements
+        # （由联网搜索+LLM生成，不再依赖预设方法目录）
+        required_outputs = decision_record.get("required_outputs", [])
+        validation_requirements = decision_record.get("validation_requirements", [])
+
         # 步骤 1: 构建模型表述
         formulation = self._build_formulation(
             selected_method, math_task, interpretation, context, method_key
         )
+        # 注入决策记录中的输出和验证要求
+        if required_outputs:
+            formulation["required_outputs"] = required_outputs
+        if validation_requirements:
+            formulation["validation_requirements"] = validation_requirements
 
         # 步骤 2: 准备数据
         data_preparation = self._prepare_data(
@@ -114,6 +123,8 @@ class ModelBuilder:
             "constraints": [],
             "parameters": {},
             "description": "",
+            "required_outputs": self._default_required_outputs(math_task),
+            "validation_requirements": self._default_validation_requirements(math_task),
         }
 
         if math_task == "evaluation":
@@ -146,16 +157,16 @@ class ModelBuilder:
         context: CurrentQuestionContext,
         method_key: str = "",
     ) -> dict:
-        """Attach a generic modeling IR while preserving legacy fields."""
-        spec = CANONICAL_METHODS.get(method_key)
-        if spec is None:
-            spec = canonicalize_method(method_name, formulation.get("family", ""), math_task)
-        if spec is not None:
-            method_key = spec.key
-            formulation["method_key"] = spec.key
-            formulation["canonical_method"] = spec.key
-            formulation.setdefault("required_outputs", list(spec.required_outputs))
-            formulation.setdefault("validation_requirements", list(spec.validation_requirements))
+        """Attach a generic modeling IR while preserving legacy fields.
+
+        required_outputs 和 validation_requirements 直接从 formulation 或
+        decision_record 传入（由联网搜索+LLM生成），不再依赖预设方法目录。
+        """
+        # 确保 required_outputs 和 validation_requirements 存在
+        formulation.setdefault("required_outputs", [])
+        formulation.setdefault("validation_requirements", [])
+        formulation.setdefault("method_key", method_key)
+        formulation.setdefault("canonical_method", method_key)
 
         variables = [
             self._variable_ir_from_text(v)
@@ -205,6 +216,36 @@ class ModelBuilder:
             "simulation": [VariableIR(symbol="theta_hat", meaning="simulated statistic")],
         }
         return defaults.get(math_task, [VariableIR(symbol="z", meaning="model output")])
+
+    @staticmethod
+    def _default_required_outputs(math_task: str) -> list[str]:
+        """根据任务类型返回默认的 required_outputs。"""
+        defaults = {
+            "evaluation": ["indicator_weights", "scores_or_ranking"],
+            "prediction": ["predictions", "error_metrics"],
+            "optimization": ["decision_solution", "objective_value", "constraint_check"],
+            "stochastic_optimization": ["scenario_solutions", "expected_objective", "risk_metrics"],
+            "simulation": ["simulation_summary", "confidence_interval"],
+            "classification": ["classification_labels", "accuracy_metrics"],
+            "clustering": ["cluster_assignments", "cluster_centers"],
+            "mechanism": ["model_parameters", "fitting_goodness"],
+        }
+        return defaults.get(math_task, ["model_output"])
+
+    @staticmethod
+    def _default_validation_requirements(math_task: str) -> list[str]:
+        """根据任务类型返回默认的 validation_requirements。"""
+        defaults = {
+            "evaluation": ["weight_sensitivity", "ranking_stability"],
+            "prediction": ["residual_analysis", "error_metrics"],
+            "optimization": ["objective_recompute", "constraint_feasibility", "sensitivity_analysis"],
+            "stochastic_optimization": ["scenario_sensitivity", "baseline_comparison"],
+            "simulation": ["seed_reproducibility", "sample_size_sensitivity"],
+            "classification": ["cross_validation", "confusion_matrix"],
+            "clustering": ["silhouette_score", "cluster_stability"],
+            "mechanism": ["residual_analysis", "parameter_significance"],
+        }
+        return defaults.get(math_task, ["result_validation"])
 
     @staticmethod
     def _constraint_role(expression: str) -> str:
@@ -521,6 +562,10 @@ class ModelBuilder:
                         full_path,
                         sheet_name=table.sheet_name or 0,
                     )
+                elif ext == ".mat":
+                    from ..tools.file_tools import read_mat
+                    var_name = table.sheet_name or None
+                    df = read_mat(full_path, variable_name=var_name)
                 else:
                     continue
 

@@ -16,9 +16,12 @@ import pytest
 
 from scr.tools.file_tools import (
     generate_data_inventory,
+    generate_data_inventories,
     read_csv,
     read_excel,
     read_file,
+    read_mat,
+    read_mat_all_variables,
     read_markdown,
 )
 from scr.schemas.problem import DataInventory
@@ -90,6 +93,56 @@ class TestReadMarkdown:
 
 
 # ---------------------------------------------------------------------------
+# read_mat
+# ---------------------------------------------------------------------------
+
+
+class TestReadMat:
+    def test_read_single_variable(self, sample_mat: Path):
+        """读取指定变量。"""
+        df = read_mat(sample_mat, variable_name="matrix")
+        assert isinstance(df, pd.DataFrame)
+        assert df.shape == (3, 3)
+
+    def test_read_auto_select(self, sample_mat: Path):
+        """自动选择变量（行数最多）。"""
+        df = read_mat(sample_mat)
+        assert isinstance(df, pd.DataFrame)
+        # matrix 有 3 行，vector 有 4 行，应选 vector
+        assert len(df) == 4
+
+    def test_read_all_variables(self, sample_mat: Path):
+        """读取所有变量。"""
+        variables = read_mat_all_variables(sample_mat)
+        assert "matrix" in variables
+        assert "vector" in variables
+        assert variables["matrix"].shape == (3, 3)
+        assert len(variables["vector"]) == 4
+
+    def test_not_found(self):
+        with pytest.raises(FileNotFoundError, match="MAT file not found"):
+            read_mat("nonexistent_file.mat")
+
+    def test_variable_not_found(self, sample_mat: Path):
+        with pytest.raises(ValueError, match="Variable 'nonexistent' not found"):
+            read_mat(sample_mat, variable_name="nonexistent")
+
+    def test_multi_var_file(self, sample_mat_multi_var: Path):
+        """多变量文件（矩阵+字符串+标量）。"""
+        variables = read_mat_all_variables(sample_mat_multi_var)
+        assert "data_matrix" in variables
+        assert "labels" in variables
+        assert variables["data_matrix"].shape == (3, 2)
+
+    def test_2d_array_columns(self, sample_mat: Path):
+        """2D 数组列名格式。"""
+        df = read_mat(sample_mat, variable_name="matrix")
+        assert "matrix_0" in df.columns
+        assert "matrix_1" in df.columns
+        assert "matrix_2" in df.columns
+
+
+# ---------------------------------------------------------------------------
 # read_file（自动分发）
 # ---------------------------------------------------------------------------
 
@@ -101,6 +154,10 @@ class TestReadFile:
 
     def test_excel_dispatch(self, sample_excel: Path):
         df = read_file(sample_excel)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_mat_dispatch(self, sample_mat: Path):
+        df = read_file(sample_mat)
         assert isinstance(df, pd.DataFrame)
 
     def test_markdown_dispatch(self, sample_markdown: Path):
@@ -315,3 +372,70 @@ class TestEdgeCases:
         path.write_text("unknown", encoding="utf-8")
         with pytest.raises(ValueError, match="Cannot generate data inventory"):
             generate_data_inventory(path)
+
+
+# ---------------------------------------------------------------------------
+# generate_data_inventory — MAT 文件
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDataInventoryMat:
+    def test_mat_inventory_basic(self, sample_mat: Path):
+        """MAT 文件画像基本功能。"""
+        inv = generate_data_inventory(sample_mat, variable_name="matrix")
+        assert isinstance(inv, DataInventory)
+        assert inv.file_type == "mat"
+        assert inv.n_rows == 3
+        assert inv.n_cols == 3
+
+    def test_mat_inventory_auto_select(self, sample_mat: Path):
+        """自动选择变量。"""
+        inv = generate_data_inventory(sample_mat)
+        assert inv.file_type == "mat"
+        # 应选择行数最多的变量（vector: 4 行）
+        assert inv.n_rows == 4
+
+    def test_mat_inventory_output(self, sample_mat: Path, tmp_path: Path):
+        """MAT 画像 JSON 输出。"""
+        out = tmp_path / "mat_inv.json"
+        inv = generate_data_inventory(sample_mat, variable_name="matrix", output_path=out)
+        assert out.exists()
+        raw = out.read_text(encoding="utf-8")
+        restored = DataInventory.model_validate_json(raw)
+        assert restored.file_type == "mat"
+        assert restored.n_rows == 3
+
+
+# ---------------------------------------------------------------------------
+# generate_data_inventories — 多文件（含 MAT）
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDataInventories:
+    def test_mat_multi_var_inventories(self, sample_mat_multi_var: Path):
+        """MAT 多变量文件展开为多个 DataInventory。"""
+        inventories = generate_data_inventories([sample_mat_multi_var])
+        # 至少有 data_matrix 和 labels 两个变量
+        var_names = [inv.file_name for inv in inventories]
+        assert any("data_matrix" in name for name in var_names)
+        assert any("labels" in name for name in var_names)
+
+    def test_mixed_file_types(
+        self, sample_csv: Path, sample_excel: Path, sample_mat: Path
+    ):
+        """混合文件类型（CSV + Excel + MAT）。"""
+        inventories = generate_data_inventories([sample_csv, sample_excel, sample_mat])
+        assert len(inventories) >= 3  # CSV 1 + Excel 1 + MAT 2+
+
+    def test_output_dir(self, sample_mat: Path, tmp_path: Path):
+        """画像写入目录。"""
+        out_dir = tmp_path / "inventories"
+        inventories = generate_data_inventories([sample_mat], output_dir=out_dir)
+        assert out_dir.exists()
+        json_files = list(out_dir.glob("*.json"))
+        assert len(json_files) == len(inventories)
+
+    def test_nonexistent_file_skipped(self):
+        """不存在的文件自动跳过。"""
+        inventories = generate_data_inventories(["nonexistent.mat"])
+        assert len(inventories) == 0

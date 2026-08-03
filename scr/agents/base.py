@@ -42,6 +42,9 @@ class BaseAgent:
     ) -> None:
         self._llm = llm
         self._prompt_dir = Path(prompt_dir) if prompt_dir else _DEFAULT_PROMPT_DIR
+        # 缓存标志：一旦发现 LLM 不支持 json_schema response_format，
+        # 后续直接使用 json_mode，避免每次都尝试失败并打印错误日志。
+        self._json_schema_unsupported: bool = False
 
     # ------------------------------------------------------------------
     # LLM 管理
@@ -131,8 +134,13 @@ class BaseAgent:
     def _call_structured(self, schema: type[T], prompt: str) -> T:
         """调用 LLM 并返回结构化输出。
 
-        优先使用 with_structured_output（OpenAI 等支持 response_format 的模型）。
-        失败时自动回退到 JSON prompt + 手动解析（兼容 DeepSeek 等）。
+        三级回退策略：
+          1. with_structured_output（默认，OpenAI 等支持 json_schema 的模型）
+          2. with_structured_output(method="json_mode")（DeepSeek 等仅支持 json_object 的模型）
+          3. JSON prompt + 手动解析（兼容所有模型）
+
+        一旦方案 1 因 response_format 不可用而失败，会设置 ``_json_schema_unsupported``
+        标志，后续调用直接跳到方案 2，避免重复尝试和错误日志刷屏。
 
         Args:
             schema: Pydantic 模型类，约束 LLM 输出结构。
@@ -141,15 +149,28 @@ class BaseAgent:
         Returns:
             schema 的实例。
         """
-        # 方案 1：尝试 structured output
+        # 方案 1：尝试 structured output（默认方式，使用 json_schema）
+        # 若已缓存"不支持 json_schema"标志，则跳过
+        if not self._json_schema_unsupported:
+            try:
+                structured_llm = self.llm.with_structured_output(schema)
+                return structured_llm.invoke(prompt)
+            except Exception as e:
+                err_msg = str(e)
+                if "response_format" not in err_msg and "BadRequestError" not in str(type(e).__name__):
+                    raise  # 非 structured output 相关的错误，直接抛出
+                # 记住此 LLM 不支持 json_schema，后续直接走 json_mode
+                self._json_schema_unsupported = True
+
+        # 方案 2：尝试 json_mode（兼容仅支持 json_object 的模型，如 DeepSeek）
         try:
-            structured_llm = self.llm.with_structured_output(schema)
+            structured_llm = self.llm.with_structured_output(schema, method="json_mode")
             return structured_llm.invoke(prompt)
-        except Exception as e:
-            if "response_format" not in str(e) and "BadRequestError" not in str(type(e).__name__):
-                raise  # 非 structured output 相关的错误，直接抛出
-            # 回退到方案 2：JSON prompt
-            return self._call_structured_json_fallback(schema, prompt)
+        except Exception:
+            pass  # 继续尝试方案 3
+
+        # 方案 3：JSON prompt + 手动解析（最终回退）
+        return self._call_structured_json_fallback(schema, prompt)
 
     def _call_structured_json_fallback(self, schema: type[T], prompt: str) -> T:
         """JSON prompt + 手动解析（兼容不支持 response_format 的模型）。"""

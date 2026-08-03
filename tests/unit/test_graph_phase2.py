@@ -63,10 +63,8 @@ def test_run_graph_no_llm_two_questions(tmp_path):
         checkpoint=False,
     )
 
-    # 验证工作流完成
-    assert final_state.get("workflow_status") == "all_questions_done"
-
-    # 验证数据画像
+    # 验证工作流完成（Phase 6 交付后状态为 delivered）
+    assert final_state.get("workflow_status") in ("delivered", "all_questions_done")
     dp = final_state.get("data_profile")
     assert dp is not None
     assert len(dp.files) > 0
@@ -107,7 +105,7 @@ def test_run_graph_no_data(tmp_path):
         checkpoint=False,
     )
 
-    assert final_state.get("workflow_status") == "all_questions_done"
+    assert final_state.get("workflow_status") in ("delivered", "all_questions_done")
 
     pc = final_state.get("project_context")
     assert pc is not None
