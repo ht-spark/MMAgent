@@ -1,20 +1,5 @@
-"""LangGraph 编排：主图组装。
-
-对应 architecture.md §2 总体工作流和 plan.md 分阶段执行。
-
-完整实现 Phase 0 ~ Phase 6：
-
-  START → intake → context → G0 条件边
-    G0 pass → select_question → (条件边)
-      has_next → assemble_context → solve_question → validate_result → gq_check → (条件边)
-        pass → archive_result → select_question (循环)
-        retry → solve_question (重试)
-        blocked → archive_result → select_question (循环)
-      done → global_review → write_paper → review_paper → gf_check → (条件边)
-        deliver → END
-        revise → write_paper (修订)
-    G0 retry → g0_retry → intake (重跑输入摄入)
-    G0 human → END (人工介入)
+"""
+LangGraph 编排：主图组装。
 """
 from __future__ import annotations
 

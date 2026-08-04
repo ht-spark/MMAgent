@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import numpy as np
@@ -23,6 +24,12 @@ import numpy as np
 from ..schemas.context import DataProfile
 from ..schemas.formulation import MODELING_TASKS, ConstraintIR, FormulationIR, VariableIR
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
+
+#: 题目驱动建模的题型范围（LLM 建模 + 代码执行）
+from .code_modeler import CODE_BASED_TASKS
+
+#: 代码生成/执行/校验的重试上限
+CODE_GEN_MAX_RETRIES = 2
 
 
 class ModelBuilder:
@@ -653,6 +660,22 @@ class ModelBuilder:
 
         data_matrix = data_prep.get("data_matrix")
 
+        # 题目驱动建模：有 LLM 且题型支持时，优先用 LLM 生成具体数学模型与
+        # 求解代码并沙箱执行，得到真实计算结果；失败则回退预设方法目录。
+        if self._llm is not None and math_task in CODE_BASED_TASKS:
+            try:
+                code_computation = self._execute_code_based(
+                    method_name, math_task, data_prep, formulation, context
+                )
+                if code_computation.get("status") == "success":
+                    return code_computation
+                print(
+                    f"[builder] 题目驱动建模未成功（{code_computation.get('status')}），"
+                    f"回退预设方法: {code_computation.get('error', '')[:120]}"
+                )
+            except Exception as e:
+                print(f"[builder] 题目驱动建模异常，回退预设方法: {e}")
+
         try:
             if data_matrix is not None and len(data_matrix) > 0:
                 data = np.array(data_matrix, dtype=float)
@@ -666,14 +689,19 @@ class ModelBuilder:
                     computation.update(self._compute_linear_regression(data))
                 elif method_key == "gm11" or "灰色" in method_name or "GM" in method_name:
                     computation.update(self._compute_gm11(data))
-                elif method_key in ("linear_programming", "integer_programming") or "线性规划" in method_name or "整数规划" in method_name:
+                elif method_key in ("linear_programming", "integer_programming") or any(
+                    kw in method_name for kw in ["线性规划", "整数规划", "数学规划", "非线性规划"]
+                ):
                     computation.update(self._compute_lp_stub(data, formulation))
                 elif method_key in (
                     "stochastic_programming",
                     "robust_optimization",
                     "monte_carlo_optimization",
                     "chance_constrained_programming",
-                ) or any(kw in method_name for kw in ["随机规划", "鲁棒", "蒙特卡洛+优化", "机会约束", "确定性基础"]):
+                ) or any(kw in method_name for kw in [
+                    "随机规划", "鲁棒", "蒙特卡洛+优化", "机会约束", "确定性基础",
+                    "随机优化", "不确定性优化", "场景优化",
+                ]):
                     computation.update(self._compute_stochastic_lp(data, formulation, method_name))
                 elif method_key == "monte_carlo_simulation":
                     computation.update(self._compute_generic(data, "蒙特卡洛模拟"))
@@ -693,6 +721,168 @@ class ModelBuilder:
             computation["results"] = {"error": str(e)[:200]}
 
         return computation
+
+    # ------------------------------------------------------------------
+    # 题目驱动建模：LLM 生成模型 + 代码沙箱执行
+    # ------------------------------------------------------------------
+
+    def _execute_code_based(
+        self,
+        method_name: str,
+        math_task: str,
+        data_prep: dict,
+        formulation: dict,
+        context: CurrentQuestionContext,
+    ) -> dict:
+        """LLM 生成具体数学模型与求解代码，沙箱执行并校验结果。
+
+        流程：准备数据 CSV → 生成建模 JSON（含代码）→ 沙箱执行 →
+              按题型校验结果 → 失败反馈修复重试（上限 CODE_GEN_MAX_RETRIES）。
+        """
+        from ..agents.code_modeler import CodeModeler, CodeModelingError
+        from ..tools.code_executor import CodeExecutionError, execute_model_code
+
+        csv_path = self._write_data_csv(data_prep)
+        if csv_path is None:
+            return {"status": "error", "error": "无法准备数据 CSV（无数据矩阵）"}
+
+        data_summary = self._build_data_summary(data_prep)
+        modeler = CodeModeler(self._llm)
+        feedback = ""
+        last_error = ""
+
+        try:
+            for attempt in range(CODE_GEN_MAX_RETRIES):
+                # 1. 生成建模 JSON（含 solution_code）
+                try:
+                    model_json = modeler.generate_model(
+                        question_text=context.question_text,
+                        math_task=math_task,
+                        method_hint=method_name,
+                        data_summary=data_summary,
+                        feedback=feedback,
+                    )
+                except CodeModelingError as e:
+                    last_error = str(e)
+                    feedback = f"建模 JSON 生成失败: {last_error}"
+                    continue
+
+                code = str(model_json.get("solution_code", "")).strip()
+
+                # 2. 沙箱执行
+                try:
+                    result = execute_model_code(code, data_csv_path=csv_path)
+                except CodeExecutionError as e:
+                    last_error = str(e)
+                    feedback = f"求解代码执行失败: {last_error}"
+                    continue
+
+                # 3. 按题型校验结果
+                try:
+                    self._validate_task_results(result, math_task)
+                except Exception as e:
+                    last_error = str(e)
+                    feedback = f"结果不满足题型要求: {last_error}"
+                    continue
+
+                # 4. 成功
+                return {
+                    "status": "success",
+                    "method": method_name,
+                    "method_key": "code_based",
+                    "model_name": model_json.get("model_name", method_name),
+                    "model_summary": model_json.get("model_summary", ""),
+                    "results": result,
+                    "metrics": result.get("metrics", {}) if isinstance(result, dict) else {},
+                    "parameters_used": model_json.get("key_parameters", {}),
+                    "intermediate_values": {
+                        "generation_attempts": attempt + 1,
+                        "solution_code_snippet": code[:200],
+                        "variables": model_json.get("variables", []),
+                        "objective": model_json.get("objective", ""),
+                        "constraints": model_json.get("constraints", []),
+                    },
+                    "error": "",
+                }
+
+            return {"status": "error", "error": last_error or "建模/执行/校验全部失败"}
+        finally:
+            if csv_path and os.path.exists(csv_path):
+                try:
+                    os.unlink(csv_path)
+                except OSError:
+                    pass
+
+    def _write_data_csv(self, data_prep: dict) -> str | None:
+        """将数据矩阵（含表头）写入临时 CSV，供生成代码读取。"""
+        import tempfile
+
+        matrix = data_prep.get("data_matrix")
+        if not matrix:
+            return None
+
+        names = list(data_prep.get("feature_names") or [])
+        n_cols = len(matrix[0]) if matrix else 0
+        if len(names) < n_cols:
+            names = names + [f"col_{i}" for i in range(len(names), n_cols)]
+        names = names[:n_cols]
+
+        import pandas as pd
+
+        fd, path = tempfile.mkstemp(suffix=".csv", prefix="mma_data_")
+        os.close(fd)
+        try:
+            pd.DataFrame(matrix, columns=names).to_csv(path, index=False)
+        except Exception:
+            if os.path.exists(path):
+                os.unlink(path)
+            return None
+        return path
+
+    def _build_data_summary(self, data_prep: dict) -> str:
+        """构建数据结构摘要（供 LLM 建模参考）。"""
+        lines = []
+        lines.append(f"- 样本量: {data_prep.get('n_samples', 0)} 行")
+        lines.append(f"- 特征列: {data_prep.get('feature_names', [])}")
+        tables = data_prep.get("loaded_tables", [])
+        if tables:
+            lines.append(f"- 已加载表: {tables[:3]}")
+        for p in data_prep.get("preprocessing", [])[:5]:
+            lines.append(f"- 预处理: {p}")
+        return "\n".join(lines)
+
+    def _validate_task_results(self, result: dict, math_task: str) -> None:
+        """按题型校验代码输出结果的关键字段。"""
+        if not isinstance(result, dict):
+            raise ValueError("结果不是 dict")
+        if not result:
+            raise ValueError("结果为空")
+
+        if math_task == "optimization":
+            if "solution" not in result and "optimal_solution" not in result:
+                raise ValueError("缺少 solution（最优解）")
+            if "objective" not in result and "optimal_objective" not in result:
+                raise ValueError("缺少 objective（最优目标值）")
+        elif math_task == "stochastic_optimization":
+            if "robust_solution" not in result and "scenario_solutions" not in result:
+                raise ValueError("缺少 robust_solution 或 scenario_solutions")
+            if not any(k in result for k in ("expected_objective", "worst_case", "objective_std")):
+                raise ValueError("缺少期望/最坏目标值等风险指标")
+        elif math_task == "evaluation":
+            if not any(k in result for k in ("weights", "scores", "ranking")):
+                raise ValueError("缺少 weights/scores/ranking")
+        elif math_task == "prediction":
+            if not any(k in result for k in ("predictions", "forecast", "fitted_values")):
+                raise ValueError("缺少 predictions/forecast")
+            metrics = result.get("metrics") or {}
+            if not any(k in metrics for k in ("r_squared", "rmse", "mse", "mae", "mape")):
+                raise ValueError("缺少误差指标（r2/rmse/mae 等）")
+        elif math_task == "simulation":
+            if "simulation" not in result and "n_simulations" not in (result.get("metrics") or {}):
+                raise ValueError("缺少模拟结果")
+            if "confidence_interval" not in result and "confidence_interval_90" not in str(result):
+                raise ValueError("缺少置信区间")
+        # 其他题型不强制校验
 
     def _compute_entropy_weight(self, data: np.ndarray) -> dict:
         """熵权法计算。"""

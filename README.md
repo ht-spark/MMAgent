@@ -185,16 +185,10 @@ TAVILY_API_KEY=your-tavily-key
 python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx
 
 # 无 LLM 模式（确定性测试）
-python -m scr.math_modeling_agent.main run \
-  --problem examples/problem.md \
-  --data examples/附件1.xlsx examples/附件2.xlsx \
-  --no-llm
+python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx --no-llm
 
 # 指定输出目录
-python -m scr.math_modeling_agent.main run \
-  --problem examples/problem.md \
-  --data examples/附件1.xlsx \
-  --output artifacts/my_run
+python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx --output artifacts/my_run
 ```
 
 题目参数可直接传入文本或文件路径：

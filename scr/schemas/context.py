@@ -7,6 +7,8 @@ from __future__ import annotations
 from typing import Literal
 from pydantic import BaseModel, Field
 
+from .problem import CorrelatedPair
+
 
 class QuestionInfo(BaseModel):
     """单个小问信息（ProjectContext.questions 列表项）。
@@ -51,26 +53,58 @@ class FileRecord(BaseModel):
 
 
 class TableProfile(BaseModel):
-    """表画像（DataProfile.tables 列表项）。"""
+    """表画像（DataProfile.tables 列表项）。
+
+    覆盖数据画像 6 大维度中的表级信息：
+      - 基本面：n_rows / n_cols / field_names / sample_rows（样例）
+      - 质量：duplicate_rows / duplicate_rate
+      - 分布（多变量）：correlated_pairs（共线性）
+      - 粒度：candidate_keys
+      - 时空：time_coverage / spatial_columns
+    """
+
     source_file: str
     sheet_name: str = ""  # CSV 为空，Excel 为 sheet 名
     n_rows: int = Field(ge=0)
     n_cols: int = Field(ge=0)
     field_names: list[str] = Field(default_factory=list)
     sample_rows: list[dict] = Field(default_factory=list, max_length=5)
+    duplicate_rows: int = Field(default=0, ge=0)
+    duplicate_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    candidate_keys: list[str] = Field(default_factory=list)
+    correlated_pairs: list[CorrelatedPair] = Field(default_factory=list)
+    time_coverage: str = ""  # 如 "2023-01 ~ 2023-05 (5 个时间点)"
+    spatial_columns: list[str] = Field(default_factory=list)
 
 
 class FieldProfile(BaseModel):
-    """字段画像（DataProfile.fields 列表项）。"""
+    """字段画像（DataProfile.fields 列表项）。
+
+    覆盖数据画像 6 大维度（由 file_tools 确定性统计转换而来）：
+      - 基本面：dtype / is_candidate_key / is_spatial
+      - 质量：missing_count / missing_rate / outlier_rate / numeric_parseable_rate
+      - 分布：skewness / kurtosis / value_range
+      - 语义：unit_hint / max_category_share（目标不平衡）
+      - 时空：is_time_column
+    """
+
     source_file: str
     sheet_name: str = ""
     field_name: str
     dtype: str  # int/float/str/datetime/bool/category
     unit_hint: str | None = None
+    missing_count: int = Field(default=0, ge=0)
     missing_rate: float = Field(ge=0.0, le=1.0)
     unique_count: int = Field(ge=0)
     value_range: str = ""  # "min~max" 或 "top3 values"
     is_time_column: bool = False
+    is_candidate_key: bool = False
+    is_spatial: bool = False
+    skewness: float | None = None
+    kurtosis: float | None = None
+    outlier_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    max_category_share: float | None = None
+    numeric_parseable_rate: float | None = None
 
 
 class TableRelationship(BaseModel):
@@ -94,9 +128,17 @@ class DataProfileIssue(BaseModel):
 
 class DataProfile(BaseModel):
     """数据画像（architecture.md §3.2）。
-    
+
     数据画像必须由确定性工具生成。Excel 读取需要覆盖每个工作簿、每个 Sheet。
     数据画像的作用是约束方法选择。
+
+    6 大维度覆盖：
+      1. 基本面 — files / tables（规模、粒度、时空覆盖）
+      2. 质量 — quality_issues（缺失/重复/异常/编码一致性）
+      3. 分布 — fields（偏态/峰态）+ tables.correlated_pairs（共线性）
+      4. 语义 — fields（单位、不平衡度）
+      5. 时空 — fields.is_time_column / tables.time_coverage / spatial_columns
+      6. 建模假设预判 — modeling_constraints（模型可用性硬约束）
     """
     files: list[FileRecord] = Field(default_factory=list)
     tables: list[TableProfile] = Field(default_factory=list)
@@ -104,6 +146,7 @@ class DataProfile(BaseModel):
     relationships: list[TableRelationship] = Field(default_factory=list)
     quality_issues: list[DataProfileIssue] = Field(default_factory=list)
     preliminary_findings: list[str] = Field(default_factory=list)
+    modeling_constraints: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(default_factory=list)
     
     @property
