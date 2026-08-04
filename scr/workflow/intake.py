@@ -21,9 +21,11 @@
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import (
     DataProfile,
     DataProfileIssue,
@@ -50,8 +52,27 @@ def run_intake(state: dict) -> dict:
     data_paths = state.get("data_paths", [])
     output_dir = state.get("output_dir", "artifacts/default")
 
+    logger = get_run_logger()
+    log_step(
+        logger,
+        "workflow.intake",
+        "started",
+        detail=f"开始输入摄入，待读取 {len(data_paths)} 个数据文件",
+    )
+
     # 生成数据画像（确定性工具，Excel 自动展开所有 Sheet）
+    t0 = time.monotonic()
     data_profile = _build_data_profile(data_paths, output_dir)
+    log_step(
+        logger,
+        "workflow.intake",
+        "completed",
+        duration=time.monotonic() - t0,
+        detail=(
+            f"完成数据画像: {len(data_profile.files)} 个文件、"
+            f"{len(data_profile.tables)} 张表、{len(data_profile.fields)} 个字段"
+        ),
+    )
 
     return {
         "data_profile": data_profile,

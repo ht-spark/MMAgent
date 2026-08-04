@@ -25,6 +25,7 @@
 """
 from __future__ import annotations
 
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
 from ..schemas.paper import PaperDraft, ReviewReport
 
@@ -118,6 +119,16 @@ def route_gf(state: dict) -> str:
         "revise"  → 回退到论文写作或审查修复
     """
     result = check_gf(state)
+    log_step(
+        get_run_logger(),
+        "gate.gf",
+        "completed",
+        detail=(
+            f"action={result.action}, "
+            f"failed_checks={result.failed_checks or '无'}, "
+            f"budget_used={result.budget_used}/{GF_MAX_RETRIES}"
+        ),
+    )
     if result.passed:
         return "deliver"
     return "revise"

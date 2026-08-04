@@ -137,6 +137,47 @@ class TestModelBuilderCodeBased:
         assert comp["method_key"] == "code_based"
         assert "solution" in comp["results"]
 
+    def test_code_based_persists_artifacts(self, sample_csv: Path, tmp_path: Path):
+        """LLM 生成的解题代码应保存到 output_dir/questions/<qid>/。"""
+        from scr.workflow.intake import run_intake
+
+        out = tmp_path / "artifacts"
+        dp = run_intake(
+            {"data_paths": [str(sample_csv)], "output_dir": str(out)}
+        )["data_profile"]
+
+        builder = ModelBuilder(llm=MockLLM([_model_json(GOOD_CODE)]))
+        comp = builder.build(
+            _context(), _interpretation(), _decision(), dp, output_dir=str(out)
+        )["computation"]
+
+        assert comp["status"] == "success"
+        assert comp["method_key"] == "code_based"
+
+        q_dir = out / "questions" / "q1"
+        # 完整求解代码（写入前经 .strip()，无末尾换行）
+        assert (q_dir / "solution.py").exists()
+        assert (q_dir / "solution.py").read_text(encoding="utf-8") == GOOD_CODE.strip()
+        # 输入数据副本
+        assert (q_dir / "data.csv").exists()
+        # 结果包
+        assert (q_dir / "result.json").exists()
+        result = json.loads((q_dir / "result.json").read_text(encoding="utf-8"))
+        assert result["results"]["solution"] == [5.0, 5.0]
+        # computation 中记录产物目录
+        assert "q1" in comp["artifacts_dir"] and "questions" in comp["artifacts_dir"]
+
+    def test_no_output_dir_skips_persistence(self, sample_csv: Path, tmp_path: Path):
+        """不传 output_dir 时不落盘（向后兼容）。"""
+        from scr.workflow.intake import run_intake
+
+        dp = run_intake(
+            {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
+        )["data_profile"]
+        comp = self._build(MockLLM([_model_json(GOOD_CODE)]), dp)
+        assert comp["status"] == "success"
+        assert comp.get("artifacts_dir", "") == ""
+
     def test_repair_loop(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
 

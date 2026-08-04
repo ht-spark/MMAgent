@@ -10,12 +10,14 @@
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ..agents.decomposition_fallback import (
     fallback_subproblems_from_analysis,
     short_error,
 )
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import DataProfile, ProjectContext, QuestionInfo
 from ..schemas.problem import ProblemAnalysis, SubProblem
 
@@ -85,9 +87,10 @@ def _run_problem_analysis(
         return analysis, subproblems, None
     
     from ..agents.problem_analyst import ProblemAnalyst
-    
+
     analyst = ProblemAnalyst(llm=llm)
-    
+    logger = get_run_logger()
+
     # 将 DataProfile 转为 DataInventory 供 Agent 使用
     # Agent 需要 DataInventory 或 None
     data_inventory = None
@@ -112,8 +115,18 @@ def _run_problem_analysis(
         )
     
     try:
+        t0 = time.monotonic()
+        log_step(logger, "context.understand", "started", detail="LLM 题目理解")
         analysis = analyst.understand(problem_text, data_inventory)
+        log_step(
+            logger,
+            "context.understand",
+            "completed",
+            duration=time.monotonic() - t0,
+            detail=f"研究对象: {(analysis.research_subject or '')[:50]}",
+        )
     except Exception as e:
+        log_step(logger, "context.understand", "failed", error=str(e)[:200])
         print(f"[context] understand 失败: {e}")
         import re
         clean_text = re.sub(r"---\s*第\s*\d+\s*页\s*---\s*", "", problem_text).strip()
@@ -127,19 +140,47 @@ def _run_problem_analysis(
         )
     
     try:
+        t0 = time.monotonic()
+        log_step(logger, "context.decompose", "started", detail="LLM 小问拆分")
         subproblems = analyst.decompose(analysis)
+        log_step(
+            logger,
+            "context.decompose",
+            "completed",
+            duration=time.monotonic() - t0,
+            detail=f"拆分为 {len(subproblems)} 个小问",
+        )
     except Exception as e:
+        log_step(logger, "context.decompose", "failed", error=short_error(e))
         print(f"[context] decompose 结构化输出不可用，已自动降级: {short_error(e)}")
         subproblems = _create_fallback_subproblems(analysis)
-    
+
     # 如果 decompose 返回空，使用应急子问题
     if not subproblems:
         print("[context] subproblems 为空，使用应急子问题")
+        log_step(
+            logger,
+            "context.decompose",
+            "completed",
+            detail="subproblems 为空，使用应急子问题",
+        )
         subproblems = _create_fallback_subproblems(analysis)
-    
+
     try:
+        t0 = time.monotonic()
+        log_step(logger, "context.classify", "started", detail="LLM 题目分类")
         classification = analyst.classify(analysis, subproblems)
+        log_step(
+            logger,
+            "context.classify",
+            "completed",
+            duration=time.monotonic() - t0,
+            detail=(
+                f"题型: {getattr(classification, 'primary_type', 'unknown')}"
+            ),
+        )
     except Exception as e:
+        log_step(logger, "context.classify", "failed", error=str(e)[:200])
         print(f"[context] classify 失败: {e}")
         from ..schemas.problem import ProblemClassification
         classification = ProblemClassification(

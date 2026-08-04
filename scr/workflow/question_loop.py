@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import DataProfile, ProjectContext, QuestionInfo
 from ..schemas.question import (
     CurrentQuestionContext,
@@ -76,12 +77,24 @@ def select_question(state: dict) -> dict:
 
     if not next_qid:
         # 没有可执行的小问了
+        log_step(
+            get_run_logger(),
+            "workflow.select_question",
+            "completed",
+            detail="所有小问处理完毕",
+        )
         return {
             "current_question_id": "",
             "workflow_status": "all_questions_done",
         }
 
     print(f"[question_loop] 选择小问: {next_qid}")
+    log_step(
+        get_run_logger(),
+        "workflow.select_question",
+        "completed",
+        detail=f"选择下一个小问: {next_qid}",
+    )
 
     return {
         "current_question_id": next_qid,
@@ -172,10 +185,21 @@ def assemble_context(state: dict) -> dict:
     )
 
     print(f"[question_loop] 装配上下文: {current_qid}")
+    inherited_count = len(inherited_summaries)
     if inherited_summaries:
-        print(f"  → 继承 {len(inherited_summaries)} 个前问摘要")
+        print(f"  → 继承 {inherited_count} 个前问摘要")
     if required_data:
         print(f"  → 所需数据: {required_data}")
+    log_step(
+        get_run_logger(),
+        "workflow.assemble_context",
+        "completed",
+        question_id=current_qid,
+        detail=(
+            f"继承 {inherited_count} 个前问摘要"
+            + (f"；所需数据: {required_data}" if required_data else "")
+        ),
+    )
 
     return {"current_context": current_context}
 
@@ -212,6 +236,13 @@ def archive_result(state: dict) -> dict:
     # 写入结果
     question_results[current_qid] = current_result
     print(f"[question_loop] 归档小问 {current_qid}: status={current_result.status}")
+    log_step(
+        get_run_logger(),
+        "workflow.archive_result",
+        "completed",
+        question_id=current_qid,
+        detail=f"归档小问结果，status={current_result.status}",
+    )
 
     # 记录决策日志
     decision_log: DecisionLog | None = state.get("decision_log")

@@ -88,6 +88,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     # 创建日志
     logger = get_logger(name="mmagent", run_id=run_id, log_file=artifacts.run_dir / "run.log")
+    log_path = artifacts.run_dir / "run.log"
 
     # 初始化状态
     state = create_initial_state(
@@ -119,6 +120,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"\n=== 初始化完成 ===")
     print(f"Run ID: {run_id}")
     print(f"产物目录: {artifacts.run_dir}")
+    print(f"日志文件: {log_path}")
     print(f"状态: {state['workflow_status']}")
     print(f"小问数: {len(state['project_context'].questions)} (待 Phase 1 解析)")
     print(f"\n后续阶段将实现:")
@@ -136,6 +138,8 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """运行工作流。当前为 Phase 0 骨架，仅初始化。"""
+    import logging as _logging
+
     from .graph import run_graph
 
     # 读取题目
@@ -147,12 +151,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     if llm is None and not args.no_llm:
         print("[main] 提示：OPENAI_API_KEY 未设置，使用无 LLM 模式")
 
+    # 日志级别
+    log_level = getattr(_logging, str(args.log_level).upper(), _logging.INFO)
+
     try:
         result = run_graph(
             problem_text=problem_text,
             data_paths=args.data,
             output_dir=args.output,
             llm=llm,
+            log_level=log_level,
         )
 
         # 打印结果摘要
@@ -265,6 +273,12 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--data", nargs="+", help="数据文件路径（可多个）")
     run_parser.add_argument("--output", help="产物输出目录")
     run_parser.add_argument("--no-llm", action="store_true", help="不使用 LLM")
+    run_parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error"],
+        default="info",
+        help="运行日志级别（写入 run.log，默认 info）",
+    )
 
     args = parser.parse_args(argv)
 

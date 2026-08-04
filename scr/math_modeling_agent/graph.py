@@ -3,10 +3,19 @@ LangGraph 编排：主图组装。
 """
 from __future__ import annotations
 
+import functools
+import logging
+import time
 from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+
+from ..runtime.logging import (
+    get_run_logger,
+    log_step,
+    setup_run_logger,
+)
 
 from ..agents.paper_writer import write_paper_node
 from ..agents.question_solver import solve_question_node
@@ -27,10 +36,90 @@ from .state import ProjectState, create_initial_state
 
 
 # ---------------------------------------------------------------------------
+# 节点日志装饰器
+# ---------------------------------------------------------------------------
+
+# 当前运行的日志器（由 run_graph 配置，供所有节点共享）
+_run_logger: logging.Logger | None = None
+
+
+def _get_logger() -> logging.Logger:
+    """获取当前运行日志器（未配置时使用默认）。"""
+    global _run_logger
+    if _run_logger is None:
+        _run_logger = get_run_logger()
+    return _run_logger
+
+
+def _logged_node(name: str):
+    """装饰 LangGraph 节点：记录开始/完成/失败日志（含耗时），并实时输出到控制台。
+
+    日志写入 <output_dir>/run.log（JSON 结构化），
+    控制台同时打印人类可读的实时进度。
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(state: ProjectState) -> dict:
+            logger = _get_logger()
+            question_id = state.get("current_question_id")
+            t0 = time.monotonic()
+            log_step(logger, f"node.{name}", "started", question_id=question_id)
+            print(f"▶ [{name}] 开始", flush=True)
+            try:
+                result = fn(state)
+                duration = time.monotonic() - t0
+                log_step(
+                    logger,
+                    f"node.{name}",
+                    "completed",
+                    question_id=question_id,
+                    duration=duration,
+                )
+                print(f"  ✔ [{name}] 完成（{duration:.1f}s）", flush=True)
+                return result
+            except Exception as e:
+                duration = time.monotonic() - t0
+                log_step(
+                    logger,
+                    f"node.{name}",
+                    "failed",
+                    question_id=question_id,
+                    duration=duration,
+                    error=str(e),
+                )
+                print(f"  ✗ [{name}] 失败: {e}", flush=True)
+                raise
+
+        return wrapper
+
+    return decorator
+
+
+def _print_state_update(node_name: str, update: dict) -> None:
+    """实时打印节点返回的状态更新摘要（工作流状态变化）。"""
+    parts: list[str] = []
+    for key in ("workflow_status", "current_question_id", "_gq_action"):
+        value = update.get(key)
+        if value:
+            parts.append(f"{key}={value}")
+    pc = update.get("project_context")
+    if pc is not None and getattr(pc, "questions", None):
+        parts.append(f"questions={len(pc.questions)}")
+    qr = update.get("question_results")
+    if qr is not None:
+        parts.append(f"results={len(qr)}")
+    detail = "  ".join(parts)
+    suffix = f"：{detail}" if detail else ""
+    print(f"  ◇ [{node_name}] 状态更新{suffix}", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # 节点函数
 # ---------------------------------------------------------------------------
 
 
+@_logged_node("intake")
 def _intake_node(state: ProjectState) -> dict:
     """intake 节点：输入摄入。"""
     print("[intake] 开始：数据画像...")
@@ -43,6 +132,7 @@ def _intake_node(state: ProjectState) -> dict:
     return result
 
 
+@_logged_node("context")
 def _context_node(state: ProjectState) -> dict:
     """context 节点：全局上下文建立。"""
     print("[context] 开始：题目理解 + 小问拆分...")
@@ -56,42 +146,50 @@ def _context_node(state: ProjectState) -> dict:
     return result
 
 
+@_logged_node("g0_retry")
 def _g0_retry_node(state: ProjectState) -> dict:
     """G0 重试时递增计数器。"""
     retry_count = state.get("_g0_retry_count", 0)
     return {"_g0_retry_count": retry_count + 1}
 
 
+@_logged_node("select_question")
 def _select_question_node(state: ProjectState) -> dict:
     """select_question 节点：选择下一个可执行的小问。"""
     return select_question(state)
 
 
+@_logged_node("assemble_context")
 def _assemble_context_node(state: ProjectState) -> dict:
     """assemble_context 节点：装配当前小问上下文。"""
     return assemble_context(state)
 
 
+@_logged_node("solve_question")
 def _solve_question_node(state: ProjectState) -> dict:
     """solve_question 节点：小问求解（含方法探索 + 建模计算）。"""
     return solve_question_node(state)
 
 
+@_logged_node("validate_result")
 def _validate_result_node(state: ProjectState) -> dict:
     """validate_result 节点：题型验证（Phase 5）。"""
     return validate_result_node(state)
 
 
+@_logged_node("gq_check")
 def _gq_check_node(state: ProjectState) -> dict:
     """gq_check 节点：GQ 小问结果质量门。"""
     return run_gq_node(state)
 
 
+@_logged_node("archive_result")
 def _archive_result_node(state: ProjectState) -> dict:
     """archive_result 节点：归档小问结果。"""
     return archive_result(state)
 
 
+@_logged_node("global_review")
 def _global_review_node(state: ProjectState) -> dict:
     """global_review 节点：全题一致性审查（Phase 6 §6.1）。"""
     print("[global_review] 开始：全题一致性审查...")
@@ -103,6 +201,7 @@ def _global_review_node(state: ProjectState) -> dict:
     return result
 
 
+@_logged_node("write_paper")
 def _write_paper_node(state: ProjectState) -> dict:
     """write_paper 节点：论文写作（Phase 6 §6.2）。"""
     print("[write_paper] 开始：论文写作...")
@@ -114,6 +213,7 @@ def _write_paper_node(state: ProjectState) -> dict:
     return result
 
 
+@_logged_node("review_paper")
 def _review_paper_node(state: ProjectState) -> dict:
     """review_paper 节点：论文审查（Phase 6 §6.1）。"""
     print("[review_paper] 开始：论文审查...")
@@ -125,6 +225,7 @@ def _review_paper_node(state: ProjectState) -> dict:
     return result
 
 
+@_logged_node("deliver")
 def _deliver_node(state: ProjectState) -> dict:
     """deliver 节点：最终交付。
 
@@ -184,6 +285,7 @@ def _deliver_node(state: ProjectState) -> dict:
     return {"workflow_status": "delivered", "final_package_dir": output_dir}
 
 
+@_logged_node("gf_revise")
 def _gf_revise_node(state: ProjectState) -> dict:
     """GF 修订时递增计数器并传递审查反馈。"""
     retry_count = state.get("_gf_retry_count", 0)
@@ -318,6 +420,7 @@ def run_graph(
     llm: Any | None = None,
     search_provider: Any | None = None,
     checkpoint: bool = True,
+    log_level: int = logging.INFO,
 ) -> dict:
     """用 LangGraph 运行完整工作流。
 
@@ -335,6 +438,7 @@ def run_graph(
         llm: 可选 LLM 注入。
         search_provider: 可选搜索 Provider。
         checkpoint: 是否启用 checkpoint。
+        log_level: 运行日志级别（写入 run.log，默认 INFO）。
 
     Returns:
         最终 State。
@@ -346,6 +450,22 @@ def run_graph(
 
     run_id = uuid.uuid4().hex[:8]
     output_dir = output_dir or f"artifacts/{run_id}"
+
+    # 配置运行日志：run.log（JSON 结构化，实时追加）+ 控制台实时进度
+    global _run_logger
+    logger, log_path = setup_run_logger(
+        run_id=run_id,
+        log_dir=output_dir,
+        level=log_level,
+        console=True,
+        console_level=logging.WARNING,
+    )
+    _run_logger = logger
+
+    print(f"▶ Run ID: {run_id}")
+    print(f"▶ 输出目录: {output_dir}")
+    if log_path:
+        print(f"▶ 日志文件: {log_path}  （可用 Get-Content -Wait {log_path} 实时查看）")
 
     app = build_graph(checkpoint=checkpoint)
     config = {"configurable": {"thread_id": run_id}}
@@ -359,5 +479,24 @@ def run_graph(
         search_provider=search_provider,
     )
 
-    final_state = app.invoke(initial_state, config=config)
+    # 流式执行：每完成一个节点即实时输出其状态更新，便于实时查看进度
+    final_state: dict | None = None
+    for mode, chunk in app.stream(
+        initial_state,
+        config=config,
+        stream_mode=["updates", "values"],
+    ):
+        if mode == "values":
+            final_state = chunk
+        else:
+            # mode == "updates": chunk 是 {node_name: state_update}
+            for node_name, update in chunk.items():
+                _print_state_update(node_name, update)
+
+    # 兜底：stream 未产出完整 values 时，从检查点读取最终状态
+    if final_state is None:
+        try:
+            final_state = app.get_state(config).values
+        except Exception:
+            final_state = dict(initial_state)
     return dict(final_state)

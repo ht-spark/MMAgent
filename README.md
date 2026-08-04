@@ -210,16 +210,48 @@ uv run pytest
 python -m pytest tests/ -q
 ```
 
+### 运行日志
+
+每次运行实时输出节点进度（开始/完成/耗时/状态更新），并写入结构化日志：
+
+```text
+artifacts/<run_id>/
+  run.log                 # JSON 结构化运行日志（节点、步骤、质量门、耗时、错误）
+```
+
+- **实时查看状态**：终端实时显示每个智能体节点与小问的进度；另一个终端可用
+  `Get-Content -Wait artifacts/<run_id>/run.log` 实时跟随日志文件。
+- **日志级别**：`--log-level debug|info|warning|error` 控制 run.log 的详细程度（默认 `info`）。
+- **日志内容**：每个节点（intake/context/select_question/solve_question/validate_result/各质量门等）的开始、完成、耗时与失败；每个小问的解题步骤（问题澄清、方法探索、建模计算、可复用摘要）；G0/GQ/GF 质量门动作与失败项。
+
+```bash
+# 以 debug 级别记录详细日志
+python -m scr.math_modeling_agent.main run --problem examples/problem.md \
+  --data examples/附件1.xlsx --output artifacts/my_run --no-llm --log-level debug
+```
+
 ### 产物结构
 
 每次运行在 `artifacts/<run_id>/` 下保存独立产物：
 
 ```text
 artifacts/<run_id>/
+  run.log                 # JSON 结构化运行日志（节点、步骤、质量门、耗时、错误）
   paper.md                # 论文 Markdown 草稿
   paper.docx              # 论文 DOCX（自动转换）
   review_report.json      # 审查报告
+  input/                  # 原始题目与附件拷贝
+  context/                # 数据画像报告、inventory JSON
+  figures/                # 论文图表 PNG
+  questions/<qid>/        # 每小问的建模解题产物（题目驱动建模时生成）
+    solution.py           # LLM 生成的完整求解代码
+    data.csv              # 传入沙箱执行的输入数据
+    result.json           # 执行结果（results + metrics + 方法信息）
 ```
+
+> 说明：`questions/<qid>/` 仅在"题目驱动建模"路径（配置了 LLM 且题型为
+> optimization / stochastic_optimization / evaluation / prediction / simulation）
+> 生成；无 LLM 或回退到预设方法时，该小问不产生代码文件（计算由确定性内置函数完成）。
 
 ---
 

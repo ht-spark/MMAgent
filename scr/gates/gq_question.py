@@ -26,6 +26,7 @@ Phase 5 集成：启用实质检查（computation、validation）。
 """
 from __future__ import annotations
 
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
 from ..schemas.question import QuestionResult
 
@@ -139,6 +140,13 @@ def run_gq_node(state: dict) -> dict:
         if current_result:
             current_result.status = "validated"
         print(f"[GQ] 小问 {current_qid} 验证通过 ✓")
+        log_step(
+            get_run_logger(),
+            "gate.gq",
+            "passed",
+            question_id=current_qid,
+            detail="小问验证通过",
+        )
         return {
             "current_result": current_result,
             "_gq_action": "pass",
@@ -150,6 +158,15 @@ def run_gq_node(state: dict) -> dict:
             current_result.status = "solving"
             current_result.retry_count = retry_count + 1
         print(f"[GQ] 小问 {current_qid} 需要重试 (第 {retry_count + 1} 次): {result.failed_checks}")
+        log_step(
+            get_run_logger(),
+            "gate.gq",
+            "retry",
+            question_id=current_qid,
+            detail=(
+                f"第 {retry_count + 1} 次重试: {result.failed_checks}"
+            ),
+        )
         return {
             "current_result": current_result,
             "_solve_retry_count": retry_count + 1,
@@ -164,6 +181,13 @@ def run_gq_node(state: dict) -> dict:
             f"失败项: {', '.join(result.failed_checks)}"
         )
     print(f"[GQ] 小问 {current_qid} 被阻塞 ✗: {result.failed_checks}")
+    log_step(
+        get_run_logger(),
+        "gate.gq",
+        "blocked",
+        question_id=current_qid,
+        detail=f"小问被阻塞: {result.failed_checks}",
+    )
     return {
         "current_result": current_result,
         "_gq_action": "blocked",

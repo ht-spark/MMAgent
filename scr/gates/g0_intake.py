@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
 from ..schemas.context import DataProfile, ProjectContext
 
@@ -137,6 +138,15 @@ def route_g0(state: dict) -> str:
         "human" → 人工介入
     """
     result = check_g0(state)
+    log_step(
+        get_run_logger(),
+        "gate.g0",
+        "completed",
+        detail=(
+            f"action={result.action}, "
+            f"failed_checks={result.failed_checks or '无'}"
+        ),
+    )
     return result.action
 
 

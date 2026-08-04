@@ -15,8 +15,10 @@ Phase 5+ 将替换为：
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
+from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import DataProfile
 from ..schemas.question import (
     CurrentQuestionContext,
@@ -53,41 +55,91 @@ class QuestionSolver:
         self,
         context: CurrentQuestionContext,
         data_profile: DataProfile | None = None,
+        output_dir: str | None = None,
     ) -> QuestionResult:
         """求解当前小问。
 
         Args:
             context: 当前小问的上下文包。
             data_profile: 数据画像（供方法探索器硬过滤和建模数据准备）。
+            output_dir: 产物目录（LLM 生成的解题代码将保存到其 questions/<qid>/ 下）。
 
         Returns:
             status="validating" 的 QuestionResult。
         """
         qid = context.question_id
+        logger = get_run_logger()
 
         # 步骤 1: 问题澄清（§5.2）
+        t0 = time.monotonic()
+        log_step(logger, "solve.interpret", "started", question_id=qid)
         interpretation = self._interpret_problem(context)
+        log_step(
+            logger,
+            "solve.interpret",
+            "completed",
+            question_id=qid,
+            duration=time.monotonic() - t0,
+            detail=f"任务类型: {interpretation.math_task}",
+        )
 
         # 步骤 2: 方法探索与决策（§5.3-5.4）
+        t0 = time.monotonic()
+        log_step(logger, "solve.explore", "started", question_id=qid)
         method_candidates, decision_record = self._explorer.explore_and_decide(
             context, interpretation, data_profile
         )
+        selected_method = decision_record.get("selected_method", "未知方法")
+        log_step(
+            logger,
+            "solve.explore",
+            "completed",
+            question_id=qid,
+            duration=time.monotonic() - t0,
+            detail=(
+                f"候选 {len(method_candidates)} 个，决策: {selected_method}"
+            ),
+        )
 
         # 步骤 3: 建模计算与可视化（§5.5）
+        t0 = time.monotonic()
+        log_step(logger, "solve.build", "started", question_id=qid)
         model_output = self._builder.build(
-            context, interpretation, decision_record, data_profile
+            context, interpretation, decision_record, data_profile,
+            output_dir=output_dir,
+        )
+        comp_status = model_output["computation"].get("status", "unknown")
+        log_step(
+            logger,
+            "solve.build",
+            "completed",
+            question_id=qid,
+            duration=time.monotonic() - t0,
+            detail=(
+                f"计算状态: {comp_status}，"
+                f"图表 {len(model_output.get('figures', []))} 张，"
+                f"表格 {len(model_output.get('tables', []))} 张"
+            ),
         )
 
         # 步骤 4: 提取假设
         assumptions = decision_record.get("assumptions", [])
 
         # 步骤 5: 生成可复用摘要（包含实际计算结果）
+        t0 = time.monotonic()
         reusable_summary = self._build_summary(
             qid, context, interpretation, decision_record, model_output
         )
+        log_step(
+            logger,
+            "solve.summary",
+            "completed",
+            question_id=qid,
+            duration=time.monotonic() - t0,
+            detail=f"生成 {len(reusable_summary.verified_conclusions)} 条可复用结论",
+        )
 
         # 步骤 6: 组装 QuestionResult
-        selected_method = decision_record.get("selected_method", "未知方法")
         computation = model_output["computation"]
         comp_status = computation.get("status", "unknown")
 
@@ -120,6 +172,16 @@ class QuestionSolver:
         print(f"[solver] 小问 {qid} 求解完成 "
               f"(task={interpretation.math_task}, method={selected_method}, "
               f"computation={comp_status})")
+        log_step(
+            logger,
+            "solve",
+            "completed",
+            question_id=qid,
+            detail=(
+                f"小问求解完成: task={interpretation.math_task}, "
+                f"method={selected_method}, computation={comp_status}"
+            ),
+        )
         return result
 
     def _build_findings(
@@ -455,6 +517,7 @@ def solve_question_node(state: dict) -> dict:
     current_context: CurrentQuestionContext | None = state.get("current_context")
     data_profile: DataProfile | None = state.get("data_profile")
     llm = state.get("llm")
+    output_dir = state.get("output_dir")
     retry_count = state.get("_solve_retry_count", 0)
 
     if current_context is None:
@@ -467,7 +530,9 @@ def solve_question_node(state: dict) -> dict:
 
     # Phase 3：方法探索 + 决策，无论是否重试都重新探索
     # Phase 4+ 将根据 retry_count 选择不同的方法候选
-    result = solver.solve(current_context, data_profile=data_profile)
+    result = solver.solve(
+        current_context, data_profile=data_profile, output_dir=output_dir
+    )
 
     if retry_count > 0:
         result.retry_count = retry_count

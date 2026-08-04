@@ -16,7 +16,10 @@
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -48,6 +51,7 @@ class ModelBuilder:
         interpretation: ProblemInterpretation,
         decision_record: dict,
         data_profile: DataProfile | None = None,
+        output_dir: str | Path | None = None,
     ) -> dict:
         """执行完整的建模计算流程。
 
@@ -56,6 +60,7 @@ class ModelBuilder:
             interpretation: 问题澄清。
             decision_record: 方法决策记录（Phase 3 产出）。
             data_profile: 数据画像。
+            output_dir: 产物目录（LLM 生成的解题代码将保存到其 questions/<qid>/ 下）。
 
         Returns:
             包含 formulation, data_preparation, computation, figures, tables 的字典。
@@ -86,7 +91,8 @@ class ModelBuilder:
 
         # 步骤 3: 执行计算
         computation = self._execute(
-            selected_method, math_task, data_preparation, formulation, context, method_key
+            selected_method, math_task, data_preparation, formulation, context,
+            method_key, output_dir,
         )
 
         # 步骤 4: 生成输出
@@ -644,8 +650,19 @@ class ModelBuilder:
         formulation: dict,
         context: CurrentQuestionContext,
         method_key: str = "",
+        output_dir: str | Path | None = None,
     ) -> dict:
-        """执行模型计算。"""
+        """执行模型计算。
+
+        Args:
+            method_name: 选中方法名称。
+            math_task: 数学任务类型。
+            data_prep: 数据准备结果。
+            formulation: 模型表述。
+            context: 当前小问上下文。
+            method_key: 方法标识。
+            output_dir: 产物目录（LLM 生成代码保存到 questions/<qid>/）。
+        """
         method_key = method_key or formulation.get("method_key", "")
         computation = {
             "method": method_name,
@@ -665,7 +682,7 @@ class ModelBuilder:
         if self._llm is not None and math_task in CODE_BASED_TASKS:
             try:
                 code_computation = self._execute_code_based(
-                    method_name, math_task, data_prep, formulation, context
+                    method_name, math_task, data_prep, formulation, context, output_dir
                 )
                 if code_computation.get("status") == "success":
                     return code_computation
@@ -733,11 +750,20 @@ class ModelBuilder:
         data_prep: dict,
         formulation: dict,
         context: CurrentQuestionContext,
+        output_dir: str | Path | None = None,
     ) -> dict:
         """LLM 生成具体数学模型与求解代码，沙箱执行并校验结果。
 
         流程：准备数据 CSV → 生成建模 JSON（含代码）→ 沙箱执行 →
               按题型校验结果 → 失败反馈修复重试（上限 CODE_GEN_MAX_RETRIES）。
+
+        Args:
+            method_name: 选中方法名称。
+            math_task: 数学任务类型。
+            data_prep: 数据准备结果。
+            formulation: 模型表述。
+            context: 当前小问上下文。
+            output_dir: 产物目录（解题代码/数据/结果保存到 questions/<qid>/）。
         """
         from ..agents.code_modeler import CodeModeler, CodeModelingError
         from ..tools.code_executor import CodeExecutionError, execute_model_code
@@ -810,6 +836,16 @@ class ModelBuilder:
                     f"[builder]   └ 题目驱动建模成功（总耗时 {time.time() - t_start:.1f}s，"
                     f"第 {attempt + 1} 次尝试）"
                 )
+                # 4.1 持久化解题代码/数据/结果到 artifacts/questions/<qid>/
+                artifacts_dir = self._persist_question_artifacts(
+                    question_id=context.question_id,
+                    output_dir=output_dir,
+                    code=code,
+                    data_csv_path=csv_path,
+                    results=result,
+                    method_name=method_name,
+                    model_name=model_json.get("model_name", method_name),
+                )
                 return {
                     "status": "success",
                     "method": method_name,
@@ -826,6 +862,7 @@ class ModelBuilder:
                         "objective": model_json.get("objective", ""),
                         "constraints": model_json.get("constraints", []),
                     },
+                    "artifacts_dir": str(artifacts_dir) if artifacts_dir else "",
                     "error": "",
                 }
 
@@ -840,6 +877,68 @@ class ModelBuilder:
                     os.unlink(csv_path)
                 except OSError:
                     pass
+
+    def _persist_question_artifacts(
+        self,
+        question_id: str,
+        output_dir: str | Path | None,
+        code: str,
+        data_csv_path: str | Path | None,
+        results: dict,
+        method_name: str,
+        model_name: str,
+    ) -> Path | None:
+        """将小问的建模解题产物保存到 <output_dir>/questions/<qid>/。
+
+        保存内容（architecture.md §6.3 每问代码/数据/结果包）：
+          - solution.py：LLM 生成的完整求解代码
+          - data.csv：传入沙箱执行的输入数据
+          - result.json：执行结果（results + 方法信息）
+
+        Args:
+            question_id: 小问 ID。
+            output_dir: 产物根目录（artifacts/<run_id>）。
+            code: LLM 生成的完整求解代码。
+            data_csv_path: 沙箱执行用的数据 CSV（临时文件，保存为副本）。
+            results: 沙箱执行返回的结果字典。
+            method_name: 选中方法名称。
+            model_name: 生成的模型名称。
+
+        Returns:
+            保存目录 Path；output_dir 为空时不保存并返回 None。
+        """
+        if not output_dir or not question_id:
+            return None
+
+        q_dir = Path(output_dir) / "questions" / question_id
+        q_dir.mkdir(parents=True, exist_ok=True)
+
+        # 完整求解代码
+        (q_dir / "solution.py").write_text(code, encoding="utf-8")
+
+        # 输入数据（保存副本，避免随临时文件删除）
+        if data_csv_path and Path(data_csv_path).exists():
+            shutil.copy2(data_csv_path, q_dir / "data.csv")
+
+        # 执行结果
+        (q_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "status": "success",
+                    "method": method_name,
+                    "model_name": model_name,
+                    "results": results,
+                    "metrics": results.get("metrics", {}) if isinstance(results, dict) else {},
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+
+        print(f"[builder] 解题代码/数据/结果已保存: {q_dir}")
+        return q_dir
 
     def _write_data_csv(self, data_prep: dict) -> str | None:
         """将数据矩阵（含表头）写入临时 CSV，供生成代码读取。"""
