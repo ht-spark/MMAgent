@@ -25,6 +25,9 @@ CODE_BASED_TASKS = {
     "simulation",
 }
 
+#: LLM 建模调用的超时秒数（daemon 线程 join 实现，超时后走重试/回退）
+LLM_INVOKE_TIMEOUT = 180
+
 
 class CodeModelingError(Exception):
     """LLM 建模失败（无 LLM、响应解析失败或缺少 solution_code）。"""
@@ -68,19 +71,67 @@ class CodeModeler:
         prompt = self._build_prompt(
             question_text, math_task, method_hint, data_summary, feedback
         )
+        import time
+
+        t0 = time.time()
+        print(
+            f"[code_modeler] 正在调用 LLM 生成数学模型与求解代码"
+            f"（题型={math_task}，方法={method_hint or 'auto'}）..."
+        )
         try:
-            raw = self._llm.invoke(prompt)
+            raw = self._invoke_with_timeout(self._llm, prompt)
         except Exception as e:
+            print(f"[code_modeler] LLM 调用失败（耗时 {time.time() - t0:.1f}s）: {e}")
             raise CodeModelingError(f"LLM 调用失败: {e}")
 
         content = self._extract_content(raw)
-        model_json = self._parse_json(content)
+        try:
+            model_json = self._parse_json(content)
+        except CodeModelingError as e:
+            print(f"[code_modeler] 响应解析失败（耗时 {time.time() - t0:.1f}s）: {e}")
+            raise
+
+        code_len = len(str(model_json.get("solution_code", "")))
+        print(
+            f"[code_modeler] LLM 建模完成（耗时 {time.time() - t0:.1f}s，"
+            f"模型={model_json.get('model_name', '?')}，代码 {code_len} 字符）"
+        )
         self._validate(model_json)
         return model_json
 
     # ------------------------------------------------------------------
     # Prompt 构建
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _invoke_with_timeout(llm: Any, prompt: str, timeout: float = LLM_INVOKE_TIMEOUT) -> Any:
+        """调用 LLM，带超时保护。
+
+        用 daemon 线程 + join(timeout) 实现：超时后调用方立即返回错误，
+        不阻塞整个流程（线程继续在后台直到进程退出）。
+        """
+        import threading
+
+        box: dict[str, Any] = {}
+        err: dict[str, Exception] = {}
+
+        def _worker() -> None:
+            try:
+                box["raw"] = llm.invoke(prompt)
+            except Exception as e:  # noqa: BLE001 - 收集任意异常供主线程
+                err["exc"] = e
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=timeout)
+
+        if t.is_alive():
+            raise CodeModelingError(f"LLM 调用超时（>{timeout}s），已放弃本次生成")
+        if "exc" in err:
+            raise err["exc"]
+        if "raw" not in box:
+            raise CodeModelingError("LLM 调用未返回结果")
+        return box["raw"]
 
     def _build_prompt(
         self,

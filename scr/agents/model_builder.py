@@ -742,6 +742,8 @@ class ModelBuilder:
         from ..agents.code_modeler import CodeModeler, CodeModelingError
         from ..tools.code_executor import CodeExecutionError, execute_model_code
 
+        import time
+
         csv_path = self._write_data_csv(data_prep)
         if csv_path is None:
             return {"status": "error", "error": "无法准备数据 CSV（无数据矩阵）"}
@@ -750,9 +752,15 @@ class ModelBuilder:
         modeler = CodeModeler(self._llm)
         feedback = ""
         last_error = ""
+        t_start = time.time()
+        print(
+            f"[builder] 题目驱动建模开始（题型={math_task}，方法={method_name}，"
+            f"最多尝试 {CODE_GEN_MAX_RETRIES} 次）"
+        )
 
         try:
             for attempt in range(CODE_GEN_MAX_RETRIES):
+                print(f"[builder]   └ 第 {attempt + 1}/{CODE_GEN_MAX_RETRIES} 次尝试：生成模型与代码...")
                 # 1. 生成建模 JSON（含 solution_code）
                 try:
                     model_json = modeler.generate_model(
@@ -765,17 +773,28 @@ class ModelBuilder:
                 except CodeModelingError as e:
                     last_error = str(e)
                     feedback = f"建模 JSON 生成失败: {last_error}"
+                    print(f"[builder]     ↳ 建模 JSON 生成失败: {last_error[:120]}")
                     continue
 
                 code = str(model_json.get("solution_code", "")).strip()
 
                 # 2. 沙箱执行
+                t_exec = time.time()
+                print(
+                    f"[builder]     ↳ 模型代码就绪（{model_json.get('model_name', '?')}，"
+                    f"{len(code)} 字符），开始沙箱执行..."
+                )
                 try:
                     result = execute_model_code(code, data_csv_path=csv_path)
                 except CodeExecutionError as e:
                     last_error = str(e)
                     feedback = f"求解代码执行失败: {last_error}"
+                    print(
+                        f"[builder]     ↳ 代码执行失败（耗时 {time.time() - t_exec:.1f}s）: "
+                        f"{last_error[:150]}"
+                    )
                     continue
+                print(f"[builder]     ↳ 代码执行成功（耗时 {time.time() - t_exec:.1f}s），校验结果...")
 
                 # 3. 按题型校验结果
                 try:
@@ -783,9 +802,14 @@ class ModelBuilder:
                 except Exception as e:
                     last_error = str(e)
                     feedback = f"结果不满足题型要求: {last_error}"
+                    print(f"[builder]     ↳ 结果校验未通过: {last_error[:150]}")
                     continue
 
                 # 4. 成功
+                print(
+                    f"[builder]   └ 题目驱动建模成功（总耗时 {time.time() - t_start:.1f}s，"
+                    f"第 {attempt + 1} 次尝试）"
+                )
                 return {
                     "status": "success",
                     "method": method_name,
@@ -805,6 +829,10 @@ class ModelBuilder:
                     "error": "",
                 }
 
+            print(
+                f"[builder]   └ 题目驱动建模失败（总耗时 {time.time() - t_start:.1f}s）: "
+                f"{last_error[:150]}"
+            )
             return {"status": "error", "error": last_error or "建模/执行/校验全部失败"}
         finally:
             if csv_path and os.path.exists(csv_path):
