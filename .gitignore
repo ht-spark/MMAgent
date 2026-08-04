@@ -58,6 +58,7 @@ data/input/
 .agents/
 .codex/
 .workbuddy/
+.reasonix/
 
 # ============== 日志 ==============
 *.log
