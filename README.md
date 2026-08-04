@@ -182,9 +182,7 @@ TAVILY_API_KEY=your-tavily-key
 
 ```bash
 # 基本运行（需配置 .env）
-python -m scr.math_modeling_agent.main run \
-  --problem examples/problem.md \
-  --data examples/附件1.xlsx examples/附件2.xlsx
+python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx
 
 # 无 LLM 模式（确定性测试）
 python -m scr.math_modeling_agent.main run \
