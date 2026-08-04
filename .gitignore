@@ -68,3 +68,4 @@ logs/
 *.bak
 *.old
 .artifacts/
+.reasonix
