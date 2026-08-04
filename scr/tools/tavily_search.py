@@ -428,10 +428,20 @@ def create_search_tool(**kwargs: Any) -> TavilySearchTool:
 # ---------------------------------------------------------------------------
 
 
+# 中文结构词：在搜索关键词提取时用于切分长中文片段，保持名词性短语完整
+_ZH_SEPARATORS = re.compile(
+    r"(?:的|和|与|及|或|在|对|于|请|并|且|使|将|以|为|等|但|而|从|到|按|"
+    r"根据|要求|建立|给出|求解|分析|研究|考虑|其中|以及|进行|假定|假设|"
+    r"相对|保持|增长|趋势|问题)"
+)
+
+
 def _extract_keywords(text: str, max_keywords: int = 5) -> str:
     """从问题描述中提取关键词。
 
-    简单策略：去除常见停用词，取出现频率较高的词。
+    支持中文：在结构词/连词处切分长中文片段，保留名词性短语
+    （如"各种农作物 预期销售量 种植成本 亩产量"），避免把整段
+    中文当作一个"词"导致搜索查询失效。
     """
     if not text:
         return ""
@@ -450,17 +460,29 @@ def _extract_keywords(text: str, max_keywords: int = 5) -> str:
         "as", "into", "through", "during", "before", "after",
     }
 
-    # 分词（简单按空格分割）
-    words = cleaned.split()
+    # 中文片段在结构词处切分；英文按空格切分
+    segments: list[str] = []
+    for token in cleaned.split():
+        if re.search(r"[\u4e00-\u9fff]", token):
+            parts = [p.strip() for p in _ZH_SEPARATORS.split(token)]
+            segments.extend(parts)
+        else:
+            segments.append(token)
 
-    # 过滤停用词和短词
+    # 过滤停用词、短词与过长的句子片段
     keywords = [
-        w for w in words
-        if w.lower() not in stop_words and len(w) >= 2
+        w for w in segments
+        if w.lower() not in stop_words and 2 <= len(w) <= 12
     ]
 
-    # 取前 N 个
-    return " ".join(keywords[:max_keywords])
+    # 去重保序，取前 N 个
+    seen: set[str] = set()
+    unique: list[str] = []
+    for w in keywords:
+        if w not in seen:
+            seen.add(w)
+            unique.append(w)
+    return " ".join(unique[:max_keywords])
 
 
 def _extract_method_names(title: str, content: str) -> list[str]:

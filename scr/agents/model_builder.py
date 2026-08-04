@@ -52,6 +52,7 @@ class ModelBuilder:
         decision_record: dict,
         data_profile: DataProfile | None = None,
         output_dir: str | Path | None = None,
+        feedback: str = "",
     ) -> dict:
         """执行完整的建模计算流程。
 
@@ -61,6 +62,7 @@ class ModelBuilder:
             decision_record: 方法决策记录（Phase 3 产出）。
             data_profile: 数据画像。
             output_dir: 产物目录（LLM 生成的解题代码将保存到其 questions/<qid>/ 下）。
+            feedback: 自评/前次尝试的改进建议（作为代码生成的初始反馈）。
 
         Returns:
             包含 formulation, data_preparation, computation, figures, tables 的字典。
@@ -92,7 +94,7 @@ class ModelBuilder:
         # 步骤 3: 执行计算
         computation = self._execute(
             selected_method, math_task, data_preparation, formulation, context,
-            method_key, output_dir,
+            method_key, output_dir, feedback,
         )
 
         # 步骤 4: 生成输出
@@ -651,6 +653,7 @@ class ModelBuilder:
         context: CurrentQuestionContext,
         method_key: str = "",
         output_dir: str | Path | None = None,
+        feedback: str = "",
     ) -> dict:
         """执行模型计算。
 
@@ -662,6 +665,7 @@ class ModelBuilder:
             context: 当前小问上下文。
             method_key: 方法标识。
             output_dir: 产物目录（LLM 生成代码保存到 questions/<qid>/）。
+            feedback: 自评/前次尝试的改进建议（作为代码生成的初始反馈）。
         """
         method_key = method_key or formulation.get("method_key", "")
         computation = {
@@ -682,7 +686,8 @@ class ModelBuilder:
         if self._llm is not None and math_task in CODE_BASED_TASKS:
             try:
                 code_computation = self._execute_code_based(
-                    method_name, math_task, data_prep, formulation, context, output_dir
+                    method_name, math_task, data_prep, formulation, context, output_dir,
+                    feedback=feedback,
                 )
                 if code_computation.get("status") == "success":
                     return code_computation
@@ -751,6 +756,7 @@ class ModelBuilder:
         formulation: dict,
         context: CurrentQuestionContext,
         output_dir: str | Path | None = None,
+        feedback: str = "",
     ) -> dict:
         """LLM 生成具体数学模型与求解代码，沙箱执行并校验结果。
 
@@ -764,6 +770,7 @@ class ModelBuilder:
             formulation: 模型表述。
             context: 当前小问上下文。
             output_dir: 产物目录（解题代码/数据/结果保存到 questions/<qid>/）。
+            feedback: 自评/前次尝试的改进建议（作为首轮代码生成的初始反馈）。
         """
         from ..agents.code_modeler import CodeModeler, CodeModelingError
         from ..tools.code_executor import CodeExecutionError, execute_model_code
@@ -776,7 +783,7 @@ class ModelBuilder:
 
         data_summary = self._build_data_summary(data_prep)
         modeler = CodeModeler(self._llm)
-        feedback = ""
+        feedback = feedback or ""
         last_error = ""
         t_start = time.time()
         print(
@@ -980,6 +987,11 @@ class ModelBuilder:
 
     def _validate_task_results(self, result: dict, math_task: str) -> None:
         """按题型校验代码输出结果的关键字段。"""
+        from ..tools.result_keys import normalize_result_dict
+
+        # 归一化键名：兼容 LLM 提示词契约（solution/objective/r2）与预设方法契约
+        result = normalize_result_dict(result)
+
         if not isinstance(result, dict):
             raise ValueError("结果不是 dict")
         if not result:

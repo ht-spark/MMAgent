@@ -376,6 +376,40 @@ class TestWriteAbstract:
 class TestWriteIntegration:
     """测试 write 方法的模板集成。"""
 
+    def test_write_includes_blocked_placeholder(self, writer: PaperWriter, tmp_path):
+        """blocked 小问应在论文中生成占位章节而非整节消失。"""
+        from scr.schemas.question import QuestionResult
+
+        q1 = _make_question_result("q1", "层次分析法", "evaluation", "排名结果")
+        q2 = QuestionResult(
+            question_id="q2",
+            status="blocked",
+            error_message="GQ 验证失败，已用尽重试预算 (2/2)。失败项: prediction_outputs_missing",
+            limitations=["未完成"],
+            findings={"math_task": "prediction"},
+        )
+
+        state = {
+            "question_results": {"q1": q1, "q2": q2},
+            "project_context": _make_project_context(),
+            "data_profile": None,
+            "output_dir": str(tmp_path),
+        }
+        paper = writer.write(state, output_dir=str(tmp_path))
+
+        # 大纲中包含 q2 章节（question_id 匹配），且标题带"未完成"
+        q2_sections = paper.get_sections_by_question("q2")
+        assert q2_sections, "blocked 小问缺少占位章节"
+        assert "未完成" in q2_sections[0].title
+
+        # 内容说明阻塞原因
+        content = "\n".join(s.content for s in q2_sections)
+        assert "阻塞" in content
+        assert "prediction_outputs_missing" in content
+
+        # full_text 包含占位章节标题
+        assert "（未完成）" in paper.full_text
+
     def test_write_with_a_template(self, writer: PaperWriter, tmp_path):
         """使用 A 题模板进行完整论文生成。"""
         ctx = _make_project_context(

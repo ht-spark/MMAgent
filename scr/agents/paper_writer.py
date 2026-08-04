@@ -15,7 +15,9 @@
 """
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Any
 
 from ..schemas.context import DataProfile, ProjectContext
@@ -633,7 +635,15 @@ class PaperWriter:
         paper = writer.write(state, output_dir="artifacts/run_xxx")
     """
 
-    def __init__(self) -> None:
+    def __init__(self, llm: Any | None = None) -> None:
+        """初始化 PaperWriter。
+
+        Args:
+            llm: 可选的 LLM 客户端。提供时，"模型建立/结果解释"核心段落
+                 优先由 LLM 起草（失败自动回退确定性模板）。
+        """
+        self._llm = llm
+        self._prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
         self._title: str = "数学建模论文"
         self._output_dir: str = ""
         self._all_figures: dict[str, list[str]] = {}
@@ -648,6 +658,55 @@ class PaperWriter:
     # ------------------------------------------------------------------
     # 主方法
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # LLM 起草辅助（P1-B3：论文核心章节 LLM 写作，失败回退模板）
+    # ------------------------------------------------------------------
+
+    def _load_prompt(self, name: str) -> str:
+        """加载 prompt 模板文件（prompts/<name>.md）。"""
+        path = self._prompt_dir / f"{name}.md"
+        if not path.exists():
+            raise FileNotFoundError(f"Prompt template not found: {path}")
+        return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _render_prompt(template: str, **kwargs: Any) -> str:
+        """渲染 prompt 模板：替换 {var} 占位符。"""
+        result = template
+        for key, value in kwargs.items():
+            result = result.replace(f"{{{key}}}", str(value))
+        return result
+
+    @staticmethod
+    def _strip_markdown_headers(text: str) -> str:
+        """去掉 LLM 输出中可能误带的 Markdown 标题/分隔线，保持章节结构安全。"""
+        import re
+
+        lines = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if re.match(r"^#{1,6}\s", stripped):
+                continue  # 跳过 # 标题
+            if re.match(r"^-{3,}$", stripped) or re.match(r"^={3,}$", stripped):
+                continue  # 跳过分隔线
+            lines.append(line)
+        return "\n".join(lines).strip()
+
+    def _llm_write_prompt(self, template_name: str, **kwargs: Any) -> str | None:
+        """用 LLM 起草一段论文正文；失败返回 None（调用方回退确定性模板）。"""
+        if self._llm is None:
+            return None
+        try:
+            template = self._load_prompt(template_name)
+            prompt = self._render_prompt(template, **kwargs)
+            response = self._llm.invoke(prompt)
+            text = getattr(response, "content", response)
+            text = self._strip_markdown_headers(str(text))
+            return text or None
+        except Exception as e:
+            print(f"[writer] LLM 起草 {template_name} 失败，回退模板: {e}")
+            return None
 
     def write(self, state: dict, output_dir: str = "") -> PaperDraft:
         """从 question_results 生成完整 PaperDraft。
@@ -667,14 +726,18 @@ class PaperWriter:
         review_report = state.get("review_report")
         gf_retry = state.get("_gf_retry_count", 0)
 
-        # 只使用已验证的结果
+        # 只使用已验证的结果；blocked 结果单独保留用于占位章节
         validated: dict[str, QuestionResult] = {
             qid: r for qid, r in raw_results.items() if r.status == "validated"
+        }
+        blocked: dict[str, QuestionResult] = {
+            qid: r for qid, r in raw_results.items() if r.status == "blocked"
         }
 
         if gf_retry > 0:
             print(f"[writer] 第 {gf_retry} 次修订，基于审查反馈改进论文")
-        print(f"[writer] 开始论文写作: {len(validated)} 个已验证小问")
+        print(f"[writer] 开始论文写作: {len(validated)} 个已验证小问"
+              + (f"，{len(blocked)} 个小问被阻塞（占位章节）" if blocked else ""))
 
         # 设置输出目录
         self._output_dir = output_dir or state.get("output_dir", "artifacts/paper")
@@ -704,7 +767,7 @@ class PaperWriter:
         self._template = self._select_template(project_context)
 
         # 构建大纲（基于模板定制章节结构）
-        sections = self._build_outline(validated)
+        sections = self._build_outline(validated, blocked)
 
         # 填充非小问章节
         for section in sections:
@@ -717,7 +780,7 @@ class PaperWriter:
             elif section.section_id == "3":
                 section.content = self._write_data_description(data_profile)
             elif section.section_id == "4":
-                section.content = self._write_question_intro(validated)
+                section.content = self._write_question_intro(validated, blocked)
             elif section.section_id == "5":
                 section.content = self._write_evaluation(validated)
             elif section.section_id == "6":
@@ -737,6 +800,11 @@ class PaperWriter:
                     section.figures = filled.figures
                     section.tables = filled.tables
                     section.formulas = filled.formulas
+                elif section.question_id in blocked:
+                    # blocked 小问：生成占位章节（说明阻塞原因），避免整节消失
+                    section.content = self._write_blocked_section(
+                        section.question_id, blocked[section.question_id]
+                    )
 
         # 生成摘要（最后生成，不引入新数字）
         abstract = self._write_abstract(validated, sections)
@@ -820,7 +888,9 @@ class PaperWriter:
     # ------------------------------------------------------------------
 
     def _build_outline(
-        self, question_results: dict[str, QuestionResult]
+        self,
+        question_results: dict[str, QuestionResult],
+        blocked: dict[str, QuestionResult] | None = None,
     ) -> list[PaperSection]:
         """构建论文大纲。
 
@@ -881,6 +951,19 @@ class PaperWriter:
                     title=q_title,
                     question_id=qid,
                     order=40 + i,
+                )
+            )
+
+        # blocked 小问追加占位章节（编号接在已验证小问之后，标题标注未完成）
+        blocked_qids = sorted(blocked.keys()) if blocked else []
+        for j, qid in enumerate(blocked_qids, start=len(sorted_qids) + 1):
+            q_title = self._get_question_section_title(template, j, qid)
+            sections.append(
+                PaperSection(
+                    section_id=f"4.{j}",
+                    title=f"{q_title}（未完成）",
+                    question_id=qid,
+                    order=40 + j,
                 )
             )
 
@@ -1341,10 +1424,13 @@ class PaperWriter:
     # ------------------------------------------------------------------
 
     def _write_question_intro(
-        self, question_results: dict[str, QuestionResult]
+        self,
+        question_results: dict[str, QuestionResult],
+        blocked: dict[str, QuestionResult] | None = None,
     ) -> str:
         """生成各小问章节的引导段落。"""
         n = len(question_results)
+        blocked = blocked or {}
 
         # 汇总对比表
         comparison_table = format_comparison_table(question_results)
@@ -1367,6 +1453,15 @@ class PaperWriter:
             "",
             comparison_table,
         ]
+
+        # blocked 小问提示
+        if blocked:
+            blocked_ids = "、".join(sorted(blocked.keys()))
+            lines.extend([
+                "",
+                f"> 注：小问 {blocked_ids} 因验证未通过被标记为阻塞，"
+                f"相关章节仅作状态说明，未纳入结果汇总与模型评价。",
+            ])
 
         return "\n".join(lines)
 
@@ -1543,6 +1638,43 @@ class PaperWriter:
             f"问题{qid}已完成模型计算，本节从结果表、关键指标和检验信息三个层面呈现求解过程。"
         )
 
+    def _write_blocked_section(
+        self, qid: str, result: QuestionResult
+    ) -> str:
+        """生成 blocked 小问的占位章节：说明阻塞原因，避免该问在论文中整节消失。
+
+        Args:
+            qid: 小问 ID。
+            result: status="blocked" 的 QuestionResult。
+
+        Returns:
+            占位章节的 Markdown 文本。
+        """
+        lines: list[str] = []
+        lines.append(f"#### {qid}.1 问题描述")
+        lines.append("")
+        interp = result.problem_interpretation
+        if interp is not None and interp.math_task_description:
+            lines.append(interp.math_task_description)
+        else:
+            lines.append(f"本问为小问 {qid}，未能完成求解与验证。")
+        lines.append("")
+        lines.append(f"#### {qid}.2 求解状态")
+        lines.append("")
+        lines.append("本小问在求解与验证环节未通过，已标记为**阻塞（blocked）**，"
+                     "未产生可复现的数值结论。")
+        lines.append("")
+        error = (result.error_message or "").strip()
+        if error:
+            lines.append(f"**阻塞原因**：{error}")
+        else:
+            lines.append("**阻塞原因**：未通过 GQ 质量门验证（重试预算已耗尽）。")
+        lines.append("")
+        lines.append("> 说明：本小问未纳入最终结果与模型评价；"
+                     "后续若重新运行，可优先针对上述阻塞原因修复后继续求解。")
+        lines.append("")
+        return "\n".join(lines)
+
     def _write_question_section(
         self, qid: str, result: QuestionResult
     ) -> PaperSection:
@@ -1671,8 +1803,23 @@ class PaperWriter:
                 lines.append(desc)
                 lines.append("")
 
-            # 基于 formulation 生成模型分析（不再重复调用 _academic_model_analysis）
-            model_analysis = self._build_model_analysis(method, task, qid, formulation)
+            # LLM 起草模型建立段落（失败回退模板 _build_model_analysis）
+            model_analysis = self._llm_write_prompt(
+                "paper_model_section",
+                question_text=(
+                    interp.math_task_description if interp and interp.math_task_description
+                    else f"小问 {qid}"
+                ),
+                task=task,
+                result_form=interp.result_form if interp else "",
+                method=method,
+                decision_variables=formulation.get("decision_variables", []),
+                objective_function=formulation.get("objective_function", ""),
+                constraints=formulation.get("constraints", []),
+                parameters=formulation.get("parameters", {}),
+            )
+            if not model_analysis:
+                model_analysis = self._build_model_analysis(method, task, qid, formulation)
             if model_analysis:
                 lines.append(model_analysis)
                 lines.append("")
@@ -1806,7 +1953,19 @@ class PaperWriter:
             lines.append("")
 
         # 结果分析段落（学术风格）
-        lines.append(_academic_result_analysis(method, task, qid, computation))
+        # LLM 起草结果解释段落（失败回退模板 _academic_result_analysis）
+        result_analysis = self._llm_write_prompt(
+            "paper_result_section",
+            question_text=(
+                interp.math_task_description if interp and interp.math_task_description
+                else f"小问 {qid}"
+            ),
+            method=method,
+            status=status,
+            results=json.dumps(results, ensure_ascii=False, default=str)[:1500],
+            metrics=json.dumps(metrics, ensure_ascii=False, default=str)[:800],
+        )
+        lines.append(result_analysis or _academic_result_analysis(method, task, qid, computation))
         lines.append("")
 
         # 其他结果（仅展示有意义的摘要值，过滤原始数据数组和代码细节）
@@ -2489,7 +2648,7 @@ def write_paper_node(state: dict) -> dict:
     Returns:
         状态更新字典，包含 paper_draft。
     """
-    writer = PaperWriter()
+    writer = PaperWriter(llm=state.get("llm"))
     output_dir = state.get("output_dir", "artifacts/paper")
     paper_draft = writer.write(state, output_dir=output_dir)
     return {"paper_draft": paper_draft}

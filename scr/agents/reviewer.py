@@ -148,14 +148,24 @@ class Reviewer:
                     ))
                 elif result.status != "validated":
                     idx += 1
+                    # blocked 小问已在论文中以占位章节说明原因，视为 major（记录风险）
+                    # 而非 critical（致命）；其他异常状态仍为 critical。
+                    severity = (
+                        "major" if result.status == "blocked" else "critical"
+                    )
+                    message = (
+                        f"小问 {q.question_id} 状态为 {result.status}，未通过验证"
+                        + (
+                            "（论文中已给出占位说明，建议后续重新求解）"
+                            if result.status == "blocked"
+                            else ""
+                        )
+                    )
                     issues.append(ReviewIssue(
                         issue_id=f"coverage_{idx}",
-                        severity="critical",
+                        severity=severity,
                         category="coverage",
-                        message=(
-                            f"小问 {q.question_id} 状态为 "
-                            f"{result.status}，未通过验证"
-                        ),
+                        message=message,
                         location=q.question_id,
                         suggested_fix=(
                             f"重新求解小问 {q.question_id} 直至通过 GQ 验证"

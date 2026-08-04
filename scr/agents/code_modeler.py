@@ -23,6 +23,9 @@ CODE_BASED_TASKS = {
     "evaluation",
     "prediction",
     "simulation",
+    "classification",
+    "clustering",
+    "composite",
 }
 
 #: LLM 建模调用的超时秒数（daemon 线程 join 实现，超时后走重试/回退）

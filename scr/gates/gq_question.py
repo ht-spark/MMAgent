@@ -266,6 +266,9 @@ def _check_task_deliverables(result: QuestionResult) -> list[str]:
     task = interp.math_task
     computation = result.computation or {}
     status = computation.get("status", "")
+    from ..tools.result_keys import normalize_computation
+
+    computation = normalize_computation(dict(computation))
     results = computation.get("results", {}) or {}
     metrics = computation.get("metrics", {}) or {}
     intermediate = computation.get("intermediate_values", {}) or {}
@@ -304,7 +307,11 @@ def _check_task_deliverables(result: QuestionResult) -> list[str]:
             ))
             or "scenario_objectives" in intermediate
         )
-        has_risk_metric = any(k in metrics for k in ("expected_objective", "objective_std", "worst_case", "cvar"))
+        # 风险指标同时查 results 顶层与 metrics（兼容 LLM 提示词契约的顶层输出）
+        has_risk_metric = any(
+            k in {**results, **metrics}
+            for k in ("expected_objective", "objective_std", "worst_case", "cvar")
+        )
         if not has_scenario or not has_risk_metric:
             failures.append("stochastic_outputs_missing")
     elif task == "simulation":

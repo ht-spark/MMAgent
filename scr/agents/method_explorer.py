@@ -20,6 +20,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from ..schemas.context import DataProfile
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
 from ..tools.tavily_search import (
@@ -27,6 +29,18 @@ from ..tools.tavily_search import (
     WebMethodCandidate,
     WebMethodCandidateList,
 )
+
+
+class _MethodDecision(BaseModel):
+    """LLM 方法决策输出（P1-B2：方法决策 LLM 化）。"""
+    selected_method: str = ""
+    canonical_method: str = ""
+    canonical_family: str = ""
+    reason: str = ""
+    validation_method: str = ""
+    assumptions: list[str] = Field(default_factory=list)
+    required_outputs: list[str] = Field(default_factory=list)
+    validation_requirements: list[str] = Field(default_factory=list)
 
 
 class MethodExplorer:
@@ -170,13 +184,22 @@ class MethodExplorer:
                 "validation_method": "",
             }
 
-        # 选择得分最高的
-        selected = viable[0]
+        # LLM 综合决策（失败时回退启发式评分取最高分）
+        llm_pick = self._decide_with_llm(viable, context, interpretation)
+        if llm_pick is not None:
+            selected = llm_pick["selected"]
+            selected_reason = llm_pick["selected_reason"]
+            assumptions = llm_pick["assumptions"]
+            decision_source = "llm"
+        else:
+            # 启发式回退：选择得分最高的
+            selected = viable[0]
+            selected_reason = _build_selection_reason(selected, interpretation, context)
+            assumptions = _format_assumptions(selected, context, interpretation)
+            decision_source = "heuristic"
+
         alternatives = viable[1:4]  # 最多 3 个备选
         eliminated = [c for c in candidates if c.get("eliminated", False)]
-
-        # 提取假设
-        assumptions = _format_assumptions(selected, context, interpretation)
 
         # 构建决策记录
         decision = {
@@ -186,7 +209,7 @@ class MethodExplorer:
             "canonical_family": selected.get("canonical_family", selected.get("family", "")),
             "required_outputs": selected.get("required_outputs", []),
             "validation_requirements": selected.get("validation_requirements", []),
-            "selected_reason": _build_selection_reason(selected, interpretation, context),
+            "selected_reason": selected_reason,
             "alternatives": [
                 {
                     "name": a["name"],
@@ -207,12 +230,137 @@ class MethodExplorer:
             "validation_method": selected.get("validation_method", ""),
             "implementation_difficulty": selected.get("implementation_difficulty", "medium"),
             "selected_details": selected,
+            "decision_source": decision_source,
         }
 
         print(f"[explorer] 决策: {selected['name']} "
-              f"(备选 {len(alternatives)}, 淘汰 {len(eliminated)})")
+              f"(备选 {len(alternatives)}, 淘汰 {len(eliminated)}, source={decision_source})")
 
         return decision
+
+    def _decide_with_llm(
+        self,
+        viable: list[dict],
+        context: CurrentQuestionContext,
+        interpretation: ProblemInterpretation,
+    ) -> dict | None:
+        """用 LLM 综合权衡候选方法并生成决策（P1-B2）。
+
+        让 LLM 按题意匹配/数据匹配/可实现性/可验证性选择方法，
+        并把选中方法映射到内置可执行计算（canonical_method），
+        避免"选中了方法名却无法落地计算"的问题。
+
+        Returns:
+            含 selected/selected_reason/assumptions 的字典；
+            无 LLM 或调用失败时返回 None（调用方回退启发式）。
+        """
+        if self._llm is None or not viable:
+            return None
+        try:
+            candidates_summary = json.dumps(
+                [
+                    {
+                        "name": c.get("name", ""),
+                        "family": c.get("family", ""),
+                        "description": (c.get("description", "") or "")[:200],
+                        "pros": (c.get("pros") or [])[:3],
+                        "cons": (c.get("cons") or [])[:3],
+                        "implementation_difficulty": c.get("implementation_difficulty", ""),
+                        "canonical_method": c.get("canonical_method", ""),
+                        "heuristic_score": c.get("heuristic_score", 0),
+                    }
+                    for c in viable
+                ],
+                ensure_ascii=False,
+            )
+            template = self._load_prompt("method_decision")
+            prompt = self._render_prompt(
+                template,
+                question_text=context.question_text,
+                math_task=interpretation.math_task,
+                math_task_description=interpretation.math_task_description,
+                decision_variables=interpretation.decision_variables,
+                objective_function=interpretation.objective_function,
+                constraints=interpretation.constraints,
+                available_data=interpretation.available_data,
+                data_quality_summary=context.data_quality_summary,
+                candidates=candidates_summary,
+            )
+            decision_data = self._call_structured_generic(_MethodDecision, prompt)
+        except Exception as e:
+            print(f"[explorer] LLM 方法决策失败，回退启发式: {e}")
+            return None
+
+        if not decision_data.selected_method:
+            return None  # LLM 认为无合适候选，回退启发式
+
+        # 找到 LLM 选中的候选
+        selected = next(
+            (c for c in viable if c.get("name") == decision_data.selected_method),
+            None,
+        )
+        if selected is None:
+            print(
+                f"[explorer] LLM 选择了不在候选列表中的方法 "
+                f"'{decision_data.selected_method}'，回退启发式"
+            )
+            return None
+
+        # 用 LLM 决策覆盖 canonical 映射、验证与产出要求
+        selected = {**selected}
+        selected["canonical_method"] = decision_data.canonical_method
+        selected["canonical_family"] = decision_data.canonical_family
+        selected["validation_method"] = decision_data.validation_method
+        selected["required_outputs"] = decision_data.required_outputs
+        selected["validation_requirements"] = decision_data.validation_requirements
+
+        print(
+            f"[explorer] LLM 决策: {selected['name']} "
+            f"(canonical={decision_data.canonical_method or '未映射'})"
+        )
+
+        return {
+            "selected": selected,
+            "selected_reason": decision_data.reason,
+            "assumptions": decision_data.assumptions,
+        }
+
+    def _call_structured_generic(self, schema: type[BaseModel], prompt: str) -> BaseModel:
+        """调用 LLM 并返回 schema 实例（三级回退：json_schema → json_mode → JSON 文本）。"""
+        # 方案 1：structured output（json_schema）
+        if not self._json_schema_unsupported:
+            try:
+                structured_llm = self._llm.with_structured_output(schema)
+                return structured_llm.invoke(prompt)
+            except Exception as e:
+                err_msg = str(e)
+                if "response_format" in err_msg or "BadRequestError" in str(type(e).__name__):
+                    self._json_schema_unsupported = True
+                else:
+                    raise
+
+        # 方案 2：json_mode
+        try:
+            structured_llm = self._llm.with_structured_output(schema, method="json_mode")
+            return structured_llm.invoke(prompt)
+        except Exception:
+            pass
+
+        # 方案 3：JSON 文本 + 手动解析
+        schema_json = schema.model_json_schema()
+        example = _schema_to_example_str(schema_json)
+        json_prompt = (
+            f"{prompt}\n\n"
+            "---\n**重要**：你必须用纯 JSON 格式回答，不要用 Markdown 代码块，不要加解释。\n"
+            f"JSON 格式和字段说明：\n```json\n{example}\n```\n"
+            "直接返回 JSON，不要 ```json 包裹。"
+        )
+        response = self._llm.invoke(json_prompt)
+        content = getattr(response, "content", response)
+        data = _extract_json_object(str(content))
+        if data is None:
+            raise ValueError("LLM 未返回有效 JSON")
+        return schema.model_validate(data)
 
     # ------------------------------------------------------------------
     # explore_and_decide — 串联两步

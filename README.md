@@ -230,6 +230,18 @@ python -m scr.math_modeling_agent.main run --problem examples/problem.md \
   --data examples/附件1.xlsx --output artifacts/my_run --no-llm --log-level debug
 ```
 
+### 解题智能（LLM 驱动）
+
+解题核心环节优先由 LLM 深度推理，确定性规则/模板仅作回退，避免"方法名选了对不上号、结果被硬编码校验误杀"：
+
+- **问题澄清**：LLM 生成数学任务类型、决策变量、目标函数、约束与假设（`prompts/problem_clarification.md`），替代关键词启发式。
+- **方法决策**：LLM 按题意/数据/可实现性/可验证性选择方法，并映射到内置可执行计算（`canonical_method`），避免选中无法落地的方法。
+- **结果自评**：求解后 LLM 自评是否真正回答了题目、数值是否合理，`revise` 时携带建议自动重算一次（反思循环）。
+- **论文写作**："模型建立/结果解释"核心段落由 LLM 起草（禁止编造数字），失败回退确定性模板。
+- **键名契约统一**：`solution/objective/r2` 等 LLM 提示词键名与预设方法键名等价归一化，合格输出不再被 GQ 门误杀。
+- **blocked 小问**：论文中保留占位章节说明阻塞原因，不再整节消失；审查降级为 major。
+- **code_based 建模**：覆盖 evaluation/prediction/optimization/stochastic_optimization/simulation/classification/clustering/composite。
+
 ### 产物结构
 
 每次运行在 `artifacts/<run_id>/` 下保存独立产物：

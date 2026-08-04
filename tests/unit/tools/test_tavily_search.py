@@ -284,6 +284,22 @@ class TestHelperFunctions:
         assert len(keywords) > 0
         assert "指标" in keywords or "评价" in keywords
 
+    def test_extract_keywords_chinese_long_sentence(self):
+        """长中文句子按结构词切分，输出名词性短语而非整句。"""
+        text = (
+            "假定各种农作物未来的预期销售量、种植成本、亩产量和销售价格"
+            "相对于2023年保持稳定，建立数学模型求解最优种植策略"
+        )
+        keywords = _extract_keywords(text, max_keywords=6)
+        words = keywords.split()
+        assert len(words) >= 3
+        # 不应把整段中文当作一个"词"
+        assert all(len(w) <= 12 for w in words)
+        # 应包含有区分度的名词短语
+        assert any(
+            w in words for w in ("种植成本", "亩产量", "预期销售量", "最优种植策略")
+        )
+
     def test_extract_keywords_empty(self):
         """空文本返回空字符串。"""
         assert _extract_keywords("") == ""

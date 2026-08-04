@@ -110,6 +110,12 @@ class ResultValidator:
         interp = question_result.problem_interpretation
         math_task = interp.math_task if interp else "composite"
 
+        # 键名归一化：兼容 LLM 提示词契约（solution/objective/r2）与预设方法契约（幂等）
+        if question_result.computation:
+            from ..tools.result_keys import normalize_computation
+
+            normalize_computation(question_result.computation)
+
         checks: list[dict[str, Any]] = []
         checks.extend(self._validate_general(question_result))
 
