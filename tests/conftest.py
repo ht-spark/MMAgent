@@ -130,3 +130,65 @@ def sample_mat_multi_var(tmp_path: Path) -> Path:
     path = tmp_path / "multi.mat"
     savemat(str(path), data)
     return path
+
+
+# ---------------------------------------------------------------------------
+# 画像增强 fixtures：数据质量 / 分布 / 时空 / 语义
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def duplicate_csv(tmp_path: Path) -> Path:
+    """含完全重复行的 CSV（数据质量·重复噪声）。"""
+    df = pd.DataFrame({"id": [1, 2, 3, 2, 3], "值": ["a", "b", "c", "b", "c"]})
+    path = tmp_path / "dup.csv"
+    df.to_csv(path, index=False)
+    return path
+
+
+@pytest.fixture
+def spatial_csv(tmp_path: Path) -> Path:
+    """含经纬度坐标列的 CSV（时空结构）。"""
+    df = pd.DataFrame({
+        "站点": ["A", "B", "C", "D"],
+        "经度": [116.4, 121.5, 113.3, 114.1],
+        "纬度": [39.9, 31.2, 23.1, 22.5],
+        "温度(℃)": [12, 18, 25, 27],
+    })
+    path = tmp_path / "spatial.csv"
+    df.to_csv(path, index=False)
+    return path
+
+
+@pytest.fixture
+def high_corr_csv(tmp_path: Path) -> Path:
+    """含高相关列对的 CSV（分布特征·共线性风险）。"""
+    import numpy as np
+
+    x = np.arange(1, 11, dtype=float)
+    df = pd.DataFrame({
+        "x": x,
+        "y": 2.0 * x + 1.0,  # 与 x 完全线性相关（r=1.0）
+        "z": np.random.default_rng(0).random(10) * 100,
+    })
+    path = tmp_path / "corr.csv"
+    df.to_csv(path, index=False)
+    return path
+
+
+@pytest.fixture
+def mixed_type_csv(tmp_path: Path) -> Path:
+    """字符列中混入可解析为数值的值（编码一致性/类型混合风险）。"""
+    df = pd.DataFrame({"编码": ["A001", "A002", "100", "A004", "200"]})
+    path = tmp_path / "mixed.csv"
+    df.to_csv(path, index=False)
+    return path
+
+
+@pytest.fixture
+def imbalanced_csv(tmp_path: Path) -> Path:
+    """严重不平衡的分类列（目标变量特殊性）。"""
+    df = pd.DataFrame({"标签": ["正常"] * 18 + ["异常"] * 2, "x": range(20)})
+    path = tmp_path / "imbalance.csv"
+    df.to_csv(path, index=False)
+    return path

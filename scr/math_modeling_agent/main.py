@@ -1,18 +1,9 @@
-"""数学建模智能体 — 端到端入口。
-
-对应 architecture.md §9 和 plan.md 分阶段执行。
-
+"""
+数学建模智能体 — 端到端入口。
 当前为 Phase 0 骨架：
   - 初始化项目状态
   - 创建产物目录结构
   - 后续阶段将逐步添加完整工作流
-
-环境变量从 .env 自动加载（OPENAI_API_KEY / MODEL_NAME / OPENAI_BASE_URL）。
-
-用法::
-
-    python -m scr.math_modeling_agent.main init --problem problem.md --data data.csv
-    python -m scr.math_modeling_agent.main run --problem problem.md --data data.csv
 """
 from __future__ import annotations
 

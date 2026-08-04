@@ -15,13 +15,32 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class NumericStats(BaseModel):
-    """数值型字段的统计摘要。"""
+    """数值型字段的统计摘要。
+
+    覆盖分布特征（分布特征·单变量）：
+      - 集中趋势：mean / median
+      - 离散程度：std / iqr（四分位距）
+      - 形态：skewness（偏态）/ kurtosis（峰态）
+      - 质量：outlier_count / outlier_rate（IQR 法离群点）
+    """
 
     min: float
     max: float
     mean: float
     std: float = Field(ge=0.0)
     median: float
+    q1: float | None = None
+    q3: float | None = None
+    iqr: float | None = None
+    skewness: float | None = None
+    kurtosis: float | None = None
+    outlier_count: int = Field(default=0, ge=0)
+    outlier_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @field_validator("outlier_rate")
+    @classmethod
+    def _round_outlier_rate(cls, v: float) -> float:
+        return round(v, 4)
 
 
 class CategoryCount(BaseModel):
@@ -32,9 +51,22 @@ class CategoryCount(BaseModel):
 
 
 class CategoricalStats(BaseModel):
-    """分类型字段的统计摘要。"""
+    """分类型字段的统计摘要。
+
+    覆盖分布特征与目标变量特殊性：
+      - top_values：频次最高的类别（分布集中/离散）
+      - max_category_share：最大类别占比（不平衡检测，目标变量特殊性）
+    """
 
     top_values: list[CategoryCount] = Field(default_factory=list, max_length=10)
+    max_category_share: float | None = None
+
+    @field_validator("max_category_share")
+    @classmethod
+    def _round_share(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        return round(v, 4)
 
 
 class DataField(BaseModel):
@@ -49,8 +81,12 @@ class DataField(BaseModel):
         sample_values: 前 5 个非缺失样例值（字符串形式）。
         unit_hint: 从字段名推断的单位线索（如 "重量"、"百分比"），无则 None。
         is_time_column: 是否为时间维度列。
-        numeric_stats: 数值型统计（dtype 为 int/float 时填充）。
-        categorical_stats: 分类型统计（dtype 为 str/category/bool 时填充）。
+        is_candidate_key: 是否候选主键（唯一且无缺失，粒度/关联键线索）。
+        is_spatial: 是否为空间坐标列（经纬度等）。
+        numeric_parseable_rate: 字符列中可解析为数值的比例（编码一致性，
+            None 表示非字符列；0<rate<1 表示类型混合风险）。
+        numeric_stats: 数值型统计（dtype 为 int/float 时填充，含偏度/峰度/离群）。
+        categorical_stats: 分类型统计（dtype 为 str/category/bool 时填充，含不平衡度）。
     """
 
     name: str
@@ -61,6 +97,9 @@ class DataField(BaseModel):
     sample_values: list[str] = Field(default_factory=list, max_length=5)
     unit_hint: str | None = None
     is_time_column: bool = False
+    is_candidate_key: bool = False
+    is_spatial: bool = False
+    numeric_parseable_rate: float | None = None
     numeric_stats: NumericStats | None = None
     categorical_stats: CategoricalStats | None = None
 
@@ -69,43 +108,97 @@ class DataField(BaseModel):
     def _round_rate(cls, v: float) -> float:
         return round(v, 4)
 
+    @field_validator("numeric_parseable_rate")
+    @classmethod
+    def _round_parseable(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        return round(v, 4)
+
+
+class CorrelatedPair(BaseModel):
+    """高相关数值列对（分布特征·多变量 / 共线性风险）。"""
+
+    col_a: str
+    col_b: str
+    correlation: float = Field(ge=-1.0, le=1.0)
+
+    @field_validator("correlation")
+    @classmethod
+    def _round_corr(cls, v: float) -> float:
+        return round(v, 4)
+
 
 class DataInventory(BaseModel):
     """附件数据文件的确定性画像。
 
     产物路径：``artifacts/<run_id>/reports/data_inventory.json``
 
+    覆盖数据画像 6 大维度（file_tools 确定性生成，不依赖 LLM）：
+      1. 数据基本面 — file_size / n_rows / n_cols / dtype / candidate_keys / 时空覆盖
+      2. 数据质量 — overall_missing_rate / duplicate_rows / 字段离群与类型混合
+      3. 分布特征 — 字段 skewness / kurtosis / correlated_pairs（共线性）
+      4. 业务语义 — unit_hint / max_category_share（目标不平衡）/ sample_rows
+      5. 时空结构 — time_min/max/time_unique_count / spatial_columns
+      6. 建模假设预判 — modeling_constraints（模型可用性硬约束）
+
     Attributes:
         file_name: 文件名（含扩展名）。
         file_path: 文件绝对路径。
         file_type: 文件格式。
+        file_size: 文件大小（字节）。
         n_rows: 行数（样本量），用于 L2 硬过滤。
         n_cols: 列数。
         fields: 每个字段的画像列表。
         overall_missing_rate: 全表缺失率 [0, 1]。
+        duplicate_rows: 完全重复的行数。
+        duplicate_rate: 重复行比例 [0, 1]。
+        candidate_keys: 候选主键列（唯一且无缺失）。
+        sample_rows: 前 5 行样例（值转为字符串，控制体积）。
         has_time_column: 是否存在时间维度列。
         time_columns: 时间列名列表。
+        time_min / time_max: 时间覆盖范围（首列时间字段）。
+        time_unique_count: 时间点数量（粒度线索）。
+        spatial_columns: 空间坐标列名列表。
+        correlated_pairs: |r|≥阈值 的高相关数值列对。
         numeric_columns: 数值列名列表。
         categorical_columns: 分类列名列表。
+        modeling_constraints: 建模假设预判（确定性规则生成）。
         sample_size: 样本量（= n_rows），冗余字段便于硬过滤直接引用。
     """
 
     file_name: str
     file_path: str
     file_type: Literal["csv", "excel", "json", "mat"]
+    file_size: int = Field(default=0, ge=0)
     n_rows: int = Field(ge=0)
     n_cols: int = Field(ge=0)
     fields: list[DataField] = Field(default_factory=list)
     overall_missing_rate: float = Field(ge=0.0, le=1.0)
+    duplicate_rows: int = Field(default=0, ge=0)
+    duplicate_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    candidate_keys: list[str] = Field(default_factory=list)
+    sample_rows: list[dict] = Field(default_factory=list, max_length=5)
     has_time_column: bool = False
     time_columns: list[str] = Field(default_factory=list)
+    time_min: str | None = None
+    time_max: str | None = None
+    time_unique_count: int = Field(default=0, ge=0)
+    spatial_columns: list[str] = Field(default_factory=list)
+    correlated_pairs: list[CorrelatedPair] = Field(default_factory=list)
     numeric_columns: list[str] = Field(default_factory=list)
     categorical_columns: list[str] = Field(default_factory=list)
+    modeling_constraints: list[str] = Field(default_factory=list)
     sample_size: int = Field(ge=0)
 
     @field_validator("overall_missing_rate")
     @classmethod
     def _round_rate(cls, v: float) -> float:
+        return round(v, 4)
+
+    @field_validator("duplicate_rate")
+    @classmethod
+    def _round_duplicate_rate(cls, v: float) -> float:
         return round(v, 4)
 
     @field_validator("sample_size")

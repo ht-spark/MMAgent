@@ -621,6 +621,15 @@ def _fallback_candidate(interpretation: ProblemInterpretation) -> dict:
         math_task,
         task_defaults["optimization"],  # 通用回退
     )
+    # canonical_method：与 model_builder._execute 的分发条件对齐，
+    # 确保兜底方法也能命中对应的确定性计算实现（而非 generic_stats）。
+    _CANONICAL_BY_TASK = {
+        "evaluation": "topsis",
+        "prediction": "linear_regression",
+        "optimization": "linear_programming",
+        "stochastic_optimization": "stochastic_programming",
+        "simulation": "monte_carlo_simulation",
+    }
     return {
         "name": defaults["name"],
         "family": defaults["family"],
@@ -639,7 +648,7 @@ def _fallback_candidate(interpretation: ProblemInterpretation) -> dict:
         "validation_method": "交叉验证、敏感性分析",
         "required_outputs": defaults["required_outputs"],
         "validation_requirements": defaults["validation_requirements"],
-        "canonical_method": "",
+        "canonical_method": _CANONICAL_BY_TASK.get(math_task, ""),
         "canonical_family": defaults["family"],
         "source": "fallback",
         "source_url": "",

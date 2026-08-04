@@ -27,6 +27,7 @@ import pandas as pd
 from ..schemas.problem import (
     CategoryCount,
     CategoricalStats,
+    CorrelatedPair,
     DataField,
     DataInventory,
     NumericStats,
@@ -389,7 +390,18 @@ _UNIT_PATTERNS: list[tuple[str, str]] = [
     (r"[\(\[（].*?(℃|°c|度|温度|temp).*?[\)\]）]", "温度"),
     (r"[\(\[（].*?(hz|khz|mhz|ghz).*?[\)\]）]", "频率"),
     (r"[\(\[（].*?(w|kw|mw|瓦|千瓦).*?[\)\]）]", "功率"),
+    (r"[\(\[（].*?(kg/m2|kg/㎡|密度|人均).*?[\)\]）]", "强度/密度"),
+    (r"[\(\[（].*?(亿元|万元|百万|十亿|万).*?[\)\]）]", "金额量级"),
 ]
+
+# 空间坐标列名称关键词（数据基本面·时空结构）
+_SPATIAL_KEYWORDS = (
+    "lat", "lon", "lng", "latitude", "longitude",
+    "经度", "纬度", "东经", "北纬", "坐标x", "坐标y", "x坐标", "y坐标",
+)
+
+# 高相关列对阈值（分布特征·多变量 / 共线性风险）
+_CORRELATION_THRESHOLD = 0.8
 
 
 def _infer_dtype(series: pd.Series) -> str:
@@ -404,8 +416,9 @@ def _infer_dtype(series: pd.Series) -> str:
         return "float"
     if isinstance(series.dtype, pd.CategoricalDtype):
         return "category"
-    # object 列：尝试判断是否可转为数值
-    if series.dtype == "object":
+    # object / StringDtype 列：尝试判断是否可转为数值
+    # （pandas 2.x 字符串列可能是 StringDtype 而非 object）
+    if series.dtype == "object" or isinstance(series.dtype, pd.StringDtype):
         non_null = series.dropna()
         if len(non_null) > 0:
             numeric = pd.to_numeric(non_null, errors="coerce")
@@ -474,8 +487,230 @@ def _safe_float(value: Any) -> float:
     return v
 
 
+def _detect_spatial_column(name: str) -> bool:
+    """检测列是否为空间坐标列（经纬度等）。"""
+    name_lower = name.lower().replace(" ", "")
+    return any(kw in name_lower for kw in _SPATIAL_KEYWORDS)
+
+
+def _compute_numeric_stats(numeric: pd.Series) -> NumericStats:
+    """数值列的完整分布统计（集中/离散/偏态/峰态/离群）。"""
+    n = len(numeric)
+    q1 = float(numeric.quantile(0.25))
+    q3 = float(numeric.quantile(0.75))
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+    outliers = numeric[(numeric < lower) | (numeric > upper)]
+
+    # 偏度/峰度：样本 < 3 或恒定时无定义（返回 None 而非 0）
+    skewness: float | None = None
+    kurtosis: float | None = None
+    if n >= 3:
+        try:
+            sk = float(numeric.skew())
+            ku = float(numeric.kurt())
+            if not np.isnan(sk):
+                skewness = sk
+            if not np.isnan(ku):
+                kurtosis = ku
+        except (ValueError, TypeError):
+            pass
+
+    return NumericStats(
+        min=_safe_float(numeric.min()),
+        max=_safe_float(numeric.max()),
+        mean=_safe_float(numeric.mean()),
+        std=_safe_float(numeric.std()) if n > 1 else 0.0,
+        median=_safe_float(numeric.median()),
+        q1=_safe_float(q1),
+        q3=_safe_float(q3),
+        iqr=_safe_float(iqr),
+        skewness=skewness,
+        kurtosis=kurtosis,
+        outlier_count=int(len(outliers)),
+        outlier_rate=len(outliers) / n,
+    )
+
+
+def _compute_correlated_pairs(
+    df: pd.DataFrame,
+    threshold: float = _CORRELATION_THRESHOLD,
+) -> list[CorrelatedPair]:
+    """数值列两两相关，返回 |r| ≥ 阈值 的高相关列对。
+
+    用于共线性风险提示（线性模型解释性、VIF 近似）。
+    列数过多时限制为前 40 个数值列，避免 O(n²) 组合爆炸。
+    """
+    numeric_df = df.select_dtypes(include=[np.number])
+    if numeric_df.shape[1] < 2 or numeric_df.shape[0] < 3:
+        return []
+    if numeric_df.shape[1] > 40:
+        numeric_df = numeric_df.iloc[:, :40]
+
+    corr = numeric_df.corr()
+    cols = list(corr.columns)
+    pairs: list[CorrelatedPair] = []
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            r = corr.iloc[i, j]
+            if np.isnan(r):
+                continue
+            if abs(float(r)) >= threshold:
+                pairs.append(
+                    CorrelatedPair(col_a=cols[i], col_b=cols[j], correlation=float(r))
+                )
+    return pairs
+
+
+def _compute_time_coverage(
+    df: pd.DataFrame,
+    time_col: str,
+) -> tuple[str | None, str | None, int]:
+    """时间列的覆盖范围与时间点数量（时空结构）。
+
+    时间值规范化为短格式：纯日期截断为 ``YYYY-MM-DD``，含时分秒保留完整。
+    """
+    non_null = df[time_col].dropna()
+    n = len(non_null)
+    if n == 0:
+        return None, None, 0
+    unique_count = int(non_null.nunique())
+
+    parsed = pd.to_datetime(non_null, errors="coerce").dropna()
+    if len(parsed) > 0:
+        return (
+            _format_time_value(parsed.min()),
+            _format_time_value(parsed.max()),
+            unique_count,
+        )
+    # 无法解析为日期：退化用字符串 min/max
+    return str(non_null.min()), str(non_null.max()), unique_count
+
+
+def _format_time_value(value: Any) -> str:
+    """将时间值规范化为短格式：'2023-01-01 00:00:00' → '2023-01-01'。"""
+    s = str(value)
+    if s.endswith(" 00:00:00"):
+        return s[:-9]
+    return s
+
+
+def _build_modeling_constraints(
+    n_rows: int,
+    fields: list[DataField],
+    time_columns: list[str],
+    time_unique_count: int,
+    correlated_pairs: list[CorrelatedPair],
+    spatial_columns: list[str],
+) -> list[str]:
+    """建模假设预判：基于画像的确定性规则，输出模型可用性硬约束。
+
+    这是数据画像第 6 维度的核心产出，直接服务 L2 模型过滤。
+    """
+    constraints: list[str] = []
+    numeric_fields = [f for f in fields if f.dtype in ("int", "float")]
+    categorical_fields = [f for f in fields if f.dtype in ("str", "category", "bool")]
+
+    # 1. 时间维度
+    if not time_columns:
+        constraints.append("无时间维度列：排除时间序列模型（ARIMA/Prophet/LSTM 等）")
+    elif time_unique_count == 0:
+        constraints.append("时间列无有效值（全空或解析失败）：无法使用时间序列模型")
+    elif time_unique_count < 30:
+        constraints.append(
+            f"时间点仅 {time_unique_count} 个：时序模型样本不足，慎用"
+        )
+
+    # 2. 样本量
+    if n_rows < 30:
+        constraints.append(
+            f"样本量 {n_rows} < 30：排除高参数机器学习模型（随机森林/GBDT/深度学习）"
+        )
+    elif n_rows < 100:
+        constraints.append(
+            f"样本量 {n_rows} < 100：统计推断需谨慎，优先低参数模型"
+        )
+
+    # 3. 特征可用性
+    if not numeric_fields:
+        constraints.append("无数值特征列：排除回归/数值预测类方法")
+    if not categorical_fields:
+        constraints.append("无分类特征列：分类方法直接应用受限")
+
+    # 4. 目标不平衡（目标变量特殊性）
+    for f in categorical_fields:
+        share = f.categorical_stats.max_category_share if f.categorical_stats else None
+        if share is None:
+            continue
+        if share >= 0.9:
+            constraints.append(
+                f"分类字段 '{f.name}' 最大类别占比 {share:.1%}：严重不平衡，需采样/加权"
+            )
+        elif share >= 0.8:
+            constraints.append(
+                f"分类字段 '{f.name}' 最大类别占比 {share:.1%}：注意类别不平衡"
+            )
+
+    # 5. 共线性（分布特征·多变量）
+    if correlated_pairs:
+        names = ", ".join(f"{p.col_a}-{p.col_b}" for p in correlated_pairs[:3])
+        constraints.append(
+            f"存在高相关数值列对（|r|≥{_CORRELATION_THRESHOLD:.1f}）：{names}，线性模型注意共线性"
+        )
+
+    # 6. 高缺失（数据质量）
+    for f in fields:
+        if f.missing_rate > 0.5:
+            constraints.append(
+                f"字段 '{f.name}' 缺失率 {f.missing_rate:.1%}：需填充或删除决策"
+            )
+
+    # 7. 高离群（数据质量；空间坐标列/时间列不做数值离群约束）
+    for f in fields:
+        if (
+            not f.is_spatial
+            and not f.is_time_column
+            and f.numeric_stats
+            and f.numeric_stats.outlier_rate > 0.05
+        ):
+            constraints.append(
+                f"字段 '{f.name}' 离群率 {f.numeric_stats.outlier_rate:.1%}：注意鲁棒性与异常值处理"
+            )
+
+    # 8. 常量列
+    constant_cols = [f.name for f in fields if f.unique_count <= 1 and f.missing_rate == 0]
+    if constant_cols:
+        constraints.append(f"常量列（无信息量，建议剔除）：{', '.join(constant_cols[:5])}")
+
+    # 9. 空间结构
+    if spatial_columns:
+        constraints.append(
+            f"检测到空间坐标列 {', '.join(spatial_columns[:3])}：可考虑空间分析方法"
+        )
+
+    return constraints
+
+
+def _cell_to_str(value: Any) -> str:
+    """单元格值安全转字符串（JSON/嵌套类型不被 pd.isna 数组化误伤）。"""
+    if isinstance(value, (list, dict, np.ndarray)):
+        return str(value)
+    if pd.isna(value):
+        return ""
+    return str(value)
+
+
 def _build_field(name: str, series: pd.Series) -> DataField:
-    """构建单个字段的画像。"""
+    """构建单个字段的画像。
+
+    覆盖 6 大维度：
+      - 基本面：dtype / is_candidate_key / is_spatial
+      - 质量：missing_rate / outlier / numeric_parseable_rate（编码一致性）
+      - 分布：skewness / kurtosis / iqr / value_range
+      - 语义：unit_hint / max_category_share（不平衡）
+      - 时空：is_time_column
+    """
     total = len(series)
     missing_count = int(series.isna().sum())
     missing_rate = missing_count / total if total > 0 else 0.0
@@ -487,28 +722,38 @@ def _build_field(name: str, series: pd.Series) -> DataField:
     dtype = _infer_dtype(series)
     is_time = _detect_time_column(series, name)
     unit_hint = _detect_unit_hint(name)
+    is_spatial = _detect_spatial_column(name)
+    # 候选主键：唯一且无缺失（粒度与关联键线索）
+    is_candidate_key = total > 0 and missing_count == 0 and unique_count == total
 
     numeric_stats: NumericStats | None = None
     categorical_stats: CategoricalStats | None = None
+    numeric_parseable_rate: float | None = None
 
     if dtype in ("int", "float"):
         numeric = pd.to_numeric(series, errors="coerce").dropna()
         if len(numeric) > 0:
-            numeric_stats = NumericStats(
-                min=_safe_float(numeric.min()),
-                max=_safe_float(numeric.max()),
-                mean=_safe_float(numeric.mean()),
-                std=_safe_float(numeric.std()) if len(numeric) > 1 else 0.0,
-                median=_safe_float(numeric.median()),
-            )
+            numeric_stats = _compute_numeric_stats(numeric)
     elif dtype in ("str", "category", "bool"):
         value_counts = series.value_counts().head(10)
+        total_non_null = int(series.dropna().shape[0])
+        max_share = None
+        if total_non_null > 0 and len(value_counts) > 0:
+            max_share = float(value_counts.iloc[0]) / total_non_null
         categorical_stats = CategoricalStats(
             top_values=[
                 CategoryCount(value=str(k), count=int(v))
                 for k, v in value_counts.items()
-            ]
+            ],
+            max_category_share=max_share,
         )
+        # 编码一致性：字符列中可解析为数值的比例（0<rate<1 表示类型混合风险）
+        # 注意 pandas 2.x 字符串列可能是 StringDtype（str）而非 object
+        if series.dtype == "object" or isinstance(series.dtype, pd.StringDtype):
+            non_null = series.dropna()
+            if len(non_null) > 0:
+                parsed = pd.to_numeric(non_null, errors="coerce")
+                numeric_parseable_rate = float(parsed.notna().mean())
 
     return DataField(
         name=name,
@@ -519,6 +764,9 @@ def _build_field(name: str, series: pd.Series) -> DataField:
         sample_values=sample_values,
         unit_hint=unit_hint,
         is_time_column=is_time,
+        is_candidate_key=is_candidate_key,
+        is_spatial=is_spatial,
+        numeric_parseable_rate=numeric_parseable_rate,
         numeric_stats=numeric_stats,
         categorical_stats=categorical_stats,
     )
@@ -586,18 +834,67 @@ def generate_data_inventory(
         f.name for f in fields if f.dtype in ("str", "category", "bool")
     ]
 
+    # 数据质量·重复噪声：完全重复的行
+    duplicate_rows = 0
+    duplicate_rate = 0.0
+    if n_rows > 1:
+        duplicate_rows = int(df.duplicated().sum())
+        duplicate_rate = duplicate_rows / n_rows
+
+    # 数据基本面·粒度：候选主键列
+    candidate_keys = [f.name for f in fields if f.is_candidate_key]
+
+    # 数据基本面·样例：前 5 行（值转为字符串，控制体积）
+    sample_rows: list[dict] = []
+    for _, row in df.head(5).iterrows():
+        sample_rows.append({str(k): _cell_to_str(v) for k, v in row.items()})
+
+    # 时空结构：时间覆盖 + 空间坐标列
+    spatial_columns = [f.name for f in fields if f.is_spatial]
+    time_min: str | None = None
+    time_max: str | None = None
+    time_unique_count = 0
+    if time_columns:
+        time_min, time_max, time_unique_count = _compute_time_coverage(
+            df, time_columns[0]
+        )
+
+    # 分布特征·多变量：高相关列对（共线性）
+    correlated_pairs = _compute_correlated_pairs(df)
+
+    # 建模假设预判：确定性规则生成模型可用性约束
+    modeling_constraints = _build_modeling_constraints(
+        n_rows=n_rows,
+        fields=fields,
+        time_columns=time_columns,
+        time_unique_count=time_unique_count,
+        correlated_pairs=correlated_pairs,
+        spatial_columns=spatial_columns,
+    )
+
     inventory = DataInventory(
         file_name=p.name,
         file_path=str(p.resolve()),
         file_type=file_type,
+        file_size=p.stat().st_size,
         n_rows=n_rows,
         n_cols=n_cols,
         fields=fields,
         overall_missing_rate=overall_missing_rate,
+        duplicate_rows=duplicate_rows,
+        duplicate_rate=duplicate_rate,
+        candidate_keys=candidate_keys,
+        sample_rows=sample_rows,
         has_time_column=len(time_columns) > 0,
         time_columns=time_columns,
+        time_min=time_min,
+        time_max=time_max,
+        time_unique_count=time_unique_count,
+        spatial_columns=spatial_columns,
+        correlated_pairs=correlated_pairs,
         numeric_columns=numeric_columns,
         categorical_columns=categorical_columns,
+        modeling_constraints=modeling_constraints,
         sample_size=n_rows,
     )
 

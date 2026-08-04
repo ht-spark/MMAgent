@@ -439,3 +439,92 @@ class TestGenerateDataInventories:
         """不存在的文件自动跳过。"""
         inventories = generate_data_inventories(["nonexistent.mat"])
         assert len(inventories) == 0
+
+
+# ---------------------------------------------------------------------------
+# 增强画像：数据画像 6 大维度字段
+# ---------------------------------------------------------------------------
+
+
+class TestEnhancedDataProfile:
+    """file_tools 画像增强：基本面/质量/分布/语义/时空/建模约束。"""
+
+    def test_file_size(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        assert inv.file_size > 0
+
+    def test_duplicate_detection(self, duplicate_csv: Path):
+        inv = generate_data_inventory(duplicate_csv)
+        assert inv.duplicate_rows == 2  # [2,'b'] 与 [3,'c'] 各重复一次
+        assert inv.duplicate_rate == pytest.approx(0.4)
+
+    def test_no_duplicate(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        assert inv.duplicate_rows == 0
+        assert inv.duplicate_rate == 0.0
+
+    def test_sample_rows(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        assert len(inv.sample_rows) == 5
+        assert "城市" in inv.sample_rows[0]
+        assert isinstance(inv.sample_rows[0]["城市"], str)
+
+    def test_candidate_keys(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        assert "GDP(亿元)" in inv.candidate_keys
+        assert "城市" not in inv.candidate_keys  # 有缺失 → 非候选键
+
+    def test_time_coverage(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        assert inv.time_min == "2023-01-01"
+        assert inv.time_max == "2023-05-01"
+        assert inv.time_unique_count == 5
+
+    def test_spatial_columns(self, spatial_csv: Path):
+        inv = generate_data_inventory(spatial_csv)
+        assert "经度" in inv.spatial_columns
+        assert "纬度" in inv.spatial_columns
+        lon = next(f for f in inv.fields if f.name == "经度")
+        assert lon.is_spatial is True
+
+    def test_distribution_stats(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        gdp = next(f for f in inv.fields if f.name == "GDP(亿元)")
+        assert gdp.numeric_stats is not None
+        assert gdp.numeric_stats.q1 is not None
+        assert gdp.numeric_stats.iqr is not None
+        assert gdp.numeric_stats.skewness is not None
+        assert gdp.numeric_stats.kurtosis is not None
+
+    def test_outlier_stats(self, sample_csv: Path):
+        inv = generate_data_inventory(sample_csv)
+        pop = next(f for f in inv.fields if f.name == "人口(万人)")
+        assert pop.numeric_stats.outlier_count >= 1  # 321 相对其余城市离群
+
+    def test_max_category_share(self, imbalanced_csv: Path):
+        inv = generate_data_inventory(imbalanced_csv)
+        label = next(f for f in inv.fields if f.name == "标签")
+        assert label.categorical_stats.max_category_share == pytest.approx(0.9)
+
+    def test_numeric_parseable_rate(self, mixed_type_csv: Path):
+        inv = generate_data_inventory(mixed_type_csv)
+        code = next(f for f in inv.fields if f.name == "编码")
+        # 5 个非空值中 "100"/"200" 可解析 → 2/5 = 0.4
+        assert code.numeric_parseable_rate == pytest.approx(0.4)
+
+    def test_correlated_pairs(self, high_corr_csv: Path):
+        inv = generate_data_inventory(high_corr_csv)
+        pairs = {(p.col_a, p.col_b) for p in inv.correlated_pairs}
+        assert ("x", "y") in pairs or ("y", "x") in pairs
+
+    def test_modeling_constraints_small_sample(self, small_sample_csv: Path):
+        inv = generate_data_inventory(small_sample_csv)
+        assert any("样本量 3 < 30" in c for c in inv.modeling_constraints)
+
+    def test_modeling_constraints_no_time(self, sample_excel: Path):
+        inv = generate_data_inventory(sample_excel)
+        assert any("无时间维度列" in c for c in inv.modeling_constraints)
+
+    def test_modeling_constraints_imbalance(self, imbalanced_csv: Path):
+        inv = generate_data_inventory(imbalanced_csv)
+        assert any("严重不平衡" in c for c in inv.modeling_constraints)

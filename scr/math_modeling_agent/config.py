@@ -1,7 +1,5 @@
-"""应用配置。
-
-从环境变量读取 LLM 相关配置。
-对应 plan.md Phase 0.3：pydantic-settings 读取 .env。
+"""
+应用配置，从环境变量读取 LLM 相关配置。
 """
 from __future__ import annotations
 
