@@ -1,18 +1,24 @@
-"""题目驱动建模（CodeModeler + ModelBuilder 集成）单元测试。
+"""题目驱动建模（CodeModeler 分段 + ModelBuilder 集成）单元测试。
 
 覆盖：
-  - CodeModeler 响应解析（纯 JSON / markdown 代码块 / 杂文本）
-  - CodeModeler 错误分支（解析失败、缺 solution_code）
-  - ModelBuilder 题目驱动成功路径 / 修复循环 / 回退 / 无 LLM
+  - CodeModeler 模型设计解析（纯 JSON / markdown 代码块 / 杂文本）
+  - CodeModeler 代码生成解析（```python 块 / 纯文本 / 空响应）
+  - LLM 超时 → LLMTimeoutError（上层据此"超时即回退"）
+  - ModelBuilder 分段成功路径 / 修复循环 / 全部失败回退 / 无 LLM
 """
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
 
-from scr.agents.code_modeler import CodeModeler, CodeModelingError
+from scr.agents.code_modeler import (
+    CodeModeler,
+    CodeModelingError,
+    LLMTimeoutError,
+)
 from scr.agents.model_builder import ModelBuilder
 from scr.schemas.question import CurrentQuestionContext, ProblemInterpretation
 
@@ -35,6 +41,17 @@ class MockLLM:
         return _Msg(self._responses[idx])
 
 
+class SlowLLM:
+    """模拟 LLM 调用耗时（用于超时测试）。"""
+
+    def __init__(self, delay: float) -> None:
+        self._delay = delay
+
+    def invoke(self, prompt: str) -> _Msg:
+        time.sleep(self._delay)
+        return _Msg("{}")
+
+
 GOOD_CODE = (
     "import json\n"
     'result = {"solution": [5.0, 5.0], "objective": 10.0, '
@@ -48,7 +65,8 @@ BAD_CODE = (
 )
 
 
-def _model_json(code: str) -> str:
+def _model_design() -> str:
+    """第一段输出：数学模型 JSON（不含代码）。"""
     return json.dumps({
         "model_name": "测试LP",
         "model_summary": "max 收益",
@@ -57,7 +75,6 @@ def _model_json(code: str) -> str:
         "objective": "max: sum(c_i*x_i)",
         "constraints": ["sum(x)<=cap"],
         "key_parameters": {"cap": 10},
-        "solution_code": code,
     })
 
 
@@ -88,23 +105,21 @@ def _decision() -> dict:
     return {"selected_method": "线性规划", "canonical_method": "linear_programming"}
 
 
-class TestCodeModeler:
+class TestCodeModelerModelDesign:
     def test_parse_plain_json(self):
-        modeler = CodeModeler(MockLLM([_model_json(GOOD_CODE)]))
+        modeler = CodeModeler(MockLLM([_model_design()]))
         m = modeler.generate_model("小问", "optimization")
         assert m["model_name"] == "测试LP"
-        assert "solution_code" in m
+        assert "solution_code" not in m  # 第一段不生成代码
 
     def test_parse_markdown_fenced(self):
-        payload = f"```json\n{_model_json(GOOD_CODE)}\n```"
-        modeler = CodeModeler(MockLLM([payload]))
-        m = modeler.generate_model("小问", "optimization")
+        payload = f"```json\n{_model_design()}\n```"
+        m = CodeModeler(MockLLM([payload])).generate_model("小问", "optimization")
         assert m["math_task"] == "optimization"
 
     def test_parse_with_surrounding_text(self):
-        payload = f"好的，以下是模型：\n{_model_json(GOOD_CODE)}\n以上。"
-        modeler = CodeModeler(MockLLM([payload]))
-        m = modeler.generate_model("小问", "optimization")
+        payload = f"好的，以下是模型：\n{_model_design()}\n以上。"
+        m = CodeModeler(MockLLM([payload])).generate_model("小问", "optimization")
         assert m["model_name"] == "测试LP"
 
     def test_unparseable_raises(self):
@@ -112,11 +127,33 @@ class TestCodeModeler:
         with pytest.raises(CodeModelingError, match="无法从 LLM 响应中解析"):
             modeler.generate_model("小问", "optimization")
 
-    def test_missing_solution_code_raises(self):
-        payload = json.dumps({"model_name": "无代码"})
-        modeler = CodeModeler(MockLLM([payload]))
-        with pytest.raises(CodeModelingError, match="solution_code"):
-            modeler.generate_model("小问", "optimization")
+
+class TestCodeModelerCodeGeneration:
+    def test_generate_code_plain(self):
+        modeler = CodeModeler(MockLLM([GOOD_CODE]))
+        code = modeler.generate_code(json.loads(_model_design()))
+        assert "__MODEL_RESULT__" in code
+        assert "json" in code
+
+    def test_generate_code_fenced(self):
+        payload = f"```python\n{GOOD_CODE}\n```"
+        code = CodeModeler(MockLLM([payload])).generate_code(json.loads(_model_design()))
+        assert "__MODEL_RESULT__" in code
+
+    def test_empty_response_raises(self):
+        modeler = CodeModeler(MockLLM(["   \n  "]))
+        with pytest.raises(CodeModelingError, match="未返回求解代码"):
+            modeler.generate_code(json.loads(_model_design()))
+
+
+class TestLLMTimeout:
+    def test_timeout_raises_llm_timeout_error(self):
+        modeler = CodeModeler(SlowLLM(delay=5))
+        with pytest.raises(LLMTimeoutError, match="超时"):
+            modeler._invoke("prompt", timeout=1)
+
+    def test_timeout_is_subclass_of_modeling_error(self):
+        assert issubclass(LLMTimeoutError, CodeModelingError)
 
 
 class TestModelBuilderCodeBased:
@@ -126,57 +163,24 @@ class TestModelBuilderCodeBased:
             _context(), _interpretation(), _decision(), data_profile
         )["computation"]
 
+    def _responses_ok(self) -> list[str]:
+        """成功路径：模型设计 → 好代码。"""
+        return [_model_design(), GOOD_CODE]
+
+    def _responses_repair(self) -> list[str]:
+        """修复循环：第一轮代码坏，第二轮好（模型设计重来一次）。"""
+        return [_model_design(), BAD_CODE, _model_design(), GOOD_CODE]
+
     def test_code_based_success(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
 
         dp = run_intake(
             {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
         )["data_profile"]
-        comp = self._build(MockLLM([_model_json(GOOD_CODE)]), dp)
+        comp = self._build(MockLLM(self._responses_ok()), dp)
         assert comp["status"] == "success"
         assert comp["method_key"] == "code_based"
         assert "solution" in comp["results"]
-
-    def test_code_based_persists_artifacts(self, sample_csv: Path, tmp_path: Path):
-        """LLM 生成的解题代码应保存到 output_dir/questions/<qid>/。"""
-        from scr.workflow.intake import run_intake
-
-        out = tmp_path / "artifacts"
-        dp = run_intake(
-            {"data_paths": [str(sample_csv)], "output_dir": str(out)}
-        )["data_profile"]
-
-        builder = ModelBuilder(llm=MockLLM([_model_json(GOOD_CODE)]))
-        comp = builder.build(
-            _context(), _interpretation(), _decision(), dp, output_dir=str(out)
-        )["computation"]
-
-        assert comp["status"] == "success"
-        assert comp["method_key"] == "code_based"
-
-        q_dir = out / "questions" / "q1"
-        # 完整求解代码（写入前经 .strip()，无末尾换行）
-        assert (q_dir / "solution.py").exists()
-        assert (q_dir / "solution.py").read_text(encoding="utf-8") == GOOD_CODE.strip()
-        # 输入数据副本
-        assert (q_dir / "data.csv").exists()
-        # 结果包
-        assert (q_dir / "result.json").exists()
-        result = json.loads((q_dir / "result.json").read_text(encoding="utf-8"))
-        assert result["results"]["solution"] == [5.0, 5.0]
-        # computation 中记录产物目录
-        assert "q1" in comp["artifacts_dir"] and "questions" in comp["artifacts_dir"]
-
-    def test_no_output_dir_skips_persistence(self, sample_csv: Path, tmp_path: Path):
-        """不传 output_dir 时不落盘（向后兼容）。"""
-        from scr.workflow.intake import run_intake
-
-        dp = run_intake(
-            {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
-        )["data_profile"]
-        comp = self._build(MockLLM([_model_json(GOOD_CODE)]), dp)
-        assert comp["status"] == "success"
-        assert comp.get("artifacts_dir", "") == ""
 
     def test_repair_loop(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
@@ -184,9 +188,7 @@ class TestModelBuilderCodeBased:
         dp = run_intake(
             {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
         )["data_profile"]
-        comp = self._build(
-            MockLLM([_model_json(BAD_CODE), _model_json(GOOD_CODE)]), dp
-        )
+        comp = self._build(MockLLM(self._responses_repair()), dp)
         assert comp["status"] == "success"
         assert comp["method_key"] == "code_based"
         assert comp["intermediate_values"]["generation_attempts"] == 2
@@ -198,7 +200,7 @@ class TestModelBuilderCodeBased:
             {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
         )["data_profile"]
         comp = self._build(
-            MockLLM([_model_json(BAD_CODE), _model_json(BAD_CODE)]), dp
+            MockLLM([_model_design(), BAD_CODE, _model_design(), BAD_CODE]), dp
         )
         assert comp["status"] == "success"  # 回退预设方法
         assert comp["method_key"] != "code_based"

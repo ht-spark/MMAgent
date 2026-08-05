@@ -758,10 +758,15 @@ class ModelBuilder:
         output_dir: str | Path | None = None,
         feedback: str = "",
     ) -> dict:
-        """LLM 生成具体数学模型与求解代码，沙箱执行并校验结果。
+        """题目驱动建模：分段调用 LLM（模型设计→代码生成），沙箱执行并校验。
 
-        流程：准备数据 CSV → 生成建模 JSON（含代码）→ 沙箱执行 →
-              按题型校验结果 → 失败反馈修复重试（上限 CODE_GEN_MAX_RETRIES）。
+        流程：准备数据 CSV → LLM 设计数学模型（90s）→ LLM 生成求解代码
+              （120s）→ 沙箱执行 → 按题型校验 → 失败反馈修复重试。
+
+        超时策略（超时即回退）：
+          - 模型设计 / 代码生成 **超时** → 立即回退预设方法（不再重试，
+            因为重试大概率仍超时，避免 180s 白等后再次 180s）
+          - 其他失败（解析 / 执行 / 校验）→ 反馈给 LLM 修复重试（≤2 次）
 
         Args:
             method_name: 选中方法名称。
@@ -772,7 +777,11 @@ class ModelBuilder:
             output_dir: 产物目录（解题代码/数据/结果保存到 questions/<qid>/）。
             feedback: 自评/前次尝试的改进建议（作为首轮代码生成的初始反馈）。
         """
-        from ..agents.code_modeler import CodeModeler, CodeModelingError
+        from ..agents.code_modeler import (
+            CodeModeler,
+            CodeModelingError,
+            LLMTimeoutError,
+        )
         from ..tools.code_executor import CodeExecutionError, execute_model_code
 
         import time
@@ -781,37 +790,58 @@ class ModelBuilder:
         if csv_path is None:
             return {"status": "error", "error": "无法准备数据 CSV（无数据矩阵）"}
 
-        data_summary = self._build_data_summary(data_prep)
+        # 提示词瘦身（C）：数据摘要 800 字符、问题文本 1000 字符，减少生成 token
+        data_summary = self._build_data_summary(data_prep)[:800]
+        question_text = context.question_text[:1000]
+
         modeler = CodeModeler(self._llm)
         feedback = feedback or ""
         last_error = ""
         t_start = time.time()
         print(
             f"[builder] 题目驱动建模开始（题型={math_task}，方法={method_name}，"
-            f"最多尝试 {CODE_GEN_MAX_RETRIES} 次）"
+            f"最多尝试 {CODE_GEN_MAX_RETRIES} 次，模型设计超时 90s / 代码生成超时 120s）"
         )
 
         try:
             for attempt in range(CODE_GEN_MAX_RETRIES):
-                print(f"[builder]   └ 第 {attempt + 1}/{CODE_GEN_MAX_RETRIES} 次尝试：生成模型与代码...")
-                # 1. 生成建模 JSON（含 solution_code）
+                print(f"[builder]   └ 第 {attempt + 1}/{CODE_GEN_MAX_RETRIES} 次尝试...")
+                # 1. 模型设计（超时即回退）
                 try:
                     model_json = modeler.generate_model(
-                        question_text=context.question_text,
+                        question_text=question_text,
                         math_task=math_task,
                         method_hint=method_name,
                         data_summary=data_summary,
                         feedback=feedback,
                     )
+                except LLMTimeoutError as e:
+                    print(f"[builder]     ↳ 模型设计超时（{e}）→ 直接回退预设方法")
+                    return {"status": "error", "error": f"模型设计超时: {e}"}
                 except CodeModelingError as e:
                     last_error = str(e)
-                    feedback = f"建模 JSON 生成失败: {last_error}"
-                    print(f"[builder]     ↳ 建模 JSON 生成失败: {last_error[:120]}")
+                    feedback = f"模型设计失败: {last_error}"
+                    print(f"[builder]     ↳ 模型设计失败: {last_error[:120]}")
                     continue
 
-                code = str(model_json.get("solution_code", "")).strip()
+                # 2. 代码生成（超时即回退）
+                try:
+                    code = modeler.generate_code(
+                        model_json,
+                        question_text=question_text,
+                        data_summary=data_summary,
+                        feedback=feedback,
+                    )
+                except LLMTimeoutError as e:
+                    print(f"[builder]     ↳ 代码生成超时（{e}）→ 直接回退预设方法")
+                    return {"status": "error", "error": f"代码生成超时: {e}"}
+                except CodeModelingError as e:
+                    last_error = str(e)
+                    feedback = f"代码生成失败: {last_error}"
+                    print(f"[builder]     ↳ 代码生成失败: {last_error[:120]}")
+                    continue
 
-                # 2. 沙箱执行
+                # 3. 沙箱执行
                 t_exec = time.time()
                 print(
                     f"[builder]     ↳ 模型代码就绪（{model_json.get('model_name', '?')}，"
@@ -829,7 +859,7 @@ class ModelBuilder:
                     continue
                 print(f"[builder]     ↳ 代码执行成功（耗时 {time.time() - t_exec:.1f}s），校验结果...")
 
-                # 3. 按题型校验结果
+                # 4. 按题型校验结果
                 try:
                     self._validate_task_results(result, math_task)
                 except Exception as e:
@@ -838,12 +868,12 @@ class ModelBuilder:
                     print(f"[builder]     ↳ 结果校验未通过: {last_error[:150]}")
                     continue
 
-                # 4. 成功
+                # 5. 成功
                 print(
                     f"[builder]   └ 题目驱动建模成功（总耗时 {time.time() - t_start:.1f}s，"
                     f"第 {attempt + 1} 次尝试）"
                 )
-                # 4.1 持久化解题代码/数据/结果到 artifacts/questions/<qid>/
+                # 5.1 持久化解题代码/数据/结果到 artifacts/questions/<qid>/
                 artifacts_dir = self._persist_question_artifacts(
                     question_id=context.question_id,
                     output_dir=output_dir,

@@ -1,17 +1,7 @@
-"""论文写作 Agent（architecture.md §6.2）。
-
+"""
+论文写作 Agent
 职责：
   从已验证的 QuestionResult 生成完整竞赛论文草稿。
-
-设计要点：
-  - 确定性模板：不依赖 LLM，使用固定模板生成 Markdown
-  - 集成可视化工具：自动生成 PNG 图表并嵌入论文
-  - 集成表格工具：生成规范三线表格式
-  - 集成 LaTeX 公式：生成规范数学公式
-  - 每个小问对应完整的"问题 - 方法 - 结果 - 检验 - 结论"叙述
-  - 公式、图、表编号并在正文引用
-  - 计算数值来自 QuestionResult.computation
-  - 摘要最后生成，不引入新数字
 """
 from __future__ import annotations
 
@@ -23,7 +13,7 @@ from typing import Any
 from ..schemas.context import DataProfile, ProjectContext
 from ..schemas.paper import PaperDraft, PaperSection
 from ..schemas.question import QuestionResult
-from ..templates import get_template, get_template_by_problem_text, PaperTemplate
+from ..templates import get_template, PaperTemplate
 from ..tools.visualization_tools import generate_all_figures
 from ..tools.table_tools import (
     format_solution_table,
@@ -652,6 +642,7 @@ class PaperWriter:
         self._formula_counter: int = 0
         self._shown_conclusions: set[str] = set()
         self._template: PaperTemplate | None = None
+        self._template_guide: str = ""  # 模板写作指导（注入 LLM 提示词）
         self._project_context: ProjectContext | None = None
         self._data_profile: DataProfile | None = None
 
@@ -837,51 +828,60 @@ class PaperWriter:
     def _select_template(
         self, project_context: ProjectContext | None
     ) -> PaperTemplate:
-        """根据项目上下文选择论文模板。
+        """加载统一论文模板。
 
-        选择策略：
-          1. 优先从 problem_text 中提取 "X题" 标识（A-F）；
-          2. 若无法提取，基于关键词匹配推断题型；
-          3. 均失败时返回通用模板（C题）。
-
-        选择结果会存储到 self._template，供后续大纲构建和摘要生成使用。
+        模板已统一为「公共骨架 + 可伸缩问题章节」结构，不再按题型
+        （A-F）区分，因此无论题目类型如何都返回同一套模板。
+        保留 project_context 参数以兼容既有调用。
 
         Args:
-            project_context: 项目上下文。
+            project_context: 项目上下文（保留参数兼容性，当前未使用）。
 
         Returns:
-            匹配的 PaperTemplate。
+            统一的 PaperTemplate。
         """
-        import re
-
-        if project_context is None or not project_context.problem_text:
-            self._template = get_template("C")
-            print(
-                f"[writer] 项目上下文缺失，使用默认模板: "
-                f"{self._template.problem_type_name}({self._template.category})"
-            )
-            return self._template
-
-        text = project_context.problem_text
-
-        # 策略1：从文本前 500 字符中提取 "X题" 标识
-        type_match = re.search(r"([A-Fa-f])\s*题", text[:500])
-        if type_match:
-            problem_type = type_match.group(1).upper()
-            self._template = get_template(problem_type)
-            print(
-                f"[writer] 选择论文模板: {self._template.problem_type_name}"
-                f"({self._template.category}) — 来源: 题型标识匹配"
-            )
-            return self._template
-
-        # 策略2：基于关键词匹配推断题型
-        self._template = get_template_by_problem_text(text)
-        print(
-            f"[writer] 选择论文模板: {self._template.problem_type_name}"
-            f"({self._template.category}) — 来源: 关键词推断"
-        )
+        self._template = get_template()
+        self._template_guide = self._build_template_guide()
+        print(f"[writer] 加载统一论文模板: {self._template.name}")
         return self._template
+
+    @staticmethod
+    def _build_template_guide() -> str:
+        """从统一模板构建写作指导文本，注入 LLM 提示词。
+
+        覆盖：全局写作要点、摘要要求、问题章节五段式结构、可选方法库。
+        这样 LLM 写作时严格遵循统一模板规范，而不是自由发挥。
+        """
+        from ..templates.paper_templates import (
+            METHOD_LIBRARY,
+            UNIFIED_TEMPLATE,
+            build_problem_section,
+        )
+
+        parts: list[str] = []
+
+        tips = UNIFIED_TEMPLATE.writing_tips
+        if tips:
+            parts.append(
+                "【全局写作要点】\n" + "\n".join(f"- {t}" for t in tips)
+            )
+
+        if UNIFIED_TEMPLATE.abstract_guide:
+            parts.append(
+                "【摘要写作要求】\n" + UNIFIED_TEMPLATE.abstract_guide
+            )
+
+        problem_guide = build_problem_section(1).writing_guide
+        parts.append("【问题章节五段式结构】\n" + problem_guide)
+
+        lib_lines = [
+            f"- {cat}：{'、'.join(methods)}"
+            for cat, methods in METHOD_LIBRARY.items()
+        ]
+        if lib_lines:
+            parts.append("【可选方法库（按每问任务类型选择，说明依据）】\n" + "\n".join(lib_lines))
+
+        return "\n\n".join(parts)
 
     # ------------------------------------------------------------------
     # 大纲构建
@@ -908,7 +908,7 @@ class PaperWriter:
           模板"参考文献"     → section_id="6"
           模板"附录"        → section_id="7"
         """
-        template = self._template or get_template("C")
+        template = self._template or get_template()
         sections: list[PaperSection] = []
         sorted_qids = sorted(question_results.keys())
 
@@ -1045,7 +1045,7 @@ class PaperWriter:
         采用学术论文摘要的规范写作风格。
         摘要结构参考论文模板的 abstract_guide。
         """
-        template = self._template or get_template("C")
+        template = self._template or get_template()
         lines: list[str] = []
         sorted_qids = sorted(question_results.keys())
         n = len(sorted_qids)
@@ -1073,7 +1073,7 @@ class PaperWriter:
             )
         lines.append("")
 
-        # 方法论概述（结合模板方法偏好）
+        # 方法论概述（仅使用各问实际采用的方法，不掺入模板推荐方法）
         method_set = []
         task_set = set()
         for qid in sorted_qids:
@@ -1084,11 +1084,7 @@ class PaperWriter:
                 method_set.append(method)
             task_set.add(findings.get("math_task", ""))
 
-        # 合并实际使用的方法和模板推荐的方法
         all_methods = list(method_set)
-        for pref in template.method_preferences:
-            if pref not in all_methods and len(all_methods) < 6:
-                all_methods.append(pref)
 
         methods_str = "、".join(all_methods[:5])
         # 根据任务类型生成方法论描述
@@ -1153,12 +1149,9 @@ class PaperWriter:
             "所提方法论框架可为同类问题的建模与求解提供参考。"
         )
 
-        # 关键词（合并实际关键词和模板建议关键词）
+        # 关键词（仅取各问实际关键词；模板中的 keyword_suggestions
+        # 是选取规则的指导语，不是可直接使用的关键词，故不再合并）
         keywords = self._collect_keywords(question_results)
-        # 补充模板建议的关键词
-        for kw in template.keyword_suggestions:
-            if kw not in keywords and len(keywords) < 8:
-                keywords.append(kw)
         if keywords:
             lines.append("")
             lines.append("**关键词**：" + "；".join(keywords))
@@ -1167,23 +1160,18 @@ class PaperWriter:
 
     @staticmethod
     def _get_category_description(template: PaperTemplate) -> str:
-        """根据模板类别生成问题描述短语。
+        """生成问题描述短语。
+
+        模板已统一为不分题型的单一结构，此处返回通用描述。
+        保留 template 参数以兼容既有调用。
 
         Args:
-            template: 论文模板。
+            template: 论文模板（保留参数兼容性，当前未使用）。
 
         Returns:
-            问题描述短语，如"机理建模/仿真类问题"。
+            问题描述短语。
         """
-        category_map = {
-            "机理建模/仿真类": "机理建模与仿真类问题",
-            "优化/排样类": "优化与排样类问题",
-            "评价/规划类": "评价与规划类问题",
-            "预测/规划类": "预测与规划类问题",
-            "机理/预测/优化综合类": "机理分析与优化综合类问题",
-            "综合/优化类": "综合优化类问题",
-        }
-        return category_map.get(template.category, "数学建模问题")
+        return "数学建模问题"
 
     # ------------------------------------------------------------------
     # 问题重述与问题分析
@@ -1817,6 +1805,7 @@ class PaperWriter:
                 objective_function=formulation.get("objective_function", ""),
                 constraints=formulation.get("constraints", []),
                 parameters=formulation.get("parameters", {}),
+                template_guide=self._template_guide,
             )
             if not model_analysis:
                 model_analysis = self._build_model_analysis(method, task, qid, formulation)
@@ -1922,6 +1911,7 @@ class PaperWriter:
         lines.append("")
 
         # 求解结果表（使用表格工具）
+        q_tables: list[str] = []
         if results and results.get("optimal_solution"):
             self._tbl_counter += 1
             lines.append(f"**表 {self._tbl_counter}：问题 {qid} 最优解**")
@@ -1930,6 +1920,7 @@ class PaperWriter:
             # 去除工具自带的标题行
             sol_table = self._strip_table_title(sol_table)
             lines.append(sol_table)
+            q_tables.append(sol_table)
             lines.append("")
 
         # 数据摘要表（蒙特卡洛等）
@@ -1940,6 +1931,7 @@ class PaperWriter:
             ds_table = format_data_summary_table(computation, qid)
             ds_table = self._strip_table_title(ds_table)
             lines.append(ds_table)
+            q_tables.append(ds_table)
             lines.append("")
 
         # 关键指标表（使用表格工具）
@@ -1950,6 +1942,7 @@ class PaperWriter:
             metrics_table = format_metrics_table(computation, qid)
             metrics_table = self._strip_table_title(metrics_table)
             lines.append(metrics_table)
+            q_tables.append(metrics_table)
             lines.append("")
 
         # 结果分析段落（学术风格）
@@ -1964,6 +1957,8 @@ class PaperWriter:
             status=status,
             results=json.dumps(results, ensure_ascii=False, default=str)[:1500],
             metrics=json.dumps(metrics, ensure_ascii=False, default=str)[:800],
+            tables="\n\n".join(q_tables)[:1500],
+            template_guide=self._template_guide,
         )
         lines.append(result_analysis or _academic_result_analysis(method, task, qid, computation))
         lines.append("")

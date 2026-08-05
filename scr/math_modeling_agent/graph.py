@@ -247,9 +247,9 @@ def _deliver_node(state: ProjectState) -> dict:
             f.write(paper.full_text)
         print(f"[deliver] 论文 Markdown 已保存: {paper_path}")
 
-        # 转换为 DOCX
+        # 转换为 DOCX（优先 pandoc：LaTeX 公式转 Word 原生公式）
         try:
-            from ..tools.md2docx import convert_paper_md_to_docx
+            from ..tools.md2docx_pandoc import convert_paper_md_to_docx
             docx_path = convert_paper_md_to_docx(paper_path, output_dir)
             print(f"[deliver] 论文 DOCX 已保存: {docx_path}")
         except Exception as e:

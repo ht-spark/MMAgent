@@ -20,3 +20,9 @@
 
 ## 指标（metrics JSON）
 {metrics}
+
+## 已生成的结果表格（Markdown）
+{tables}
+
+## 全局写作要求（依据统一论文模板）
+{template_guide}

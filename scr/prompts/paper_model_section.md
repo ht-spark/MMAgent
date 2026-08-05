@@ -27,3 +27,6 @@
 
 ## 模型参数
 {parameters}
+
+## 全局写作要求（依据统一论文模板）
+{template_guide}
