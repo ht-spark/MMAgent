@@ -28,7 +28,7 @@ export default function Sidebar({ section, onHome, onNew, onHistory, onApi, onDo
       <div className="sidebar-logo" onClick={onHome}>
         <div className="logo-icon">{LOGO}</div>
         <div className="logo-text">
-          <span className="logo-name sidebar-brand">ModelForge</span>
+          <span className="logo-name sidebar-brand">MMAgent</span>
           <span className="logo-sub sidebar-sub">数学建模智能体</span>
         </div>
       </div>
