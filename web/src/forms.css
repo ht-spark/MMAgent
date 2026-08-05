@@ -796,3 +796,93 @@
   opacity: 0.55;
   cursor: default;
 }
+
+/* ============================================================
+   README 嵌入区（marked 渲染后的 Markdown 内容）
+   ============================================================ */
+.readme {
+  background: #f7f9fc;
+}
+.readme-body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 32px;
+  background: #fff;
+  border: 0.5px solid rgba(0,0,0,0.12);
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #243b53;
+}
+.readme-body h1,
+.readme-body h2,
+.readme-body h3,
+.readme-body h4 {
+  font-weight: 500;
+  color: #0d1b2a;
+  margin: 1.6em 0 0.6em;
+  line-height: 1.35;
+}
+.readme-body h1 { font-size: 22px; border-bottom: 0.5px solid rgba(0,0,0,0.12); padding-bottom: 8px; }
+.readme-body h2 { font-size: 18px; }
+.readme-body h3 { font-size: 16px; }
+.readme-body h4 { font-size: 14px; }
+.readme-body h1:first-child { margin-top: 0; }
+.readme-body p { margin: 0.7em 0; }
+.readme-body ul,
+.readme-body ol { padding-left: 1.6em; margin: 0.6em 0; }
+.readme-body li { margin: 0.25em 0; }
+.readme-body a { color: #185fa5; text-decoration: none; border-bottom: 0.5px solid rgba(24,95,165,0.35); }
+.readme-body a:hover { color: #042c53; border-bottom-color: #042c53; }
+.readme-body strong { font-weight: 500; color: #0d1b2a; }
+.readme-body em { font-style: italic; }
+.readme-body hr { border: 0; border-top: 0.5px solid rgba(0,0,0,0.12); margin: 2em 0; }
+.readme-body blockquote {
+  margin: 0.8em 0;
+  padding: 8px 14px;
+  border-left: 3px solid #b3e5fc;
+  background: #f0f9ff;
+  color: #486581;
+  border-radius: 0 6px 6px 0;
+}
+.readme-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  background: #eef3f9;
+  color: #185fa5;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.readme-body pre {
+  background: #0d1b2a;
+  color: #e6f1fb;
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  line-height: 1.55;
+  margin: 0.8em 0;
+}
+.readme-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: 12.5px;
+}
+.readme-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 13px;
+  table-layout: auto;
+}
+.readme-body thead { background: #f0f9ff; }
+.readme-body th,
+.readme-body td {
+  border: 0.5px solid rgba(0,0,0,0.12);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.readme-body th { font-weight: 500; color: #0d1b2a; }
+.readme-body tbody tr:nth-child(even) { background: #fafcff; }
+.readme-body img { max-width: 100%; border-radius: 6px; }

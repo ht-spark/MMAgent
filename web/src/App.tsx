@@ -4,8 +4,9 @@ import Home from './pages/Home'
 import NewTask from './pages/NewTask'
 import History from './pages/History'
 import ApiManager from './pages/ApiManager'
+import Docs from './pages/Docs'
 
-type Section = 'home' | 'new' | 'history' | 'api'
+type Section = 'home' | 'new' | 'history' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
@@ -46,16 +47,18 @@ export default function App() {
           onNew={startNew}
           onHistory={() => setSection('history')}
           onApi={() => setSection('api')}
+          onDocs={() => setSection('docs')}
         />
       )}
 
       <main className={`content ${section === 'home' ? 'content--full' : ''}`}>
-        {section === 'home' && <Home onStart={startNew} />}
+        {section === 'home' && <Home onStart={startNew} onDocs={() => setSection('docs')} />}
         {section === 'new' && (
           <NewTask task={task} setTask={setTask} onHistory={() => setSection('history')} />
         )}
         {section === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
+        {section === 'docs' && <Docs />}
       </main>
     </div>
   )

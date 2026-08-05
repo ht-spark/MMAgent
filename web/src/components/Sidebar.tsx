@@ -4,6 +4,7 @@ type Props = {
   onNew: () => void
   onHistory: () => void
   onApi: () => void
+  onDocs: () => void
 }
 
 const LOGO = (
@@ -21,7 +22,7 @@ const LOGO = (
   </svg>
 )
 
-export default function Sidebar({ section, onHome, onNew, onHistory, onApi }: Props) {
+export default function Sidebar({ section, onHome, onNew, onHistory, onApi, onDocs }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo" onClick={onHome}>
@@ -66,6 +67,17 @@ export default function Sidebar({ section, onHome, onNew, onHistory, onApi }: Pr
             <path d="M12 3v3M12 18v3M3 12h3M18 12h3" strokeLinecap="round" />
           </svg>
           API 管理
+        </button>
+        <button
+          className={`nav-item ${section === 'docs' ? 'active' : ''}`}
+          onClick={onDocs}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+            <path d="M14 4v5h5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M8 13h8M8 17h8" strokeLinecap="round" />
+          </svg>
+          项目文档
         </button>
       </nav>
 

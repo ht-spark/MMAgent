@@ -23,7 +23,10 @@ dependencies = [
     "pytest",
     "pytest-asyncio",
     "python-docx",
-    "tavily-python"
+    "tavily-python",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.1",
+    "python-multipart>=0.0.32",
 ]
 
 [tool.pytest.ini_options]
@@ -34,3 +37,9 @@ asyncio_mode = "auto"
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+# server 是唯一常规包；scr 是运行时通过 sys.path 引入的命名空间包。
+# web/artifacts/tests/examples 非 Python 包，需显式排除以免自动发现失败。
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["web*", "artifacts*", "tests*", "examples*"]
