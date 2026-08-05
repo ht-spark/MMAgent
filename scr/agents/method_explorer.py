@@ -634,38 +634,15 @@ class MethodExplorer:
 def _extract_json_object(text: str) -> dict | None:
     """Extract the first JSON object from an LLM text response.
 
-    Handles markdown code fences (```...``` or ```json...```) appearing
-    anywhere in the text, as well as raw JSON embedded in prose.
+    Handles markdown code fences, prose-wrapped JSON, and DeepSeek-style
+    ``<think>...</think>`` chains (via llm_response.strip_thinking).
     """
-    cleaned = text.strip()
-    # Strip markdown code fences — handle both leading and embedded code blocks
-    if "```" in cleaned:
-        lines = cleaned.splitlines()
-        start_idx = None
-        end_idx = None
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("```"):
-                if start_idx is None:
-                    start_idx = i
-                else:
-                    end_idx = i
-                    break
-        if start_idx is not None:
-            if end_idx is not None:
-                cleaned = "\n".join(lines[start_idx + 1:end_idx]).strip()
-            else:
-                cleaned = "\n".join(lines[start_idx + 1:]).strip()
+    from ..tools.llm_response import extract_json
 
-    decoder = json.JSONDecoder()
-    for start in [i for i, ch in enumerate(cleaned) if ch == "{"]:
-        try:
-            obj, _ = decoder.raw_decode(cleaned[start:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            return obj
-    return None
+    try:
+        return extract_json(text)
+    except ValueError:
+        return None
 
 
 def _schema_to_example_str(schema_json: dict) -> str:

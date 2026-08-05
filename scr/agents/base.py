@@ -190,29 +190,13 @@ class BaseAgent:
         result = self.llm.invoke(json_prompt)
         text = (result.content if hasattr(result, "content") else str(result)).strip()
 
-        # 清理 Markdown 代码块
-        if text.startswith("```"):
-            lines = text.split("\n")
-            # 去掉第一行（```json）和最后一行（```）
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
+        # 鲁棒解析：剥离 <think> 思维链 + 代码块 + 括号平衡提取 JSON
+        from ..tools.llm_response import extract_json
 
         try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            # 尝试提取 JSON 对象
-            import re
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                try:
-                    data = json.loads(match.group())
-                except json.JSONDecodeError:
-                    raise ValueError(f"JSON 解析失败，LLM 返回: {text[:300]}")
-            else:
-                raise ValueError(f"JSON 解析失败，LLM 返回: {text[:300]}")
+            data = extract_json(text)
+        except ValueError:
+            raise ValueError(f"JSON 解析失败，LLM 返回: {text[:300]}")
 
         return schema.model_validate(data)
 

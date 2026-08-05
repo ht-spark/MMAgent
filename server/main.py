@@ -1,0 +1,220 @@
+"""FastAPI 入口。
+
+启动：在项目根目录执行
+    uvicorn server.main:app --reload --port 8000
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import uuid
+from pathlib import Path
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+
+from server.files import list_figures, resolve_artifact
+from server.runs import (
+    cancel_run,
+    cleanup_stale_runs,
+    create_run,
+    delete_run,
+    execute_run,
+    get_run,
+    list_runs,
+)
+from server.schemas import CreateRunResponse, ModelConfig, RunDetail, RunSummary
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
+WEB_DIST = PROJECT_ROOT / "web" / "dist"
+
+app = FastAPI(title="MMAgent Web", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 本地单机开发；生产应改为前端域名
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 保留后台任务引用，避免被 GC
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    """启动时清理因服务重启而留下的\"僵尸\"运行（status=running 但无对应后台线程）。"""
+    cleaned = cleanup_stale_runs(max_age_seconds=120)
+    if cleaned:
+        print(f"[startup] cleaned {cleaned} stale running run(s)")
+
+
+@app.post("/api/runs", response_model=CreateRunResponse)
+async def create_run_endpoint(
+    problem_text: str | None = Form(None, description="题目文本"),
+    problem_file: UploadFile | None = File(None, description="题目文件(.md/.txt)"),
+    data_files: list[UploadFile] | None = File(None, description="数据附件(可多个)"),
+    llm_config: str = Form("{}", description="JSON: provider/api_key/base_url/model"),
+):
+    """提交一次解题任务（后台异步执行）。"""
+    # 解析模型配置
+    try:
+        cfg = json.loads(llm_config) if llm_config else {}
+        ModelConfig(**cfg)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"llm_config 解析失败: {exc}")
+
+    # 题目：文本优先；其次读取文本文件
+    problem = problem_text
+    run_id = uuid.uuid4().hex[:8]
+    output_dir = ARTIFACTS_ROOT / run_id
+    input_dir = output_dir / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    if problem_file is not None and not problem:
+        raw = await problem_file.read()
+        try:
+            problem = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="题目文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
+            )
+        # 存档题目文件
+        dest = input_dir / (problem_file.filename or "problem.txt")
+        dest.write_bytes(raw)
+
+    if not problem or not problem.strip():
+        raise HTTPException(status_code=400, detail="必须提供 problem_text 或 problem_file")
+
+    # 数据附件存档
+    data_paths: list[str] = []
+    if data_files:
+        for uf in data_files:
+            if uf is None:
+                continue
+            content = await uf.read()
+            if not content:
+                continue
+            dest = input_dir / (uf.filename or f"data_{len(data_paths)}.bin")
+            dest.write_bytes(content)
+            data_paths.append(str(dest))
+
+    preview = problem.strip()[:200].replace("\n", " ")
+    create_run(run_id, preview, cfg)
+
+    task = asyncio.create_task(
+        execute_run(
+            run_id=run_id,
+            problem_text=problem,
+            data_paths=data_paths,
+            output_dir=str(output_dir),
+            model_config=cfg,
+        )
+    )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    return {"run_id": run_id, "status": "queued", "output_dir": str(output_dir)}
+
+
+@app.get("/api/runs", response_model=list[RunSummary])
+async def list_runs_endpoint():
+    """运行历史列表。"""
+    return [RunSummary.from_row(r) for r in list_runs()]
+
+
+@app.post("/api/runs/cleanup-stale")
+async def cleanup_stale_endpoint(max_age_seconds: int = 300):
+    """手动把因服务重启而卡在 running/queued 的僵尸任务转为 failed。
+
+    正常情况启动时已自动清理；此接口用于运行中手动触发（无需重启）。
+    """
+    cleaned = cleanup_stale_runs(max_age_seconds=max_age_seconds)
+    return {"cleaned": cleaned}
+
+
+@app.get("/api/runs/{run_id}", response_model=RunDetail)
+async def get_run_endpoint(run_id: str):
+    """运行详情（含进度事件与产物清单）。"""
+    row = get_run(run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="run 不存在")
+    return RunDetail.from_row(row)
+
+
+@app.delete("/api/runs/{run_id}")
+async def delete_run_endpoint(run_id: str):
+    """删除一条运行记录（DB 行 + 产物目录）。"""
+    result = delete_run(run_id)
+    if not result["deleted"]:
+        if result["reason"] == "not_found":
+            raise HTTPException(status_code=404, detail="run 不存在")
+        raise HTTPException(status_code=409, detail=result["reason"])
+    return {"ok": True, "run_id": run_id}
+
+
+@app.post("/api/runs/{run_id}/cancel")
+async def cancel_run_endpoint(run_id: str):
+    """中断一个正在执行（queued/running）的任务。
+
+    若任务已结束（succeeded/failed/cancelled）则返回 409；
+    若仍在执行则设置取消标志，后台线程在下一个节点边界退出并标记 cancelled。
+    """
+    result = cancel_run(run_id)
+    if not result["cancelled"]:
+        if result["reason"] == "not_found":
+            raise HTTPException(status_code=404, detail="run 不存在")
+        raise HTTPException(status_code=409, detail=result["reason"])
+    return {"ok": True, "run_id": run_id, "status": "cancelled"}
+
+
+@app.get("/api/runs/{run_id}/paper")
+async def get_paper_endpoint(run_id: str):
+    """论文 Markdown 文本。"""
+    path = resolve_artifact(run_id, "paper.md")
+    return PlainTextResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/runs/{run_id}/figures")
+async def get_figures_endpoint(run_id: str):
+    """图表文件清单。"""
+    if not get_run(run_id):
+        raise HTTPException(status_code=404, detail="run 不存在")
+    return {"figures": list_figures(run_id)}
+
+
+@app.get("/api/runs/{run_id}/files/{file_path:path}")
+async def download_file_endpoint(run_id: str, file_path: str):
+    """下载任意产物文件（安全限制在 artifacts/<run_id>/ 内）。"""
+    try:
+        target = resolve_artifact(run_id, file_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return FileResponse(target)
+
+
+# ---------------------------------------------------------------------------
+# 前端静态托管（若已构建 web/dist）
+# ---------------------------------------------------------------------------
+if WEB_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(WEB_DIST), html=True), name="web")
+
+    @app.get("/healthz")
+    async def healthz():
+        return {"status": "ok"}
+else:
+
+    @app.get("/")
+    async def root():
+        return {
+            "message": "MMAgent Web API 运行中",
+            "docs": "/docs",
+            "hint": "前端未构建；构建 web 后访问根路径即可使用界面。",
+        }

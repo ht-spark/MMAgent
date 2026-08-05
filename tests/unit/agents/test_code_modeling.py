@@ -142,7 +142,7 @@ class TestCodeModelerCodeGeneration:
 
     def test_empty_response_raises(self):
         modeler = CodeModeler(MockLLM(["   \n  "]))
-        with pytest.raises(CodeModelingError, match="未返回求解代码"):
+        with pytest.raises(CodeModelingError, match="响应为空"):
             modeler.generate_code(json.loads(_model_design()))
 
 

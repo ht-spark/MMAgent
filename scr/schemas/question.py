@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProblemInterpretation(BaseModel):
@@ -90,3 +90,53 @@ class QuestionResult(BaseModel):
     limitations: list[str] = Field(default_factory=list)
     error_message: str = ""
     retry_count: int = Field(ge=0, default=0)
+
+    # ------------------------------------------------------------------
+    # 边界兜底校验：防止上游（尤其 LLM 输出）类型不匹配导致整个流程崩溃
+    # ------------------------------------------------------------------
+
+    @field_validator("assumptions", mode="before")
+    @classmethod
+    def _coerce_assumptions(cls, v: object) -> list[dict]:
+        """兼容 list[str] 假设来源，统一转为 list[dict]。
+
+        防回归：explorer 的 LLM 决策路径会输出字符串假设列表
+        （如 "目标函数和约束条件可线性化"），直接构造 QuestionResult
+        会触发 pydantic ``dict_type`` 校验错误。在 schema 边界兜底，
+        任何构造点传入字符串列表都不会再崩。
+        """
+        if v is None:
+            return []
+        if not isinstance(v, (list, tuple)):
+            return [{"description": str(v), "type": "method_inherent", "verifiable": True}]
+        out: list[dict] = []
+        for a in v:
+            if isinstance(a, dict):
+                entry = dict(a)
+                desc = (
+                    entry.get("description")
+                    or entry.get("content")
+                    or entry.get("assumption")
+                    or ""
+                )
+                entry["description"] = str(desc)
+                entry.setdefault("type", "method_inherent")
+                entry.setdefault("verifiable", True)
+                out.append(entry)
+            else:
+                out.append({
+                    "description": str(a),
+                    "type": "method_inherent",
+                    "verifiable": True,
+                })
+        return out
+
+    @field_validator("method_candidates", mode="before")
+    @classmethod
+    def _coerce_method_candidates(cls, v: object) -> list[dict]:
+        """过滤候选列表中的非 dict 项（LLM 输出异常时）。"""
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        return [c for c in v if isinstance(c, dict)]

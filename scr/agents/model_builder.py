@@ -760,8 +760,8 @@ class ModelBuilder:
     ) -> dict:
         """题目驱动建模：分段调用 LLM（模型设计→代码生成），沙箱执行并校验。
 
-        流程：准备数据 CSV → LLM 设计数学模型（90s）→ LLM 生成求解代码
-              （120s）→ 沙箱执行 → 按题型校验 → 失败反馈修复重试。
+        流程：准备数据 CSV → LLM 设计数学模型 → LLM 生成求解代码
+              （各 6 分钟超时）→ 沙箱执行 → 按题型校验 → 失败反馈修复重试。
 
         超时策略（超时即回退）：
           - 模型设计 / 代码生成 **超时** → 立即回退预设方法（不再重试，
@@ -800,7 +800,7 @@ class ModelBuilder:
         t_start = time.time()
         print(
             f"[builder] 题目驱动建模开始（题型={math_task}，方法={method_name}，"
-            f"最多尝试 {CODE_GEN_MAX_RETRIES} 次，模型设计超时 90s / 代码生成超时 120s）"
+            f"最多尝试 {CODE_GEN_MAX_RETRIES} 次，模型设计/代码生成超时均为 6 分钟）"
         )
 
         try:

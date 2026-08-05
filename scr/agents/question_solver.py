@@ -62,6 +62,42 @@ class QuestionSolver(BaseAgent):
         self._explorer = MethodExplorer(llm=llm, search_tool=search_tool)
         self._builder = ModelBuilder(llm=llm)
 
+    @staticmethod
+    def _normalize_assumptions(raw: Any) -> list[dict]:
+        """将假设统一规范化为 QuestionResult 要求的 list[dict]。
+
+        兼容两种来源：
+          - ``list[str]``：LLM 决策输出 / 旧 fallback 方法定义（如
+            "目标函数和约束条件可线性化"）
+          - ``list[dict]``：heuristic ``_format_assumptions``（含
+            description / type / verifiable）
+
+        统一为 ``{"description": ..., "type": ..., "verifiable": ...}``，
+        避免 pydantic 校验失败导致整个 solve 崩溃。
+        """
+        normalized: list[dict] = []
+        for a in raw or []:
+            if isinstance(a, dict):
+                entry = dict(a)
+                desc = entry.get("description") or entry.get("content") or entry.get("assumption") or ""
+                entry["description"] = str(desc)
+                entry.setdefault("type", "method_inherent")
+                entry.setdefault("verifiable", True)
+                normalized.append(entry)
+            elif isinstance(a, str):
+                normalized.append({
+                    "description": a,
+                    "type": "method_inherent",
+                    "verifiable": True,
+                })
+            else:
+                normalized.append({
+                    "description": str(a),
+                    "type": "method_inherent",
+                    "verifiable": True,
+                })
+        return normalized
+
     def solve(
         self,
         context: CurrentQuestionContext,
@@ -156,8 +192,10 @@ class QuestionSolver(BaseAgent):
         model_output["self_review"] = self_review
         comp_status = model_output["computation"].get("status", "unknown")
 
-        # 步骤 4: 提取假设
-        assumptions = decision_record.get("assumptions", [])
+        # 步骤 4: 提取假设（统一规范化为 list[dict]，兼容 LLM list[str] 与 heuristic list[dict]）
+        assumptions = self._normalize_assumptions(
+            decision_record.get("assumptions", [])
+        )
 
         # 步骤 5: 生成可复用摘要（包含实际计算结果）
         t0 = time.monotonic()

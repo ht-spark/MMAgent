@@ -57,6 +57,18 @@ def check_gq(state: dict) -> GateResult:
         failed_checks.append("result_missing")
         return _build_gate_result(failed_checks, state)
 
+    # 终态短路：结果已被标记 blocked（如节点异常降级），直接保持 blocked，
+    # 不重算其他字段（避免 solve 失败降级后又被 GQ 拉回 retry 浪费求解）
+    if current_result.status == "blocked":
+        return GateResult(
+            gate_id="GQ",
+            passed=False,
+            failed_checks=["result_blocked"],
+            action="blocked",
+            budget_used=0,
+            budget_remaining=GQ_MAX_RETRIES,
+        )
+
     # 检查 2: question_id 匹配
     if current_result.question_id != current_qid:
         failed_checks.append(f"question_id_mismatch: result={current_result.question_id}, state={current_qid}")

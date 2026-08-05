@@ -177,3 +177,15 @@ class TestRouteAfterGQ:
     def test_route_default(self):
         """无动作时默认路由到 pass。"""
         assert route_after_gq({}) == "pass"
+
+
+class TestGQBlockedShortCircuit:
+    """系统性加固：status=blocked 的结果直接判定 blocked，不重算字段。"""
+
+    def test_blocked_result_short_circuits(self):
+        from scr.schemas.question import QuestionResult
+
+        br = QuestionResult(question_id="q1", status="blocked", error_message="x")
+        result = check_gq({"current_result": br, "current_question_id": "q1"})
+        assert result.action == "blocked"
+        assert result.failed_checks == ["result_blocked"]

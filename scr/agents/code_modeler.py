@@ -35,12 +35,12 @@ CODE_BASED_TASKS = {
     "composite",
 }
 
-#: 模型设计调用超时（秒）——输出短，超时上限低
-MODEL_DESIGN_TIMEOUT = 90
-#: 代码生成调用超时（秒）——输出长，超时上限高
-CODE_GENERATION_TIMEOUT = 120
+#: 模型设计调用超时（秒）——"思考"阶段，给足时间（6 分钟）
+MODEL_DESIGN_TIMEOUT = 360
+#: 代码生成调用超时（秒）——"写代码"阶段，给足时间（6 分钟）
+CODE_GENERATION_TIMEOUT = 360
 #: 等待进度打印间隔（秒）
-_PROGRESS_INTERVAL = 30
+_PROGRESS_INTERVAL = 60
 
 
 class CodeModelingError(Exception):
@@ -229,51 +229,20 @@ class CodeModeler:
 
     @staticmethod
     def _parse_json(content: str) -> dict:
-        """从 LLM 响应中提取 JSON（容忍 markdown 代码块与前后杂文本）。"""
-        text = content.strip()
+        """从 LLM 响应中提取 JSON（剥离思维链 + 代码块 + 括号平衡）。"""
+        from ..tools.llm_response import extract_json
 
         try:
-            obj = json.loads(text)
-            if isinstance(obj, dict):
-                return obj
-        except json.JSONDecodeError:
-            pass
-
-        block = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-        if block:
-            try:
-                obj = json.loads(block.group(1).strip())
-                if isinstance(obj, dict):
-                    return obj
-            except json.JSONDecodeError:
-                pass
-
-        start = text.find("{")
-        end = text.rfind("}")
-        if 0 <= start < end:
-            try:
-                obj = json.loads(text[start:end + 1])
-                if isinstance(obj, dict):
-                    return obj
-            except json.JSONDecodeError:
-                pass
-
-        raise CodeModelingError(
-            f"无法从 LLM 响应中解析建模 JSON。响应片段: {text[:300]}"
-        )
+            return extract_json(content)
+        except ValueError as e:
+            raise CodeModelingError(str(e)) from e
 
     @staticmethod
     def _extract_code(content: str) -> str:
-        """从 LLM 响应中提取 Python 代码（容忍 ```python 代码块包裹）。"""
-        text = content.strip()
+        """从 LLM 响应中提取 Python 代码（剥离思维链与代码块围栏）。"""
+        from ..tools.llm_response import extract_code as _extract
 
-        # 优先取 ```python ... ``` 或 ``` ... ``` 代码块
-        block = re.search(r"```(?:python)?\s*(.*?)```", text, re.DOTALL)
-        if block:
-            code = block.group(1).strip()
-        else:
-            code = text
-
-        if not code:
-            raise CodeModelingError("LLM 未返回求解代码")
-        return code
+        try:
+            return _extract(content)
+        except ValueError as e:
+            raise CodeModelingError(str(e)) from e

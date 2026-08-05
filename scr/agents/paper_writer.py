@@ -693,7 +693,11 @@ class PaperWriter:
             prompt = self._render_prompt(template, **kwargs)
             response = self._llm.invoke(prompt)
             text = getattr(response, "content", response)
-            text = self._strip_markdown_headers(str(text))
+            # 剥离 <think> 思维链，防止混入论文正文
+            from ..tools.llm_response import strip_thinking
+
+            text = strip_thinking(str(text))
+            text = self._strip_markdown_headers(text)
             return text or None
         except Exception as e:
             print(f"[writer] LLM 起草 {template_name} 失败，回退模板: {e}")

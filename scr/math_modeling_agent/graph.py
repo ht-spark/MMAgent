@@ -6,7 +6,7 @@ from __future__ import annotations
 import functools
 import logging
 import time
-from typing import Any
+from typing import Any, Callable
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -39,16 +39,15 @@ from .state import ProjectState, create_initial_state
 # 节点日志装饰器
 # ---------------------------------------------------------------------------
 
-# 当前运行的日志器（由 run_graph 配置，供所有节点共享）
-_run_logger: logging.Logger | None = None
+# 各运行的日志器（按 run_id 隔离，避免并发运行互相踩）
+_run_loggers: dict[str, logging.Logger] = {}
 
 
-def _get_logger() -> logging.Logger:
-    """获取当前运行日志器（未配置时使用默认）。"""
-    global _run_logger
-    if _run_logger is None:
-        _run_logger = get_run_logger()
-    return _run_logger
+def _get_logger(run_id: str | None = None) -> logging.Logger:
+    """获取运行日志器。优先返回指定 run_id 的日志器，否则返回默认。"""
+    if run_id and run_id in _run_loggers:
+        return _run_loggers[run_id]
+    return get_run_logger()
 
 
 def _logged_node(name: str):
@@ -61,7 +60,7 @@ def _logged_node(name: str):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(state: ProjectState) -> dict:
-            logger = _get_logger()
+            logger = _get_logger(state.get("run_id"))
             question_id = state.get("current_question_id")
             t0 = time.monotonic()
             log_step(logger, f"node.{name}", "started", question_id=question_id)
@@ -89,11 +88,60 @@ def _logged_node(name: str):
                     error=str(e),
                 )
                 print(f"  ✗ [{name}] 失败: {e}", flush=True)
-                raise
+                # 系统性降级：节点异常不终止整题运行，记录错误并让流程继续
+                return _degrade_node_failure(name, question_id, e)
 
         return wrapper
 
     return decorator
+
+
+def _degrade_node_failure(
+    node_name: str,
+    question_id: str | None,
+    error: Exception,
+) -> dict:
+    """节点异常的系统性降级（通用，不针对具体题目/代码路径）。
+
+    原则：任何节点抛错都不应终止整题运行。
+      - ``solve_question`` 失败 → 构造 ``status="blocked"`` 的最小
+        QuestionResult，复用 GQ 路由归档该小问并继续下一问
+        （避免 archive 空结果导致 select_question 死循环）
+      - 其他节点失败 → 仅记录错误，返回空更新，图继续
+
+    Args:
+        node_name: 节点名。
+        question_id: 当前小问 ID。
+        error: 捕获的异常。
+
+    Returns:
+        安全的状态更新字典。
+    """
+    err_entry = {"node": node_name, "msg": str(error)[:500]}
+    print(f"  ⚠ [{node_name}] 异常已隔离，流程继续（错误已记录）", flush=True)
+
+    if node_name == "solve_question":
+        try:
+            from ..schemas.question import QuestionResult
+
+            blocked = QuestionResult(
+                question_id=question_id or "",
+                status="blocked",
+                error_message=f"[{node_name}] {error}",
+                findings={"summary": f"节点异常，小问被标记 blocked: {error}"},
+                limitations=[f"{node_name} 异常: {error}"],
+            )
+        except Exception:
+            # 极端情况：构造失败则仅记录错误（archive 会跳过，但不会崩溃）
+            blocked = None
+        return {
+            "current_result": blocked,
+            "_gq_action": "blocked",
+            "errors": [err_entry],
+        }
+
+    # 其他节点：只记录错误，不覆盖任何状态
+    return {"errors": [err_entry]}
 
 
 def _print_state_update(node_name: str, update: dict) -> None:
@@ -112,6 +160,22 @@ def _print_state_update(node_name: str, update: dict) -> None:
     detail = "  ".join(parts)
     suffix = f"：{detail}" if detail else ""
     print(f"  ◇ [{node_name}] 状态更新{suffix}", flush=True)
+
+
+def _make_progress_event(node_name: str, update: dict) -> dict:
+    """从节点状态更新中提取精简进度事件，供 Web 端轮询 / 推送。"""
+    results = update.get("question_results")
+    results_count = len(results) if isinstance(results, dict) else None
+    return {
+        "type": "node",
+        "node": node_name,
+        "run_id": update.get("run_id"),
+        "workflow_status": update.get("workflow_status"),
+        "current_question_id": update.get("current_question_id"),
+        "gq_action": update.get("_gq_action"),
+        "results_count": results_count,
+        "timestamp": time.time(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +485,10 @@ def run_graph(
     search_provider: Any | None = None,
     checkpoint: bool = True,
     log_level: int = logging.INFO,
+    run_id: str | None = None,
+    progress_callback: Callable[[dict], None] | None = None,
+    console: bool = True,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
     """用 LangGraph 运行完整工作流。
 
@@ -448,19 +516,18 @@ def run_graph(
     if isinstance(data_paths, str):
         data_paths = [data_paths]
 
-    run_id = uuid.uuid4().hex[:8]
+    run_id = run_id or uuid.uuid4().hex[:8]
     output_dir = output_dir or f"artifacts/{run_id}"
 
     # 配置运行日志：run.log（JSON 结构化，实时追加）+ 控制台实时进度
-    global _run_logger
     logger, log_path = setup_run_logger(
         run_id=run_id,
         log_dir=output_dir,
         level=log_level,
-        console=True,
+        console=console,
         console_level=logging.WARNING,
     )
-    _run_logger = logger
+    _run_loggers[run_id] = logger
 
     print(f"▶ Run ID: {run_id}")
     print(f"▶ 输出目录: {output_dir}")
@@ -492,6 +559,15 @@ def run_graph(
             # mode == "updates": chunk 是 {node_name: state_update}
             for node_name, update in chunk.items():
                 _print_state_update(node_name, update)
+                if progress_callback is not None:
+                    try:
+                        progress_callback(_make_progress_event(node_name, update))
+                    except Exception:
+                        pass
+            # 中断检查点：每个节点完成后检查一次。run_graph 是同步阻塞调用，
+            # 只能借节点边界自然退出；cancel_check 返回 True 即抛异常中断整个 stream。
+            if cancel_check is not None and cancel_check():
+                raise RuntimeError("Run cancelled by user")
 
     # 兜底：stream 未产出完整 values 时，从检查点读取最终状态
     if final_state is None:
@@ -499,4 +575,15 @@ def run_graph(
             final_state = app.get_state(config).values
         except Exception:
             final_state = dict(initial_state)
+    if progress_callback is not None:
+        try:
+            progress_callback(
+                {
+                    "type": "final",
+                    "run_id": run_id,
+                    "workflow_status": final_state.get("workflow_status"),
+                }
+            )
+        except Exception:
+            pass
     return dict(final_state)
