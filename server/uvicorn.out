@@ -5,3 +5,181 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 INFO:     127.0.0.1:61273 - "GET /healthz HTTP/1.1" 404 Not Found
 INFO:     127.0.0.1:61290 - "GET /healthz HTTP/1.1" 404 Not Found
 INFO:     127.0.0.1:61291 - "GET /api/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62126 - "POST /api/runs HTTP/1.1" 200 OK
+▶ Run ID: 94d5e7e5
+▶ 输出目录: D:\MMAgent\artifacts\94d5e7e5
+▶ 日志文件: D:\MMAgent\artifacts\94d5e7e5\run.log  （可用 Get-Content -Wait D:\MMAgent\artifacts\94d5e7e5\run.log 实时查看）
+INFO:     127.0.0.1:62220 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62223 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+▶ [intake] 开始
+[intake] 开始：数据画像...
+[intake] 完成：2 个文件、4 张表、23 个字段
+  → 共读取 2 个文件、4 张表、296 行、23 个字段
+  → 字段构成: 数值列 5、分类列 18、时间列 0
+  → 候选主键: 附件1.xlsx(地块名称)
+  → 高严重度质量问题 6 项
+  → 1 张表存在重复行
+  → 检测到 9 组表间关联候选
+  → 建模约束 12 条（详见 modeling_constraints）
+  ✔ [intake] 完成（2.4s）
+  ◇ [intake] 状态更新：workflow_status=intake_ready
+▶ [context] 开始
+[context] 开始：题目理解 + 小问拆分...
+INFO:     127.0.0.1:62232 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62252 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62255 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62262 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62288 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62303 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62318 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62324 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62328 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62333 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62342 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62348 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62353 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62361 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62370 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62377 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62382 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62385 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62390 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62394 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62403 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62413 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62442 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+[context] 完成：4 个小问
+  → q1_1: 制定2024-2030年在预期销售量等参数稳定且超量滞销情况下的最优种植方案。... (deps=[])
+  → q1_2: 制定2024-2030年在预期销售量等参数稳定但超量降价出售情况下的最优种植方案... (deps=[])
+  → q2: 考虑销售量、产量、成本、价格的不确定性及风险，制定2024-2030年的最优种植... (deps=['q1_1', 'q1_2'])
+  → q3: 考虑作物间的替代性、互补性及价格/成本相关性，给出策略并比较分析。... (deps=['q2'])
+  ✔ [context] 完成（45.0s）
+  ◇ [context] 状态更新：workflow_status=context_ready  questions=4
+▶ [select_question] 开始
+[question_loop] 选择小问: q1_1
+  ✔ [select_question] 完成（0.0s）
+  ◇ [select_question] 状态更新：workflow_status=solving  current_question_id=q1_1
+▶ [assemble_context] 开始
+[question_loop] 装配上下文: q1_1
+  → 所需数据: ['附件1.xlsx', '附件2.xlsx']
+  ✔ [assemble_context] 完成（0.0s）
+  ◇ [assemble_context] 状态更新
+▶ [configure_question_budget] 开始
+  ✔ [configure_question_budget] 完成（0.0s）
+INFO:     127.0.0.1:62450 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62457 - "GET /api/runs/94d5e7e5/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:62458 - "GET /api/runs/94d5e7e5/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62459 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62464 - "GET /api/runs/94d5e7e5/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:62467 - "GET /api/runs/94d5e7e5/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62468 - "GET /api/runs/94d5e7e5 HTTP/1.1" 200 OK
