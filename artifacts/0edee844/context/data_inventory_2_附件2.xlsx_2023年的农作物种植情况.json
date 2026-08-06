@@ -1,0 +1,359 @@
+{
+  "file_name": "附件2.xlsx::2023年的农作物种植情况",
+  "file_path": "D:\\MMAgent\\examples\\附件2.xlsx",
+  "file_type": "excel",
+  "file_size": 21976,
+  "n_rows": 87,
+  "n_cols": 6,
+  "fields": [
+    {
+      "name": "种植地块",
+      "dtype": "str",
+      "missing_count": 33,
+      "missing_rate": 0.3793,
+      "unique_count": 54,
+      "sample_values": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "A1",
+            "count": 1
+          },
+          {
+            "value": "A2",
+            "count": 1
+          },
+          {
+            "value": "A3",
+            "count": 1
+          },
+          {
+            "value": "A4",
+            "count": 1
+          },
+          {
+            "value": "A5",
+            "count": 1
+          },
+          {
+            "value": "A6",
+            "count": 1
+          },
+          {
+            "value": "B1",
+            "count": 1
+          },
+          {
+            "value": "B2",
+            "count": 1
+          },
+          {
+            "value": "B3",
+            "count": 1
+          },
+          {
+            "value": "B4",
+            "count": 1
+          }
+        ],
+        "max_category_share": 0.0185
+      }
+    },
+    {
+      "name": "作物编号",
+      "dtype": "int",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "unique_count": 41,
+      "sample_values": [
+        "6",
+        "7",
+        "7",
+        "1",
+        "4"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": {
+        "min": 1.0,
+        "max": 41.0,
+        "mean": 22.39080459770115,
+        "std": 12.66046430119524,
+        "median": 22.0,
+        "q1": 11.5,
+        "q3": 34.5,
+        "iqr": 23.0,
+        "skewness": -0.06132571791721078,
+        "kurtosis": -1.2236836691006328,
+        "outlier_count": 0,
+        "outlier_rate": 0.0
+      },
+      "categorical_stats": null
+    },
+    {
+      "name": "作物名称",
+      "dtype": "str",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "unique_count": 42,
+      "sample_values": [
+        "小麦",
+        "玉米",
+        "玉米",
+        "黄豆",
+        "绿豆"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "羊肚菌",
+            "count": 7
+          },
+          {
+            "value": "小麦",
+            "count": 4
+          },
+          {
+            "value": "豇豆",
+            "count": 4
+          },
+          {
+            "value": "玉米",
+            "count": 3
+          },
+          {
+            "value": "黄豆",
+            "count": 3
+          },
+          {
+            "value": "谷子",
+            "count": 3
+          },
+          {
+            "value": "小青菜",
+            "count": 3
+          },
+          {
+            "value": "大白菜",
+            "count": 3
+          },
+          {
+            "value": "西红柿",
+            "count": 3
+          },
+          {
+            "value": "茄子",
+            "count": 3
+          }
+        ],
+        "max_category_share": 0.0805
+      }
+    },
+    {
+      "name": "作物类型",
+      "dtype": "str",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "unique_count": 5,
+      "sample_values": [
+        "粮食",
+        "粮食",
+        "粮食",
+        "粮食（豆类）",
+        "粮食（豆类）"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "蔬菜 ",
+            "count": 33
+          },
+          {
+            "value": "粮食",
+            "count": 19
+          },
+          {
+            "value": "食用菌",
+            "count": 16
+          },
+          {
+            "value": "蔬菜（豆类）",
+            "count": 10
+          },
+          {
+            "value": "粮食（豆类）",
+            "count": 9
+          }
+        ],
+        "max_category_share": 0.3793
+      }
+    },
+    {
+      "name": "种植面积/亩",
+      "dtype": "float",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "unique_count": 26,
+      "sample_values": [
+        "80.0",
+        "55.0",
+        "35.0",
+        "72.0",
+        "68.0"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": {
+        "min": 0.3,
+        "max": 86.0,
+        "mean": 14.850574712643674,
+        "std": 21.653776047325444,
+        "median": 0.6,
+        "q1": 0.6,
+        "q3": 20.0,
+        "iqr": 19.4,
+        "skewness": 1.6132395938104915,
+        "kurtosis": 1.7254655036513022,
+        "outlier_count": 10,
+        "outlier_rate": 0.1149
+      },
+      "categorical_stats": null
+    },
+    {
+      "name": "种植季次",
+      "dtype": "str",
+      "missing_count": 0,
+      "missing_rate": 0.0,
+      "unique_count": 3,
+      "sample_values": [
+        "单季",
+        "单季",
+        "单季",
+        "单季",
+        "单季"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "第二季",
+            "count": 30
+          },
+          {
+            "value": "第一季",
+            "count": 29
+          },
+          {
+            "value": "单季",
+            "count": 28
+          }
+        ],
+        "max_category_share": 0.3448
+      }
+    }
+  ],
+  "overall_missing_rate": 0.0632,
+  "duplicate_rows": 12,
+  "duplicate_rate": 0.1379,
+  "candidate_keys": [],
+  "sample_rows": [
+    {
+      "种植地块": "A1",
+      "作物编号": "6",
+      "作物名称": "小麦",
+      "作物类型": "粮食",
+      "种植面积/亩": "80.0",
+      "种植季次": "单季"
+    },
+    {
+      "种植地块": "A2",
+      "作物编号": "7",
+      "作物名称": "玉米",
+      "作物类型": "粮食",
+      "种植面积/亩": "55.0",
+      "种植季次": "单季"
+    },
+    {
+      "种植地块": "A3",
+      "作物编号": "7",
+      "作物名称": "玉米",
+      "作物类型": "粮食",
+      "种植面积/亩": "35.0",
+      "种植季次": "单季"
+    },
+    {
+      "种植地块": "A4",
+      "作物编号": "1",
+      "作物名称": "黄豆",
+      "作物类型": "粮食（豆类）",
+      "种植面积/亩": "72.0",
+      "种植季次": "单季"
+    },
+    {
+      "种植地块": "A5",
+      "作物编号": "4",
+      "作物名称": "绿豆",
+      "作物类型": "粮食（豆类）",
+      "种植面积/亩": "68.0",
+      "种植季次": "单季"
+    }
+  ],
+  "has_time_column": false,
+  "time_columns": [],
+  "time_min": null,
+  "time_max": null,
+  "time_unique_count": 0,
+  "spatial_columns": [],
+  "correlated_pairs": [],
+  "numeric_columns": [
+    "作物编号",
+    "种植面积/亩"
+  ],
+  "categorical_columns": [
+    "种植地块",
+    "作物名称",
+    "作物类型",
+    "种植季次"
+  ],
+  "modeling_constraints": [
+    "无时间维度列：排除时间序列模型（ARIMA/Prophet/LSTM 等）",
+    "样本量 87 < 100：统计推断需谨慎，优先低参数模型",
+    "字段 '种植面积/亩' 离群率 11.5%：注意鲁棒性与异常值处理"
+  ],
+  "sample_size": 87
+}
