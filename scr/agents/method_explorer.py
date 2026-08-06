@@ -337,7 +337,12 @@ class MethodExplorer:
         if not self._json_schema_unsupported:
             try:
                 structured_llm = self._llm.with_structured_output(schema)
-                return structured_llm.invoke(prompt)
+                result = structured_llm.invoke(prompt)
+                if result is None:
+                    # 部分 langchain 包装器在底层错误时吞掉异常并返回 None，
+                    # 统一抛出以便上层 try/except 走回退路径（启发式）。
+                    raise RuntimeError("LLM structured call returned None")
+                return result
             except Exception as e:
                 err_msg = str(e)
                 if "response_format" in err_msg or "BadRequestError" in str(type(e).__name__):

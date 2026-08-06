@@ -362,6 +362,10 @@ async def execute_run(
         )
         set_result(run_id, _summarize_final(final_state), _collect_artifacts(output_dir))
     except Exception as exc:  # noqa: BLE001
+        # 记录完整堆栈，便于排查 NoneType.get 等深层 bug
+        import traceback
+        print(f"[run {run_id}] 执行失败: {type(exc).__name__}: {exc}", flush=True)
+        traceback.print_exc()
         if _cancel_flags.get(run_id, False) or "cancelled" in str(exc).lower():
             mark_cancelled(run_id)
         else:

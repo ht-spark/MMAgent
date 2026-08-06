@@ -1,0 +1,320 @@
+{
+  "file_name": "附件1.xlsx::乡村种植的农作物",
+  "file_path": "D:\\MMAgent\\artifacts\\94d5e7e5\\input\\附件1.xlsx",
+  "file_type": "excel",
+  "file_size": 17147,
+  "n_rows": 45,
+  "n_cols": 5,
+  "fields": [
+    {
+      "name": "作物编号",
+      "dtype": "str",
+      "missing_count": 3,
+      "missing_rate": 0.0667,
+      "unique_count": 42,
+      "sample_values": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.9762,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "1",
+            "count": 1
+          },
+          {
+            "value": "2",
+            "count": 1
+          },
+          {
+            "value": "3",
+            "count": 1
+          },
+          {
+            "value": "4",
+            "count": 1
+          },
+          {
+            "value": "5",
+            "count": 1
+          },
+          {
+            "value": "6",
+            "count": 1
+          },
+          {
+            "value": "7",
+            "count": 1
+          },
+          {
+            "value": "8",
+            "count": 1
+          },
+          {
+            "value": "9",
+            "count": 1
+          },
+          {
+            "value": "10",
+            "count": 1
+          }
+        ],
+        "max_category_share": 0.0238
+      }
+    },
+    {
+      "name": "作物名称",
+      "dtype": "str",
+      "missing_count": 1,
+      "missing_rate": 0.0222,
+      "unique_count": 44,
+      "sample_values": [
+        "黄豆",
+        "黑豆",
+        "红豆",
+        "绿豆",
+        "爬豆"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "黄豆",
+            "count": 1
+          },
+          {
+            "value": "黑豆",
+            "count": 1
+          },
+          {
+            "value": "红豆",
+            "count": 1
+          },
+          {
+            "value": "绿豆",
+            "count": 1
+          },
+          {
+            "value": "爬豆",
+            "count": 1
+          },
+          {
+            "value": "小麦",
+            "count": 1
+          },
+          {
+            "value": "玉米",
+            "count": 1
+          },
+          {
+            "value": "谷子",
+            "count": 1
+          },
+          {
+            "value": "高粱",
+            "count": 1
+          },
+          {
+            "value": "黍子",
+            "count": 1
+          }
+        ],
+        "max_category_share": 0.0227
+      }
+    },
+    {
+      "name": "作物类型",
+      "dtype": "str",
+      "missing_count": 4,
+      "missing_rate": 0.0889,
+      "unique_count": 5,
+      "sample_values": [
+        "粮食（豆类）",
+        "粮食（豆类）",
+        "粮食（豆类）",
+        "粮食（豆类）",
+        "粮食（豆类）"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "蔬菜",
+            "count": 18
+          },
+          {
+            "value": "粮食",
+            "count": 11
+          },
+          {
+            "value": "粮食（豆类）",
+            "count": 5
+          },
+          {
+            "value": "食用菌",
+            "count": 4
+          },
+          {
+            "value": "蔬菜（豆类）",
+            "count": 3
+          }
+        ],
+        "max_category_share": 0.439
+      }
+    },
+    {
+      "name": "种植耕地",
+      "dtype": "str",
+      "missing_count": 40,
+      "missing_rate": 0.8889,
+      "unique_count": 5,
+      "sample_values": [
+        "平旱地\n\n梯田\n\n山坡地\n",
+        "水浇地",
+        "水浇地    第一季\n\n普通大棚  第一季\n\n智慧大棚  第一季、第二季\n",
+        "水浇地    第二季",
+        "普通大棚  第二季"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "平旱地\n\n梯田\n\n山坡地\n",
+            "count": 1
+          },
+          {
+            "value": "水浇地",
+            "count": 1
+          },
+          {
+            "value": "水浇地    第一季\n\n普通大棚  第一季\n\n智慧大棚  第一季、第二季\n",
+            "count": 1
+          },
+          {
+            "value": "水浇地    第二季",
+            "count": 1
+          },
+          {
+            "value": "普通大棚  第二季",
+            "count": 1
+          }
+        ],
+        "max_category_share": 0.2
+      }
+    },
+    {
+      "name": "说明",
+      "dtype": "str",
+      "missing_count": 44,
+      "missing_rate": 0.9778,
+      "unique_count": 1,
+      "sample_values": [
+        "(1) 平旱地、梯田和山坡地每年适宜单季种植粮食类作物（水稻除外）。\n\n(2) 水浇地每年可以单季种植水稻或两季种植蔬菜作物。\n\n(3) 若在某块水浇地种植两季蔬菜，第一季可种植多种蔬菜（大白菜、白萝卜和红萝卜除外）；第二季只能种植大白菜、白萝卜和红萝卜中的一种（便于管理）。\n\n(4) 根据季节性要求，大白菜、白萝卜和红萝卜只能在水浇地的第二季种植。\n\n(5) 普通大棚每年种植两季作物，第一季可种植多种蔬菜（大白菜、白萝卜和红萝卜除外），第二季只能种植食用菌。\n\n(6) 因食用菌类适应在较低且适宜的温度和湿度环境中生长，所以只能在秋冬季的普通大棚里种植。\n\n(7) 智慧大棚每年都可种植两季蔬菜（大白菜、白萝卜和红萝卜除外）。\n"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "(1) 平旱地、梯田和山坡地每年适宜单季种植粮食类作物（水稻除外）。\n\n(2) 水浇地每年可以单季种植水稻或两季种植蔬菜作物。\n\n(3) 若在某块水浇地种植两季蔬菜，第一季可种植多种蔬菜（大白菜、白萝卜和红萝卜除外）；第二季只能种植大白菜、白萝卜和红萝卜中的一种（便于管理）。\n\n(4) 根据季节性要求，大白菜、白萝卜和红萝卜只能在水浇地的第二季种植。\n\n(5) 普通大棚每年种植两季作物，第一季可种植多种蔬菜（大白菜、白萝卜和红萝卜除外），第二季只能种植食用菌。\n\n(6) 因食用菌类适应在较低且适宜的温度和湿度环境中生长，所以只能在秋冬季的普通大棚里种植。\n\n(7) 智慧大棚每年都可种植两季蔬菜（大白菜、白萝卜和红萝卜除外）。\n",
+            "count": 1
+          }
+        ],
+        "max_category_share": 1.0
+      }
+    }
+  ],
+  "overall_missing_rate": 0.4089,
+  "duplicate_rows": 0,
+  "duplicate_rate": 0.0,
+  "candidate_keys": [],
+  "sample_rows": [
+    {
+      "作物编号": "1",
+      "作物名称": "黄豆",
+      "作物类型": "粮食（豆类）",
+      "种植耕地": "平旱地\n\n梯田\n\n山坡地\n",
+      "说明": "(1) 平旱地、梯田和山坡地每年适宜单季种植粮食类作物（水稻除外）。\n\n(2) 水浇地每年可以单季种植水稻或两季种植蔬菜作物。\n\n(3) 若在某块水浇地种植两季蔬菜，第一季可种植多种蔬菜（大白菜、白萝卜和红萝卜除外）；第二季只能种植大白菜、白萝卜和红萝卜中的一种（便于管理）。\n\n(4) 根据季节性要求，大白菜、白萝卜和红萝卜只能在水浇地的第二季种植。\n\n(5) 普通大棚每年种植两季作物，第一季可种植多种蔬菜（大白菜、白萝卜和红萝卜除外），第二季只能种植食用菌。\n\n(6) 因食用菌类适应在较低且适宜的温度和湿度环境中生长，所以只能在秋冬季的普通大棚里种植。\n\n(7) 智慧大棚每年都可种植两季蔬菜（大白菜、白萝卜和红萝卜除外）。\n"
+    },
+    {
+      "作物编号": "2",
+      "作物名称": "黑豆",
+      "作物类型": "粮食（豆类）",
+      "种植耕地": "",
+      "说明": ""
+    },
+    {
+      "作物编号": "3",
+      "作物名称": "红豆",
+      "作物类型": "粮食（豆类）",
+      "种植耕地": "",
+      "说明": ""
+    },
+    {
+      "作物编号": "4",
+      "作物名称": "绿豆",
+      "作物类型": "粮食（豆类）",
+      "种植耕地": "",
+      "说明": ""
+    },
+    {
+      "作物编号": "5",
+      "作物名称": "爬豆",
+      "作物类型": "粮食（豆类）",
+      "种植耕地": "",
+      "说明": ""
+    }
+  ],
+  "has_time_column": false,
+  "time_columns": [],
+  "time_min": null,
+  "time_max": null,
+  "time_unique_count": 0,
+  "spatial_columns": [],
+  "correlated_pairs": [],
+  "numeric_columns": [],
+  "categorical_columns": [
+    "作物编号",
+    "作物名称",
+    "作物类型",
+    "种植耕地",
+    "说明"
+  ],
+  "modeling_constraints": [
+    "无时间维度列：排除时间序列模型（ARIMA/Prophet/LSTM 等）",
+    "样本量 45 < 100：统计推断需谨慎，优先低参数模型",
+    "无数值特征列：排除回归/数值预测类方法",
+    "分类字段 '说明' 最大类别占比 100.0%：严重不平衡，需采样/加权",
+    "字段 '种植耕地' 缺失率 88.9%：需填充或删除决策",
+    "字段 '说明' 缺失率 97.8%：需填充或删除决策"
+  ],
+  "sample_size": 45
+}

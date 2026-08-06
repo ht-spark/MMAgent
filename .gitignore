@@ -8,8 +8,6 @@
 venv/
 env/
 
-# 运行产物
-artifacts/
 
 # 字节码缓存
 __pycache__/

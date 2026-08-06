@@ -1,0 +1,372 @@
+{
+  "file_name": "result3.xlsx::Sheet1",
+  "file_path": "D:\\MMAgent\\artifacts\\08f41bb1\\input\\result3.xlsx",
+  "file_type": "excel",
+  "file_size": 9763,
+  "n_rows": 17,
+  "n_cols": 12,
+  "fields": [
+    {
+      "name": "无人机编号",
+      "dtype": "str",
+      "missing_count": 2,
+      "missing_rate": 0.1176,
+      "unique_count": 5,
+      "sample_values": [
+        "FY1",
+        "FY1",
+        "FY1",
+        "FY2",
+        "FY2"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "FY1",
+            "count": 3
+          },
+          {
+            "value": "FY2",
+            "count": 3
+          },
+          {
+            "value": "FY3",
+            "count": 3
+          },
+          {
+            "value": "FY4",
+            "count": 3
+          },
+          {
+            "value": "FY5",
+            "count": 3
+          }
+        ],
+        "max_category_share": 0.2
+      }
+    },
+    {
+      "name": "无人机运动方向",
+      "dtype": "str",
+      "missing_count": 16,
+      "missing_rate": 0.9412,
+      "unique_count": 1,
+      "sample_values": [
+        "注：以x轴为正向，逆时针方向为正，取值0~360（度）。"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": 0.0,
+      "numeric_stats": null,
+      "categorical_stats": {
+        "top_values": [
+          {
+            "value": "注：以x轴为正向，逆时针方向为正，取值0~360（度）。",
+            "count": 1
+          }
+        ],
+        "max_category_share": 1.0
+      }
+    },
+    {
+      "name": "无人机运动速度 (m/s)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹编号",
+      "dtype": "float",
+      "missing_count": 2,
+      "missing_rate": 0.1176,
+      "unique_count": 3,
+      "sample_values": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "1.0",
+        "2.0"
+      ],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": {
+        "min": 1.0,
+        "max": 3.0,
+        "mean": 2.0,
+        "std": 0.8451542547285166,
+        "median": 2.0,
+        "q1": 1.0,
+        "q3": 3.0,
+        "iqr": 2.0,
+        "skewness": 0.0,
+        "kurtosis": -1.6153846153846154,
+        "outlier_count": 0,
+        "outlier_rate": 0.0
+      },
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹投放点的x坐标 (m)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": true,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹投放点的y坐标 (m)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": true,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹投放点的z坐标 (m)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹起爆点的x坐标 (m)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": true,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹起爆点的y坐标 (m)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": true,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "烟幕干扰弹起爆点的z坐标 (m)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "长度",
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "有效干扰时长 (s)",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": "时长",
+      "is_time_column": true,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    },
+    {
+      "name": "干扰的导弹编号",
+      "dtype": "float",
+      "missing_count": 17,
+      "missing_rate": 1.0,
+      "unique_count": 0,
+      "sample_values": [],
+      "unit_hint": null,
+      "is_time_column": false,
+      "is_candidate_key": false,
+      "is_spatial": false,
+      "numeric_parseable_rate": null,
+      "numeric_stats": null,
+      "categorical_stats": null
+    }
+  ],
+  "overall_missing_rate": 0.848,
+  "duplicate_rows": 0,
+  "duplicate_rate": 0.0,
+  "candidate_keys": [],
+  "sample_rows": [
+    {
+      "无人机编号": "FY1",
+      "无人机运动方向": "",
+      "无人机运动速度 (m/s)": "",
+      "烟幕干扰弹编号": "1.0",
+      "烟幕干扰弹投放点的x坐标 (m)": "",
+      "烟幕干扰弹投放点的y坐标 (m)": "",
+      "烟幕干扰弹投放点的z坐标 (m)": "",
+      "烟幕干扰弹起爆点的x坐标 (m)": "",
+      "烟幕干扰弹起爆点的y坐标 (m)": "",
+      "烟幕干扰弹起爆点的z坐标 (m)": "",
+      "有效干扰时长 (s)": "",
+      "干扰的导弹编号": ""
+    },
+    {
+      "无人机编号": "FY1",
+      "无人机运动方向": "",
+      "无人机运动速度 (m/s)": "",
+      "烟幕干扰弹编号": "2.0",
+      "烟幕干扰弹投放点的x坐标 (m)": "",
+      "烟幕干扰弹投放点的y坐标 (m)": "",
+      "烟幕干扰弹投放点的z坐标 (m)": "",
+      "烟幕干扰弹起爆点的x坐标 (m)": "",
+      "烟幕干扰弹起爆点的y坐标 (m)": "",
+      "烟幕干扰弹起爆点的z坐标 (m)": "",
+      "有效干扰时长 (s)": "",
+      "干扰的导弹编号": ""
+    },
+    {
+      "无人机编号": "FY1",
+      "无人机运动方向": "",
+      "无人机运动速度 (m/s)": "",
+      "烟幕干扰弹编号": "3.0",
+      "烟幕干扰弹投放点的x坐标 (m)": "",
+      "烟幕干扰弹投放点的y坐标 (m)": "",
+      "烟幕干扰弹投放点的z坐标 (m)": "",
+      "烟幕干扰弹起爆点的x坐标 (m)": "",
+      "烟幕干扰弹起爆点的y坐标 (m)": "",
+      "烟幕干扰弹起爆点的z坐标 (m)": "",
+      "有效干扰时长 (s)": "",
+      "干扰的导弹编号": ""
+    },
+    {
+      "无人机编号": "FY2",
+      "无人机运动方向": "",
+      "无人机运动速度 (m/s)": "",
+      "烟幕干扰弹编号": "1.0",
+      "烟幕干扰弹投放点的x坐标 (m)": "",
+      "烟幕干扰弹投放点的y坐标 (m)": "",
+      "烟幕干扰弹投放点的z坐标 (m)": "",
+      "烟幕干扰弹起爆点的x坐标 (m)": "",
+      "烟幕干扰弹起爆点的y坐标 (m)": "",
+      "烟幕干扰弹起爆点的z坐标 (m)": "",
+      "有效干扰时长 (s)": "",
+      "干扰的导弹编号": ""
+    },
+    {
+      "无人机编号": "FY2",
+      "无人机运动方向": "",
+      "无人机运动速度 (m/s)": "",
+      "烟幕干扰弹编号": "2.0",
+      "烟幕干扰弹投放点的x坐标 (m)": "",
+      "烟幕干扰弹投放点的y坐标 (m)": "",
+      "烟幕干扰弹投放点的z坐标 (m)": "",
+      "烟幕干扰弹起爆点的x坐标 (m)": "",
+      "烟幕干扰弹起爆点的y坐标 (m)": "",
+      "烟幕干扰弹起爆点的z坐标 (m)": "",
+      "有效干扰时长 (s)": "",
+      "干扰的导弹编号": ""
+    }
+  ],
+  "has_time_column": true,
+  "time_columns": [
+    "有效干扰时长 (s)"
+  ],
+  "time_min": null,
+  "time_max": null,
+  "time_unique_count": 0,
+  "spatial_columns": [
+    "烟幕干扰弹投放点的x坐标 (m)",
+    "烟幕干扰弹投放点的y坐标 (m)",
+    "烟幕干扰弹起爆点的x坐标 (m)",
+    "烟幕干扰弹起爆点的y坐标 (m)"
+  ],
+  "correlated_pairs": [],
+  "numeric_columns": [
+    "无人机运动速度 (m/s)",
+    "烟幕干扰弹编号",
+    "烟幕干扰弹投放点的x坐标 (m)",
+    "烟幕干扰弹投放点的y坐标 (m)",
+    "烟幕干扰弹投放点的z坐标 (m)",
+    "烟幕干扰弹起爆点的x坐标 (m)",
+    "烟幕干扰弹起爆点的y坐标 (m)",
+    "烟幕干扰弹起爆点的z坐标 (m)",
+    "有效干扰时长 (s)",
+    "干扰的导弹编号"
+  ],
+  "categorical_columns": [
+    "无人机编号",
+    "无人机运动方向"
+  ],
+  "modeling_constraints": [
+    "时间列无有效值（全空或解析失败）：无法使用时间序列模型",
+    "样本量 17 < 30：排除高参数机器学习模型（随机森林/GBDT/深度学习）",
+    "分类字段 '无人机运动方向' 最大类别占比 100.0%：严重不平衡，需采样/加权",
+    "字段 '无人机运动方向' 缺失率 94.1%：需填充或删除决策",
+    "字段 '无人机运动速度 (m/s)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '烟幕干扰弹投放点的x坐标 (m)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '烟幕干扰弹投放点的y坐标 (m)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '烟幕干扰弹投放点的z坐标 (m)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '烟幕干扰弹起爆点的x坐标 (m)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '烟幕干扰弹起爆点的y坐标 (m)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '烟幕干扰弹起爆点的z坐标 (m)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '有效干扰时长 (s)' 缺失率 100.0%：需填充或删除决策",
+    "字段 '干扰的导弹编号' 缺失率 100.0%：需填充或删除决策",
+    "检测到空间坐标列 烟幕干扰弹投放点的x坐标 (m), 烟幕干扰弹投放点的y坐标 (m), 烟幕干扰弹起爆点的x坐标 (m)：可考虑空间分析方法"
+  ],
+  "sample_size": 17
+}

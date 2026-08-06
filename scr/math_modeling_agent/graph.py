@@ -148,6 +148,10 @@ def _degrade_node_failure(
 
 def _print_state_update(node_name: str, update: dict) -> None:
     """实时打印节点返回的状态更新摘要（工作流状态变化）。"""
+    # LangGraph 对返回空 dict {} 的节点会在 updates 流里发 None（表示无状态变更），
+    # 此处统一归一化，避免 update.get(...) 对 None 崩溃。
+    if not isinstance(update, dict):
+        update = {}
     parts: list[str] = []
     for key in ("workflow_status", "current_question_id", "_gq_action"):
         value = update.get(key)
@@ -166,6 +170,9 @@ def _print_state_update(node_name: str, update: dict) -> None:
 
 def _make_progress_event(node_name: str, update: dict) -> dict:
     """从节点状态更新中提取精简进度事件，供 Web 端轮询 / 推送。"""
+    # 同 _print_state_update：LangGraph 可能对空更新发 None。
+    if not isinstance(update, dict):
+        update = {}
     results = update.get("question_results")
     results_count = len(results) if isinstance(results, dict) else None
     return {
@@ -558,7 +565,7 @@ def run_graph(
     if log_path:
         print(f"▶ 日志文件: {log_path}  （可用 Get-Content -Wait {log_path} 实时查看）")
 
-    app = build_graph(checkpoint=checkpoint)
+    app = build_graph(checkpoint=False)
     config = {"configurable": {"thread_id": run_id}}
 
     initial_state = create_initial_state(
