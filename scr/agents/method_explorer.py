@@ -50,15 +50,21 @@ class MethodExplorer:
         llm: 可选的 LLM 客户端。无则使用启发式规则。
         search_tool: 可选的联网搜索工具。无则从环境变量自动创建。
                      若无 Tavily_API_KEY 则搜索功能降级为空。
+        budget_manager: 可选的预算管理器。提供时会：
+            - 每次 Tavily 检索前消耗 SEARCH（超额则跳过该次查询）；
+            - 生成候选后按 CANDIDATE 限额截断并记账。
+            为 None 时不消耗、不限制（保持旧行为）。
     """
 
     def __init__(
         self,
         llm: Any | None = None,
         search_tool: TavilySearchTool | None = None,
+        budget_manager: Any | None = None,
     ) -> None:
         self._llm = llm
         self._search_tool = search_tool or TavilySearchTool.from_env()
+        self._budget_manager = budget_manager
         self._prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
         # 缓存标志：一旦发现 LLM 不支持 json_schema response_format，
         # 后续直接使用 json_mode，避免每次都尝试失败并打印错误日志。
@@ -410,6 +416,19 @@ class MethodExplorer:
             or context.objective
             or context.question_text
         )
+        qid = context.question_id
+
+        # 预算：每次"方法搜索轮"消耗 1 次 SEARCH；超额则跳过本次联网搜索
+        if self._budget_manager is not None:
+            try:
+                from ..runtime.budget import BudgetType
+                if not self._budget_manager.consume(
+                    BudgetType.SEARCH, amount=1, question_id=qid
+                ):
+                    print(f"[explorer] 预算：SEARCH 已超额，跳过联网搜索（{qid}）")
+                    return []
+            except Exception as e:
+                print(f"[explorer] SEARCH 预算记账跳过: {e}")
 
         # 执行搜索
         search_results = self._search_tool.search_methods(
@@ -437,6 +456,30 @@ class MethodExplorer:
 
         # 转换为候选方法字典格式
         method_candidates = self._convert_web_candidates(web_candidates)
+
+        # 预算：按 CANDIDATE 限额截断（已超额则不消费）
+        if self._budget_manager is not None and method_candidates:
+            try:
+                from ..runtime.budget import BudgetType
+                remaining = self._budget_manager.remaining(
+                    BudgetType.CANDIDATE, question_id=qid
+                )
+                if remaining <= 0:
+                    print(f"[explorer] 预算：CANDIDATE 已用完，返回空候选（{qid}）")
+                    return []
+                if len(method_candidates) > remaining:
+                    method_candidates = method_candidates[:remaining]
+                # 每个最终候选消耗 1 次 CANDIDATE
+                for _ in method_candidates:
+                    self._budget_manager.consume(
+                        BudgetType.CANDIDATE, amount=1, question_id=qid
+                    )
+                print(
+                    f"[explorer] CANDIDATE 记账：{len(method_candidates)} 个 "
+                    f"（剩余 {self._budget_manager.remaining(BudgetType.CANDIDATE, question_id=qid)}）"
+                )
+            except Exception as e:
+                print(f"[explorer] 预算记账跳过: {e}")
 
         print(f"[explorer] 联网搜索生成: {len(method_candidates)} 个方法候选")
 

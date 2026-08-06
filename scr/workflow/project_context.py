@@ -17,6 +17,7 @@ from ..agents.decomposition_fallback import (
     fallback_subproblems_from_analysis,
     short_error,
 )
+from ..runtime.instrumented_llm import InstrumentedLLM
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import DataProfile, ProjectContext, QuestionInfo
 from ..schemas.problem import ProblemAnalysis, SubProblem
@@ -40,6 +41,11 @@ def run_context(state: dict) -> dict:
     data_profile = state.get("data_profile")
     llm = state.get("llm")
     run_id = state.get("run_id", "default")
+
+    # 监控包装（全局阶段，无当前小问）：记录 TIME/TOKEN 到预算管理器
+    budget_manager = state.get("budget_manager")
+    if budget_manager is not None and llm is not None:
+        llm = InstrumentedLLM(llm, budget_manager, qid_getter=None)
     
     # 调用题目理解 Agent
     analysis, subproblems, classification = _run_problem_analysis(

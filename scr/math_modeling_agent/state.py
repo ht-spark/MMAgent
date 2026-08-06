@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from ..runtime.budget import BudgetManager
 from ..schemas.context import DataProfile, ProjectContext
 from ..schemas.evidence import (
     ArtifactRegistry,
@@ -40,6 +41,8 @@ class ProjectState(TypedDict, total=False):
     output_dir: str
     llm: Any
     search_provider: Any
+    budget_manager: BudgetManager | None  # 预算管理器（强制项按小问重置 + 监控项全程累计）
+    budget_config_callback: Any            # 可选回调：在指定小问让用户临时覆盖预算
     data_paths: list[str]  # 原始数据文件路径列表
 
     # --- 全局只读上下文（Phase 1 生成）---
@@ -82,6 +85,8 @@ def create_initial_state(
     data_paths: list[str] | None = None,
     llm: Any = None,
     search_provider: Any = None,
+    budget_manager: BudgetManager | None = None,
+    budget_config_callback: Any = None,
 ) -> ProjectState:
     """创建初始项目状态。
 
@@ -92,6 +97,9 @@ def create_initial_state(
         data_paths: 数据文件路径列表。
         llm: 可选的 LLM 客户端。
         search_provider: 可选的搜索 Provider。
+        budget_manager: 预算管理器（可选；未传则在 run_graph 自动实例化）。
+        budget_config_callback: 可选回调；签名
+            ``(state) -> dict[BudgetType, int] | None``，返回 None 表示沿用默认。
 
     Returns:
         初始化的 ProjectState 字典。
@@ -101,6 +109,8 @@ def create_initial_state(
         output_dir=output_dir,
         llm=llm,
         search_provider=search_provider,
+        budget_manager=budget_manager,
+        budget_config_callback=budget_config_callback,
         data_paths=data_paths or [],
         project_context=ProjectContext(
             run_id=run_id,

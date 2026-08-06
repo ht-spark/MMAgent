@@ -24,11 +24,13 @@ from ..agents.reviewer import review_paper_node
 from ..gates.gf_delivery import route_gf
 from ..gates.g0_intake import route_g0
 from ..gates.gq_question import route_after_gq, run_gq_node
+from ..runtime.budget import BudgetManager
 from ..workflow.intake import run_intake
 from ..workflow.project_context import run_context
 from ..workflow.question_loop import (
     archive_result,
     assemble_context,
+    configure_question_budget,
     route_after_select,
     select_question,
 )
@@ -229,6 +231,12 @@ def _assemble_context_node(state: ProjectState) -> dict:
     return assemble_context(state)
 
 
+@_logged_node("configure_question_budget")
+def _configure_question_budget_node(state: ProjectState) -> dict:
+    """configure_question_budget 节点：调用回调让用户在该问覆盖预算上限。"""
+    return configure_question_budget(state)
+
+
 @_logged_node("solve_question")
 def _solve_question_node(state: ProjectState) -> dict:
     """solve_question 节点：小问求解（含方法探索 + 建模计算）。"""
@@ -405,6 +413,7 @@ def build_graph(checkpoint: bool = True):
     # Phase 2-5 节点
     builder.add_node("select_question", _select_question_node)
     builder.add_node("assemble_context", _assemble_context_node)
+    builder.add_node("configure_question_budget", _configure_question_budget_node)
     builder.add_node("solve_question", _solve_question_node)
     builder.add_node("validate_result", _validate_result_node)
     builder.add_node("gq_check", _gq_check_node)
@@ -439,8 +448,9 @@ def build_graph(checkpoint: bool = True):
         {"has_next": "assemble_context", "done": "global_review"},
     )
 
-    # assemble_context → solve_question → validate_result → gq_check
-    builder.add_edge("assemble_context", "solve_question")
+    # assemble_context → configure_question_budget → solve_question → validate_result → gq_check
+    builder.add_edge("assemble_context", "configure_question_budget")
+    builder.add_edge("configure_question_budget", "solve_question")
     builder.add_edge("solve_question", "validate_result")
     builder.add_edge("validate_result", "gq_check")
 
@@ -489,6 +499,8 @@ def run_graph(
     progress_callback: Callable[[dict], None] | None = None,
     console: bool = True,
     cancel_check: Callable[[], bool] | None = None,
+    budget_manager: BudgetManager | None = None,
+    budget_config_callback: Callable[[dict], dict | None] | None = None,
 ) -> dict:
     """用 LangGraph 运行完整工作流。
 
@@ -499,6 +511,12 @@ def run_graph(
     通过 G0 后，按依赖顺序逐问求解，每问经过建模计算、题型验证和 GQ 门后归档。
     所有小问处理完毕后，进行全题审查、论文写作和交付。
 
+    预算：
+      - budget_manager：默认 None 时自动创建 BudgetManager（运行级单例）。
+      - budget_config_callback：可选；签名 ``(state) -> dict[BudgetType, int] | None``。
+        返回 None 或抛错视为沿用默认；返回 dict 时按该问临时覆盖预算上限。
+        在每问 `assemble_context` 之后、`solve_question` 之前触发。
+
     Args:
         problem_text: 题目文本。
         data_paths: 数据文件路径（单个或列表，Excel 自动展开所有 sheet）。
@@ -507,6 +525,8 @@ def run_graph(
         search_provider: 可选搜索 Provider。
         checkpoint: 是否启用 checkpoint。
         log_level: 运行日志级别（写入 run.log，默认 INFO）。
+        budget_manager: 预算管理器（None 时自动创建）。
+        budget_config_callback: 用户预算覆盖回调（None 表示不暂停）。
 
     Returns:
         最终 State。
@@ -518,6 +538,10 @@ def run_graph(
 
     run_id = run_id or uuid.uuid4().hex[:8]
     output_dir = output_dir or f"artifacts/{run_id}"
+
+    # 默认预算管理器
+    if budget_manager is None:
+        budget_manager = BudgetManager()
 
     # 配置运行日志：run.log（JSON 结构化，实时追加）+ 控制台实时进度
     logger, log_path = setup_run_logger(
@@ -544,6 +568,8 @@ def run_graph(
         data_paths=data_paths,
         llm=llm,
         search_provider=search_provider,
+        budget_manager=budget_manager,
+        budget_config_callback=budget_config_callback,
     )
 
     # 流式执行：每完成一个节点即实时输出其状态更新，便于实时查看进度

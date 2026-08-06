@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..runtime.instrumented_llm import InstrumentedLLM
 from ..schemas.context import DataProfile, ProjectContext
 from ..schemas.paper import PaperDraft, PaperSection
 from ..schemas.question import QuestionResult
@@ -29,6 +30,18 @@ from ..tools.table_tools import (
 )
 
 __all__ = ["PaperWriter", "write_paper_node"]
+
+
+def _instrumented_llm(state: dict) -> Any:
+    """返回监控包装后的 LLM（全局阶段，无当前小问）。
+
+    无预算管理器或无 LLM 时原样返回，避免改变既有无 LLM 降级路径。
+    """
+    llm = state.get("llm")
+    budget_manager = state.get("budget_manager")
+    if budget_manager is not None and llm is not None:
+        return InstrumentedLLM(llm, budget_manager, qid_getter=None)
+    return llm
 
 
 # ---------------------------------------------------------------------------
@@ -2647,7 +2660,7 @@ def write_paper_node(state: dict) -> dict:
     Returns:
         状态更新字典，包含 paper_draft。
     """
-    writer = PaperWriter(llm=state.get("llm"))
+    writer = PaperWriter(llm=_instrumented_llm(state))
     output_dir = state.get("output_dir", "artifacts/paper")
     paper_draft = writer.write(state, output_dir=output_dir)
     return {"paper_draft": paper_draft}

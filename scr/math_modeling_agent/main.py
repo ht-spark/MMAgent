@@ -20,6 +20,7 @@ load_dotenv()
 
 from .state import create_initial_state
 from ..runtime.artifacts import ArtifactManager
+from ..runtime.budget import BudgetManager, BudgetType, DEFAULT_BUDGETS
 from ..runtime.logging import get_logger
 from ..tools.file_tools import read_file
 
@@ -58,6 +59,102 @@ def _create_llm_from_env() -> Any | None:
     except ImportError:
         print("[main] 警告：langchain-openai 未安装，LLM 功能不可用")
         return None
+
+
+# ---------------------------------------------------------------------------
+# 预算交互
+# ---------------------------------------------------------------------------
+
+
+def _make_budget_config_callback(pause_at: list[str] | None):
+    """构造 budget_config_callback：在指定小问让用户在 STDIN 覆盖预算上限。
+
+    - pause_at 为空：每个有小问都暂停询问。
+    - pause_at 非空：仅列表中的小问暂停询问，其余沿用默认（返回 None）。
+    - 非交互终端（stdin 非 tty）：直接返回 None，不阻断自动化/批处理运行。
+
+    返回的函数签名满足 run_graph 要求：``(state) -> dict[BudgetType, int] | None``。
+    """
+    enforced = [
+        BudgetType.SEARCH,
+        BudgetType.CANDIDATE,
+        BudgetType.CODE_REPAIR,
+        BudgetType.VALIDATION_ITERATION,
+    ]
+    labels = {
+        BudgetType.SEARCH: "联网检索次数上限 (search)",
+        BudgetType.CANDIDATE: "方法候选数量上限 (candidate)",
+        BudgetType.CODE_REPAIR: "代码修复次数上限 (code_repair)",
+        BudgetType.VALIDATION_ITERATION: "验证迭代次数上限 (validation)",
+    }
+
+    def callback(state: dict):
+        qid = state.get("current_question_id")
+        if pause_at and qid not in pause_at:
+            return None
+        if not sys.stdin.isatty():
+            return None
+        print(f"\n=== 预算设置（小问 {qid}）===")
+        print("  回车保留默认上限；输入正整数覆盖单问上限。")
+        overrides: dict = {}
+        for bt in enforced:
+            default = DEFAULT_BUDGETS[bt]
+            try:
+                raw = input(f"  {labels[bt]} [{default}]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return None
+            if raw:
+                try:
+                    val = int(raw)
+                    if val > 0:
+                        overrides[bt] = val
+                except ValueError:
+                    pass
+        return overrides or None
+
+    return callback
+
+
+def _print_budget_report(budget_manager: BudgetManager) -> None:
+    """打印预算消耗报告：每问消耗 + 任务总消耗。"""
+    report = budget_manager.to_dict()
+    limits = report["limits"]
+    total = report["run_total_used"]
+    per_enf = report.get("per_question_enforced_usage", {})
+    per_mon = report.get("per_question_monitor_usage", {})
+
+    enforced_types = [
+        BudgetType.SEARCH.value,
+        BudgetType.CANDIDATE.value,
+        BudgetType.CODE_REPAIR.value,
+        BudgetType.VALIDATION_ITERATION.value,
+    ]
+
+    print("  [强制预算·每问消耗]")
+    all_qids = sorted(set(per_enf.keys()) | set(per_mon.keys()))
+    if all_qids:
+        for qid in all_qids:
+            parts: list[str] = []
+            for t in enforced_types:
+                v = per_enf.get(qid, {}).get(t)
+                if v:
+                    parts.append(f"{t}={v}")
+            mon = per_mon.get(qid, {})
+            if mon:
+                if mon.get("token"):
+                    parts.append(f"token={mon['token']}")
+                if mon.get("time"):
+                    parts.append(f"time={mon['time']:.1f}s")
+            print(f"    {qid}: " + (", ".join(parts) if parts else "（无消耗）"))
+    else:
+        print("    （暂无小问消耗记录）")
+
+    print("  [监控预算·任务总消耗]")
+    print(f"    time={total.get('time', 0):.1f}s  token={total.get('token', 0)}")
+
+    print("  [强制预算·任务总消耗 / 上限]")
+    for t in enforced_types:
+        print(f"    {t}={total.get(t, 0)}/{limits.get(t)}")
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +251,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     # 日志级别
     log_level = getattr(_logging, str(args.log_level).upper(), _logging.INFO)
 
+    # 预算：实例化管理器，并按 --budget-pause-at 构造交互回调
+    budget_manager = BudgetManager()
+    budget_config_callback = _make_budget_config_callback(args.budget_pause_at)
+
     try:
         result = run_graph(
             problem_text=problem_text,
@@ -161,6 +262,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             output_dir=args.output,
             llm=llm,
             log_level=log_level,
+            budget_manager=budget_manager,
+            budget_config_callback=budget_config_callback,
         )
 
         # 打印结果摘要
@@ -239,6 +342,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             for err in errors:
                 print(f"  ✗ {err.get('msg', err)}")
 
+        # 预算消耗报告（每问消耗 + 任务总消耗）
+        print(f"\n--- 预算消耗报告 ---")
+        _print_budget_report(budget_manager)
+
     except Exception as e:
         import traceback
         print(f"\n[main] 错误: {e}")
@@ -278,6 +385,13 @@ def main(argv: list[str] | None = None) -> int:
         choices=["debug", "info", "warning", "error"],
         default="info",
         help="运行日志级别（写入 run.log，默认 info）",
+    )
+    run_parser.add_argument(
+        "--budget-pause-at",
+        nargs="+",
+        metavar="QID",
+        help="仅在这些小问（如 Q1 Q3）暂停并让用户通过 STDIN 设置预算上限；"
+             "省略则每个小问都询问（非交互终端自动跳过）",
     )
 
     args = parser.parse_args(argv)

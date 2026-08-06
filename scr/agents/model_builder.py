@@ -40,10 +40,44 @@ class ModelBuilder:
 
     Args:
         llm: 可选的 LLM 客户端（Phase 4 暂不使用，Phase 5+ 可用于模型精调）。
+        budget_manager: 可选的预算管理器。提供时，"题目驱动建模"路径的代码
+            生成/执行/校验重试会消耗 CODE_REPAIR；耗尽立即停止重试并返回 error。
     """
 
-    def __init__(self, llm: Any | None = None) -> None:
+    def __init__(self, llm: Any | None = None, budget_manager: Any | None = None) -> None:
         self._llm = llm
+        self._budget_manager = budget_manager
+
+    def _consume_code_repair_or_stop(
+        self,
+        question_id: str,
+        stage: str,
+        last_error: str,
+    ) -> bool:
+        """消耗 1 次 CODE_REPAIR；预算耗尽返回 True，调用方应退出重试。
+
+        用于 _execute_code_based 的 4 处 continue 路径；无 budget_manager 时
+        直接返回 False（不限制，由 CODE_GEN_MAX_RETRIES 兜底）。
+        """
+        if self._budget_manager is None:
+            return False
+        try:
+            from ..runtime.budget import BudgetType
+            ok = self._budget_manager.consume(
+                BudgetType.CODE_REPAIR, amount=1, question_id=question_id
+            )
+            if not ok:
+                print(f"[builder] 预算：CODE_REPAIR 已耗尽（{stage}），停止重试")
+                return True
+            rem = self._budget_manager.remaining(
+                BudgetType.CODE_REPAIR, question_id=question_id
+            )
+            print(
+                f"[builder] 预算：CODE_REPAIR 消耗 1 次（{stage}），剩余 {rem}"
+            )
+        except Exception as e:
+            print(f"[builder] CODE_REPAIR 预算记账跳过: {e}")
+        return False
 
     def build(
         self,
@@ -798,14 +832,26 @@ class ModelBuilder:
         feedback = feedback or ""
         last_error = ""
         t_start = time.time()
+        # 预算：若 budget_manager 可用，按 CODE_REPAIR 剩余动态调整最大尝试次数。
+        # 首次 attempt 不消耗 CODE_REPAIR；之后每次失败 retry 消耗 1 次。
+        max_attempts = CODE_GEN_MAX_RETRIES
+        if self._budget_manager is not None:
+            try:
+                from ..runtime.budget import BudgetType
+                rem = self._budget_manager.remaining(
+                    BudgetType.CODE_REPAIR, question_id=context.question_id
+                )
+                max_attempts = max(1, min(CODE_GEN_MAX_RETRIES, rem + 1))
+            except Exception:
+                pass
         print(
             f"[builder] 题目驱动建模开始（题型={math_task}，方法={method_name}，"
-            f"最多尝试 {CODE_GEN_MAX_RETRIES} 次，模型设计/代码生成超时均为 6 分钟）"
+            f"最多尝试 {max_attempts} 次，模型设计/代码生成超时均为 6 分钟）"
         )
 
         try:
-            for attempt in range(CODE_GEN_MAX_RETRIES):
-                print(f"[builder]   └ 第 {attempt + 1}/{CODE_GEN_MAX_RETRIES} 次尝试...")
+            for attempt in range(max_attempts):
+                print(f"[builder]   └ 第 {attempt + 1}/{max_attempts} 次尝试...")
                 # 1. 模型设计（超时即回退）
                 try:
                     model_json = modeler.generate_model(
@@ -822,6 +868,8 @@ class ModelBuilder:
                     last_error = str(e)
                     feedback = f"模型设计失败: {last_error}"
                     print(f"[builder]     ↳ 模型设计失败: {last_error[:120]}")
+                    if self._consume_code_repair_or_stop(context.question_id, "模型设计", last_error):
+                        return {"status": "error", "error": f"代码修复预算耗尽（模型设计: {last_error[:100]}）"}
                     continue
 
                 # 2. 代码生成（超时即回退）
@@ -839,6 +887,8 @@ class ModelBuilder:
                     last_error = str(e)
                     feedback = f"代码生成失败: {last_error}"
                     print(f"[builder]     ↳ 代码生成失败: {last_error[:120]}")
+                    if self._consume_code_repair_or_stop(context.question_id, "代码生成", last_error):
+                        return {"status": "error", "error": f"代码修复预算耗尽（代码生成: {last_error[:100]}）"}
                     continue
 
                 # 3. 沙箱执行
@@ -856,6 +906,8 @@ class ModelBuilder:
                         f"[builder]     ↳ 代码执行失败（耗时 {time.time() - t_exec:.1f}s）: "
                         f"{last_error[:150]}"
                     )
+                    if self._consume_code_repair_or_stop(context.question_id, "代码执行", last_error):
+                        return {"status": "error", "error": f"代码修复预算耗尽（代码执行: {last_error[:100]}）"}
                     continue
                 print(f"[builder]     ↳ 代码执行成功（耗时 {time.time() - t_exec:.1f}s），校验结果...")
 
@@ -866,6 +918,8 @@ class ModelBuilder:
                     last_error = str(e)
                     feedback = f"结果不满足题型要求: {last_error}"
                     print(f"[builder]     ↳ 结果校验未通过: {last_error[:150]}")
+                    if self._consume_code_repair_or_stop(context.question_id, "结果校验", last_error):
+                        return {"status": "error", "error": f"代码修复预算耗尽（结果校验: {last_error[:100]}）"}
                     continue
 
                 # 5. 成功

@@ -89,6 +89,12 @@ def select_question(state: dict) -> dict:
         }
 
     print(f"[question_loop] 选择小问: {next_qid}")
+
+    # 进入新小问：重置强制型预算的"单问用量"（监控项 TIME/TOKEN 不重置）
+    budget_manager = state.get("budget_manager")
+    if budget_manager is not None:
+        budget_manager.reset_for_new_question()
+
     log_step(
         get_run_logger(),
         "workflow.select_question",
@@ -399,20 +405,91 @@ def _build_data_quality_summary(
 
 
 def _build_budget_info(state: dict) -> dict:
-    """构建当前小问的预算信息。"""
+    """构建当前小问的预算信息。
+
+    优先使用 state.budget_manager（run_graph 注入的全实例）；缺失时回退到
+    默认预算（保证向后兼容，但不会跨小问累计）。
+    """
     from ..runtime.budget import BudgetManager, BudgetType
 
-    # Phase 2 阶段使用默认预算
-    # 后续可以从 state 中读取自定义预算配置
-    bm = BudgetManager()
+    bm = state.get("budget_manager") or BudgetManager()
+    qid = state.get("current_question_id", "")
 
     return {
-        "search_remaining": bm.remaining(BudgetType.SEARCH),
-        "candidate_limit": bm.remaining(BudgetType.CANDIDATE),
-        "code_repair_remaining": bm.remaining(BudgetType.CODE_REPAIR),
-        "validation_remaining": bm.remaining(BudgetType.VALIDATION_ITERATION),
-        "note": "Phase 2 stub budget",
+        "search_remaining": bm.remaining(BudgetType.SEARCH, question_id=qid),
+        "candidate_limit": bm.remaining(BudgetType.CANDIDATE, question_id=qid),
+        "code_repair_remaining": bm.remaining(BudgetType.CODE_REPAIR, question_id=qid),
+        "validation_remaining": bm.remaining(BudgetType.VALIDATION_ITERATION, question_id=qid),
+        "search_run_total": bm.get_total_usage().get(BudgetType.SEARCH, 0),
+        "time_run_total": bm.get_total_usage().get(BudgetType.TIME, 0),
+        "token_run_total": bm.get_total_usage().get(BudgetType.TOKEN, 0),
     }
+
+
+# ---------------------------------------------------------------------------
+# 节点 2.5：configure_question_budget — 让用户在指定小问临时调整预算上限
+# ---------------------------------------------------------------------------
+
+
+def configure_question_budget(state: dict) -> dict:
+    """LangGraph 节点：调用 budget_config_callback 收集用户对该问的预算覆盖。
+
+    行为约定：
+      - 若 state.budget_config_callback 为 None：跳过，沿用默认/之前的覆盖。
+      - 若 callback 返回 dict[BudgetType, int]：调用 bm.set_question_limits(qid, ...)
+        将其写入该问的临时覆盖。
+      - 若 callback 返回 None 或抛错：跳过，不覆盖（默认配置生效）。
+
+    典型回调：
+      - CLI 模式：从 stdin 读取 "SEARCH=15,CANDIDATE=5"
+      - Web 模式：前端表单提交后由 server 写入回调结果
+
+    Args:
+        state: 项目状态。
+
+    Returns:
+        空 dict（覆盖直接写入 bm，无状态字段变更）。
+    """
+    callback = state.get("budget_config_callback")
+    bm = state.get("budget_manager")
+    qid = state.get("current_question_id", "")
+
+    if callback is None or bm is None or not qid:
+        return {}
+
+    try:
+        override = callback(state)
+    except Exception as e:  # noqa: BLE001
+        print(f"[budget] 用户预算回调异常，跳过覆盖: {e}")
+        log_step(
+            get_run_logger(),
+            "workflow.configure_question_budget",
+            "skipped",
+            question_id=qid,
+            detail=f"回调异常: {e}",
+        )
+        return {}
+
+    if not override:
+        return {}
+
+    try:
+        bm.set_question_limits(qid, override)
+        print(
+            f"[budget] 小问 {qid} 用户覆盖: "
+            + ", ".join(f"{bt.value}={lim}" for bt, lim in override.items())
+        )
+        log_step(
+            get_run_logger(),
+            "workflow.configure_question_budget",
+            "completed",
+            question_id=qid,
+            detail=f"用户覆盖: { {bt.value: lim for bt, lim in override.items()} }",
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[budget] 写入预算覆盖失败: {e}")
+
+    return {}
 
 
 def create_stub_result(

@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ..runtime.instrumented_llm import InstrumentedLLM
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import DataProfile
 from ..schemas.question import (
@@ -51,16 +52,22 @@ class QuestionSolver(BaseAgent):
         llm: 可选的 LLM 客户端。
         search_tool: 可选的联网搜索工具（TavilySearchTool）。
                      若不传则 MethodExplorer 自动从环境变量创建。
+        budget_manager: 可选的预算管理器。传给 MethodExplorer / ModelBuilder
+                     用于强制项消耗与监控项记账。
     """
 
     def __init__(
         self,
         llm: Any | None = None,
         search_tool: Any | None = None,
+        budget_manager: Any | None = None,
     ) -> None:
         super().__init__(llm=llm)
-        self._explorer = MethodExplorer(llm=llm, search_tool=search_tool)
-        self._builder = ModelBuilder(llm=llm)
+        self._explorer = MethodExplorer(
+            llm=llm, search_tool=search_tool, budget_manager=budget_manager
+        )
+        self._builder = ModelBuilder(llm=llm, budget_manager=budget_manager)
+        self._budget_manager = budget_manager
 
     @staticmethod
     def _normalize_assumptions(raw: Any) -> list[dict]:
@@ -684,8 +691,20 @@ def solve_question_node(state: dict) -> dict:
     current_context: CurrentQuestionContext | None = state.get("current_context")
     data_profile: DataProfile | None = state.get("data_profile")
     llm = state.get("llm")
+    budget_manager = state.get("budget_manager")
     output_dir = state.get("output_dir")
     retry_count = state.get("_solve_retry_count", 0)
+
+    # 监控包装：记录 TIME/TOKEN（不阻塞）；按小问区分消耗
+    inst_llm = (
+        InstrumentedLLM(
+            llm,
+            budget_manager,
+            qid_getter=lambda: state.get("current_question_id"),
+        )
+        if (budget_manager is not None and llm is not None)
+        else llm
+    )
 
     if current_context is None:
         return {
@@ -693,7 +712,10 @@ def solve_question_node(state: dict) -> dict:
             "_gq_action": "blocked",
         }
 
-    solver = QuestionSolver(llm=llm)
+    solver = QuestionSolver(
+        llm=inst_llm,
+        budget_manager=budget_manager,
+    )
 
     # Phase 3：方法探索 + 决策，无论是否重试都重新探索
     # Phase 4+ 将根据 retry_count 选择不同的方法候选

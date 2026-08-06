@@ -164,7 +164,34 @@ def run_gq_node(state: dict) -> dict:
             "_gq_action": "pass",
         }
 
-    if result.action == "retry" and retry_count < GQ_MAX_RETRIES:
+    # 未通过：按预算或常量决定重试 / 阻塞
+    budget_manager = state.get("budget_manager")
+    force_blocked = False
+
+    if current_result is not None and current_result.status == "blocked":
+        # 节点降级已标记 blocked（如 solve_question 异常），不再重试
+        force_blocked = True
+    elif budget_manager is not None:
+        # 验证迭代预算（强制项，按小问计数）：每次未通过尝试消耗 1 次
+        from ..runtime.budget import BudgetType
+
+        ok = budget_manager.consume(
+            BudgetType.VALIDATION_ITERATION, amount=1, question_id=current_qid
+        )
+        if ok:
+            rem = budget_manager.remaining(
+                BudgetType.VALIDATION_ITERATION, question_id=current_qid
+            )
+            print(f"[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 {rem}")
+        else:
+            # 验证迭代预算耗尽 → 产出风险说明并阻塞（而非伪造通过）
+            force_blocked = True
+            print(f"[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked")
+    else:
+        # 无预算：沿用 GQ_MAX_RETRIES 常量（默认回退路径）
+        force_blocked = not (result.action == "retry" and retry_count < GQ_MAX_RETRIES)
+
+    if not force_blocked:
         # 可重试
         if current_result:
             current_result.status = "solving"
@@ -185,11 +212,11 @@ def run_gq_node(state: dict) -> dict:
             "_gq_action": "retry",
         }
 
-    # 超过重试次数或不可重试 → 标记为 blocked
+    # 超过重试预算或不可重试 → 标记为 blocked
     if current_result:
         current_result.status = "blocked"
         current_result.error_message = (
-            f"GQ 验证失败，已用尽重试预算 ({retry_count}/{GQ_MAX_RETRIES})。"
+            f"GQ 验证失败，已用尽验证迭代预算 ({retry_count}/{GQ_MAX_RETRIES})。"
             f"失败项: {', '.join(result.failed_checks)}"
         )
     print(f"[GQ] 小问 {current_qid} 被阻塞 ✗: {result.failed_checks}")
