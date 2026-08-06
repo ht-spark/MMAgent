@@ -168,9 +168,23 @@ def run_gq_node(state: dict) -> dict:
     budget_manager = state.get("budget_manager")
     force_blocked = False
 
+    # 决策重试 / 阻塞：以下情形不可重试，直接 blocked
+    #  - 节点降级已标记 blocked（如 solve_question 异常）
+    #  - computation 为 no_data/error：根因是缺数据/缺代码执行，重试无意义
     if current_result is not None and current_result.status == "blocked":
         # 节点降级已标记 blocked（如 solve_question 异常），不再重试
         force_blocked = True
+    elif (
+        current_result is not None
+        and current_result.computation
+        and current_result.computation.get("status", "") in ("no_data", "error")
+    ):
+        # 缺数据/缺代码执行：重试只是重复 no_data，白烧 LLM，直接 blocked
+        force_blocked = True
+        print(
+            f"[GQ] 小问 {current_qid} computation="
+            f"{current_result.computation.get('status')}，重试无意义，直接 blocked"
+        )
     elif budget_manager is not None:
         # 验证迭代预算（强制项，按小问计数）：每次未通过尝试消耗 1 次
         from ..runtime.budget import BudgetType

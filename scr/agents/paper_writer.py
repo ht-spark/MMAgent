@@ -1077,6 +1077,16 @@ class PaperWriter:
             if len(bg_text) > 200:
                 bg_text = bg_text[:200] + "……"
 
+        if n == 0:
+            # 无任何已验证结果：明确说明，避免产出"已完整建模"的误导性摘要
+            notice = (
+                "【重要说明】本次运行未能产出任何有效的建模与求解结果——"
+                "所有子问题均因数据缺失、代码执行失败或验证未通过而被阻塞。"
+                "请检查：1) 是否上传了必需的数据文件；2) LLM 模型配置是否可用；"
+                "3) 题目参数是否完整。本报告为占位文档，不包含实际建模内容。"
+            )
+            return (bg_text + "\n" if bg_text else "") + notice
+
         if bg_text:
             lines.append(bg_text)
             lines.append(

@@ -1,14 +1,14 @@
-INFO:     Started server process [31464]
+INFO:     Started server process [7040]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:57630 - "GET /api/runs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59801 - "POST /api/runs HTTP/1.1" 200 OK
-▶ Run ID: 764b933b
-▶ 输出目录: D:\MMAgent\artifacts\764b933b
-▶ 日志文件: D:\MMAgent\artifacts\764b933b\run.log  （可用 Get-Content -Wait D:\MMAgent\artifacts\764b933b\run.log 实时查看）
-INFO:     127.0.0.1:59811 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59814 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62864 - "GET /api/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63306 - "POST /api/runs HTTP/1.1" 200 OK
+▶ Run ID: 03e74d58
+▶ 输出目录: D:\MMAgent\artifacts\03e74d58
+▶ 日志文件: D:\MMAgent\artifacts\03e74d58\run.log  （可用 Get-Content -Wait D:\MMAgent\artifacts\03e74d58\run.log 实时查看）
+INFO:     127.0.0.1:63309 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63312 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
 ▶ [intake] 开始
 [intake] 开始：数据画像...
 [intake] 完成：0 个文件、0 张表、0 个字段
@@ -17,64 +17,23 @@ INFO:     127.0.0.1:59814 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
   ◇ [intake] 状态更新：workflow_status=intake_ready
 ▶ [context] 开始
 [context] 开始：题目理解 + 小问拆分...
-INFO:     127.0.0.1:59819 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59823 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59826 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59829 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59834 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59837 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59840 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59843 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59848 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59851 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59856 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59860 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59863 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59870 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59876 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59880 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59884 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59889 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59892 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59896 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59899 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59904 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59909 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59916 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59922 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59932 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59940 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59944 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59947 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59950 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59953 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59957 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59960 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59963 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59968 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59971 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59975 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59978 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59981 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59988 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59992 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59995 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59998 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60001 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60004 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60007 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60011 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60015 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60018 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60023 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60026 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63319 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63323 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63331 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63344 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63349 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63354 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63357 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63360 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63367 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63370 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
 [context] 完成：5 个小问
-  → q1: 计算无人机FY1投放1枚烟幕干扰弹对M1的干扰有效遮蔽时长。... (deps=[])
-  → q2: 确定无人机FY1的飞行方向、速度、投放点和起爆点以延长遮蔽时间。... (deps=['q1'])
-  → q3: 设计无人机FY1投放3枚烟幕干扰弹的投放策略。... (deps=['q2'])
-  → q4: 设计FY1、FY2、FY3各投放1枚烟幕干扰弹的投放策略。... (deps=['q3'])
-  → q5: 设计5架无人机各投放3枚烟幕干扰弹干扰3枚导弹的策略。... (deps=['q4'])
-  ✔ [context] 完成（123.7s）
+  → q1: 计算烟幕干扰弹对M1的有效遮蔽时长。... (deps=[])
+  → q2: 确定无人机FY1的最优飞行方向、速度、投放点和起爆点以最大化遮蔽时间。... (deps=['q1'])
+  → q3: 制定无人机FY1投放3枚烟幕干扰弹的策略以干扰M1。... (deps=['q2'])
+  → q4: 制定3架无人机各投放1枚烟幕干扰弹的策略以干扰M1。... (deps=['q3'])
+  → q5: 制定5架无人机各投放最多3枚烟幕干扰弹的策略以干扰3枚导弹。... (deps=['q4'])
+  ✔ [context] 完成（21.1s）
   ◇ [context] 状态更新：workflow_status=context_ready  questions=5
 ▶ [select_question] 开始
 [question_loop] 选择小问: q1
@@ -88,74 +47,96 @@ INFO:     127.0.0.1:60026 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
   ✔ [configure_question_budget] 完成（0.0s）
   ◇ [configure_question_budget] 状态更新
 ▶ [solve_question] 开始
-INFO:     127.0.0.1:60064 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] 小问 q1: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 回归预测模型 (score=0.795)
-[explorer] LLM 决策: 回归预测模型 (canonical=linear_regression)
-[explorer] 决策: 回归预测模型 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 回归预测模型 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q1: 需要收集相关数据，如烟幕扩散速度、导弹飞行轨迹等，建立数学模型进行计算。可考虑使用物理仿真或数值模拟方法。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 回归预测模型 (computation_status=no_data)
-[solver] 小问 q1 求解完成 (task=prediction, method=回归预测模型, computation=no_data)
-  ✔ [solve_question] 完成（14.8s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q1 验证完成: failed (task=prediction, checks=8, errors=1, warnings=2)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 1
-[GQ] 小问 q1 需要重试 (第 1 次): ['prediction_outputs_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
+INFO:     127.0.0.1:63377 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
 [explorer] 小问 q1: 候选 1 → 通过 1 → 淘汰 0
   → 推荐: 蒙特卡洛模拟 (score=0.750)
+INFO:     127.0.0.1:63388 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63407 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
 [explorer] LLM 决策: 蒙特卡洛模拟 (canonical=monte_carlo_simulation)
 [explorer] 决策: 蒙特卡洛模拟 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 蒙特卡洛模拟 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q1: 需要补充实际计算数据和模拟过程细节，明确约束条件的处理方式，验证数值结果的合理性。应确保模型完整，涵盖所有给定的变量和约束条件。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 蒙特卡洛模拟 (computation_status=no_data)
-[solver] 小问 q1 求解完成 (task=simulation, method=蒙特卡洛模拟, computation=no_data)
-  ✔ [solve_question] 完成（12.2s）
+[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）
+[builder] 题目驱动建模开始（题型=simulation，方法=蒙特卡洛模拟，最多尝试 2 次，模型设计/代码生成超时均为 6 分钟）
+[builder]   └ 第 1/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=simulation，方法=蒙特卡洛模拟，超时 360s）...
+INFO:     127.0.0.1:63413 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63417 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63420 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63425 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63428 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63431 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63434 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63437 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63444 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler] 模型设计完成（耗时 16.9s，模型=烟幕干扰弹遮蔽时长模拟模型）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=烟幕干扰弹遮蔽时长模拟模型，超时 360s）...
+INFO:     127.0.0.1:63451 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63454 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63457 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63462 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63466 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63470 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63473 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63482 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63486 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+INFO:     127.0.0.1:63514 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63527 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63532 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 120s / 360s）...
+INFO:     127.0.0.1:63542 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63546 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63550 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63556 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63561 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63565 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63570 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63575 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63578 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63581 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63584 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63592 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63595 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63598 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63601 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63604 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63608 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63611 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63614 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63617 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63621 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63626 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63633 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63638 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63658 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63664 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63668 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63671 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63675 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63685 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 180s / 360s）...
+INFO:     127.0.0.1:63691 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63698 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63703 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63712 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler] 代码生成完成（耗时 200.3s，1458 字符）
+[builder]     ↳ 模型代码就绪（烟幕干扰弹遮蔽时长模拟模型，1458 字符），开始沙箱执行...
+[builder]     ↳ 代码执行成功（耗时 7.3s），校验结果...
+[builder]   └ 题目驱动建模成功（总耗时 224.5s，第 1 次尝试）
+[builder] 解题代码/数据/结果已保存: D:\MMAgent\artifacts\03e74d58\questions\q1
+[builder] 建模完成: 蒙特卡洛模拟 (computation_status=success)
+[solver] 小问 q1 求解完成 (task=simulation, method=蒙特卡洛模拟, computation=success)
+  ✔ [solve_question] 完成（233.7s）
   ◇ [solve_question] 状态更新
 ▶ [validate_result] 开始
-[validator] 小问 q1 验证完成: failed (task=simulation, checks=9, errors=1, warnings=4)
+[validator] 小问 q1 验证完成: warning (task=simulation, checks=12, errors=0, warnings=4)
   ✔ [validate_result] 完成（0.0s）
   ◇ [validate_result] 状态更新
 ▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 0
-[GQ] 小问 q1 需要重试 (第 2 次): ['simulation_outputs_missing', 'validation_failed']
+[GQ] 小问 q1 验证通过 ✓
   ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-[explorer] 小问 q1: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 蒙特卡洛模拟 (score=0.750)
-[explorer] LLM 决策: 蒙特卡洛模拟 (canonical=monte_carlo_simulation)
-[explorer] 决策: 蒙特卡洛模拟 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 蒙特卡洛模拟 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q1: 需要收集无人机FY1投放烟幕干扰弹的具体参数，如烟幕扩散速度、覆盖面积、M1的探测范围和速度等。同时，应明确模拟的条件和假设，以便进行有效的计算和验证。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 蒙特卡洛模拟 (computation_status=no_data)
-[solver] 小问 q1 求解完成 (task=simulation, method=蒙特卡洛模拟, computation=no_data)
-  ✔ [solve_question] 完成（10.3s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q1 验证完成: failed (task=simulation, checks=9, errors=1, warnings=4)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked
-[GQ] 小问 q1 被阻塞 ✗: ['simulation_outputs_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=blocked
+  ◇ [gq_check] 状态更新：_gq_action=pass
 ▶ [archive_result] 开始
-[question_loop] 归档小问 q1: status=blocked
+[question_loop] 归档小问 q1: status=validated
   ✔ [archive_result] 完成（0.0s）
   ◇ [archive_result] 状态更新：results=1
 ▶ [select_question] 开始
@@ -175,78 +156,770 @@ INFO:     127.0.0.1:60064 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
   → 推荐: 数学规划 (score=0.795)
 [explorer] LLM 决策: 数学规划 (canonical=linear_programming)
 [explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
+[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）
+[builder] 题目驱动建模开始（题型=optimization，方法=数学规划，最多尝试 2 次，模型设计/代码生成超时均为 6 分钟）
+[builder]   └ 第 1/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=optimization，方法=数学规划，超时 360s）...
+[code_modeler] 模型设计完成（耗时 28.0s，模型=无人机最优轨迹规划模型）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=无人机最优轨迹规划模型，超时 360s）...
+INFO:     127.0.0.1:63761 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+INFO:     127.0.0.1:63786 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 120s / 360s）...
+INFO:     127.0.0.1:63808 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63840 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63845 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63851 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63859 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63862 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63865 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63868 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 180s / 360s）...
+INFO:     127.0.0.1:63871 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63875 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63879 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63882 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63885 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63890 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63895 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63898 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63901 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63904 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63907 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63910 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63914 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63917 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63920 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63923 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63926 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63930 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63933 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63937 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63944 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63947 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63951 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63955 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63958 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 240s / 360s）...
+INFO:     127.0.0.1:63977 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 300s / 360s）...
+INFO:     127.0.0.1:64004 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler] 代码生成完成（耗时 328.8s，1999 字符）
+[builder]     ↳ 模型代码就绪（无人机最优轨迹规划模型，1999 字符），开始沙箱执行...
+[builder]     ↳ 代码执行成功（耗时 1.2s），校验结果...
+[builder]     ↳ 结果校验未通过: 缺少 solution（最优解）
+[builder] 预算：CODE_REPAIR 消耗 1 次（结果校验），剩余 2
+[builder]   └ 第 2/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=optimization，方法=数学规划，超时 360s）...
+[code_modeler] 模型设计完成（耗时 21.7s，模型=无人机最优路径规划模型）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=无人机最优路径规划模型，超时 360s）...
+INFO:     127.0.0.1:64037 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+INFO:     127.0.0.1:64057 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 120s / 360s）...
+INFO:     127.0.0.1:64091 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64126 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64134 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64139 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64144 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64149 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 180s / 360s）...
+INFO:     127.0.0.1:64249 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64622 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 240s / 360s）...
+INFO:     127.0.0.1:64645 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 300s / 360s）...
+[builder] 题目驱动建模异常，回退预设方法: Request timed out.
 [builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q2: 需要提供具体的计算数据和优化模型，明确决策变量的取值范围和目标函数的表达式，验证结果是否满足所有约束条件。此外，应确保结果中包含飞行方向、速度、投放点和起爆点的具体数值，并分析这些参数如何影响遮蔽时间
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q2 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（12.7s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q2 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 1
-[GQ] 小问 q2 需要重试 (第 1 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-[explorer] 小问 q2: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q2: 需要提供具体的飞行方向、速度、投放点和起爆点数值，并基于约束条件进行计算验证。应确保满足烟幕干扰弹的间隔时间、遮蔽范围和导弹飞行时间等要求。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q2 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（11.9s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q2 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 0
-[GQ] 小问 q2 需要重试 (第 2 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-INFO:     127.0.0.1:60158 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] 小问 q2: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q2: 需要收集相关数据并进行实际计算，明确决策变量的数值范围，确保满足所有约束条件，并验证遮蔽时间是否最大化。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q2 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（14.8s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q2 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked
-[GQ] 小问 q2 被阻塞 ✗: ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=blocked
-▶ [archive_result] 开始
-[question_loop] 归档小问 q2: status=blocked
-  ✔ [archive_result] 完成（0.0s）
-  ◇ [archive_result] 状态更新：results=2
+[solver] 自评建议修订，重算小问 q2: 需要提供具体的数据和计算过程，例如无人机的初始位置、目标位置、烟幕干扰弹的投放参数等，以便进行数学规划和优化计算。此外，应明确遮蔽时间的计算方法和约束条件的实现方式。
+[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）
+[builder] 题目驱动建模开始（题型=optimization，方法=数学规划，最多尝试 2 次，模型设计/代码生成超时均为 6 分钟）
+[builder]   └ 第 1/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=optimization，方法=数学规划，超时 360s）...
+INFO:     127.0.0.1:64670 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+[code_modeler] 模型设计完成（耗时 73.7s，模型=Optimal UAV Flight Direction and Ejection Point Model）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=Optimal UAV Flight Direction and Ejection Point Model，超时 360s）...
+INFO:     127.0.0.1:64701 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[code_modeler] 代码生成完成（耗时 56.8s，2448 字符）
+[builder]     ↳ 模型代码就绪（Optimal UAV Flight Direction and Ejection Point Model，2448 字符），开始沙箱执行...
+INFO:     127.0.0.1:64823 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+[builder]     ↳ 代码执行成功（耗时 10.3s），校验结果...
+[builder]     ↳ 结果校验未通过: 缺少 solution（最优解）
+[builder] 预算：CODE_REPAIR 消耗 1 次（结果校验），剩余 1
+[builder]   └ 第 2/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=optimization，方法=数学规划，超时 360s）...
+[code_modeler] 模型设计完成（耗时 27.9s，模型=OptimalFlightPathModel）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=OptimalFlightPathModel，超时 360s）...
+INFO:     127.0.0.1:64863 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64877 - "GET /api/runs HTTP/1.1" 200 OK
+[safe-delete][SAFE_DELETE_FAIL_CLOSED] {"target": "D:\\MMAgent\\artifacts\\764b933b", "reason": "windows-sandbox-recycle-bin-unavailable"}
+INFO:     127.0.0.1:64881 - "DELETE /api/runs/764b933b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64888 - "GET /api/runs/03e74d58/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:64889 - "GET /api/runs/03e74d58/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64890 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64896 - "GET /api/runs/03e74d58/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:64897 - "GET /api/runs/03e74d58/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64899 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64904 - "GET /api/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64907 - "POST /api/runs/03e74d58/cancel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "DELETE /api/runs/03e74d58 HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:64919 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64920 - "GET /api/runs/03e74d58/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:64922 - "GET /api/runs/03e74d58/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64925 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64929 - "GET /api/runs/03e74d58/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:64931 - "GET /api/runs/03e74d58/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64938 - "POST /api/runs HTTP/1.1" 200 OK
+▶ Run ID: 01ef2e23
+▶ 输出目录: D:\MMAgent\artifacts\01ef2e23
+▶ 日志文件: D:\MMAgent\artifacts\01ef2e23\run.log  （可用 Get-Content -Wait D:\MMAgent\artifacts\01ef2e23\run.log 实时查看）
+INFO:     127.0.0.1:64941 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+▶ [intake] 开始
+[intake] 开始：数据画像...
+INFO:     127.0.0.1:64944 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[intake] 完成：0 个文件、0 张表、0 个字段
+  → 无附件数据
+  ✔ [intake] 完成（0.0s）
+  ◇ [intake] 状态更新：workflow_status=intake_ready
+▶ [context] 开始
+[context] 开始：题目理解 + 小问拆分...
+INFO:     127.0.0.1:64951 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64954 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64957 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+INFO:     127.0.0.1:64976 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64984 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64990 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64993 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64997 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65001 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65007 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65012 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[context] 完成：5 个小问
+  → q1: 计算单枚烟幕干扰弹对导弹M1的有效遮蔽时长。... (deps=[])
+  → q2: 确定无人机FY1的最优飞行轨迹参数（方向、速度、投放点、起爆点）以最大化遮蔽时间... (deps=['q1'])
+  → q3: 设计三枚烟幕干扰弹的投放策略，确保有效遮蔽时间最大化。... (deps=['q1', 'q2'])
+  → q4: 制定三架无人机各投放一枚烟幕弹的协同干扰策略。... (deps=['q1', 'q2', 'q3'])
+  → q5: 规划五架无人机的投放策略，实现对三枚导弹的协同干扰。... (deps=['q1', 'q2', 'q3', 'q4'])
+  ✔ [context] 完成（23.4s）
+  ◇ [context] 状态更新：workflow_status=context_ready  questions=5
 ▶ [select_question] 开始
-[question_loop] 选择小问: q3
+[question_loop] 选择小问: q1
   ✔ [select_question] 完成（0.0s）
-  ◇ [select_question] 状态更新：workflow_status=solving  current_question_id=q3
+  ◇ [select_question] 状态更新：workflow_status=solving  current_question_id=q1
 ▶ [assemble_context] 开始
-[question_loop] 装配上下文: q3
+[question_loop] 装配上下文: q1
+  ✔ [assemble_context] 完成（0.0s）
+  ◇ [assemble_context] 状态更新
+▶ [configure_question_budget] 开始
+  ✔ [configure_question_budget] 完成（0.0s）
+  ◇ [configure_question_budget] 状态更新
+▶ [solve_question] 开始
+INFO:     127.0.0.1:65017 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65020 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65023 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[explorer] 小问 q1: 候选 1 → 通过 1 → 淘汰 0
+  → 推荐: 蒙特卡洛模拟 (score=0.750)
+INFO:     127.0.0.1:65028 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65031 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[explorer] LLM 决策: 蒙特卡洛模拟 (canonical=monte_carlo_simulation)
+[explorer] 决策: 蒙特卡洛模拟 (备选 0, 淘汰 0, source=llm)
+[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）
+[builder] 题目驱动建模开始（题型=simulation，方法=蒙特卡洛模拟，最多尝试 2 次，模型设计/代码生成超时均为 6 分钟）
+[builder]   └ 第 1/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=simulation，方法=蒙特卡洛模拟，超时 360s）...
+INFO:     127.0.0.1:65036 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65039 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65042 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65045 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[code_modeler] 代码生成完成（耗时 94.0s，1843 字符）
+[builder]     ↳ 模型代码就绪（OptimalFlightPathModel，1843 字符），开始沙箱执行...
+INFO:     127.0.0.1:65049 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[builder]     ↳ 代码执行成功（耗时 1.2s），校验结果...
+[builder]     ↳ 结果校验未通过: 缺少 solution（最优解）
+[builder] 预算：CODE_REPAIR 消耗 1 次（结果校验），剩余 0
+[builder]   └ 题目驱动建模失败（总耗时 264.0s）: 缺少 solution（最优解）
+[builder] 题目驱动建模未成功（error），回退预设方法: 缺少 solution（最优解）
+[builder] 建模完成: 数学规划 (computation_status=no_data)
+[solver] 小问 q2 求解完成 (task=optimization, method=数学规划, computation=no_data)
+  ✔ [solve_question] 完成（1193.4s）
+  ◇ [solve_question] 状态更新
+[run 03e74d58] 执行失败: RuntimeError: Run cancelled by user
+Traceback (most recent call last):
+  File "D:\MMAgent\server\runs.py", line 352, in execute_run
+    final_state = await asyncio.to_thread(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\merit\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\merit\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\scr\math_modeling_agent\graph.py", line 603, in run_graph
+    raise RuntimeError("Run cancelled by user")
+RuntimeError: Run cancelled by user
+INFO:     127.0.0.1:65054 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65057 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65067 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65075 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65080 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65086 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65094 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65102 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65105 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65108 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65111 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65114 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65118 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65121 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65124 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65127 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65130 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65134 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[code_modeler] 模型设计完成（耗时 48.3s，模型=烟幕干扰弹遮蔽时长模型）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=烟幕干扰弹遮蔽时长模型，超时 360s）...
+INFO:     127.0.0.1:65139 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65142 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65145 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65148 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65154 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65157 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65160 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65165 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65168 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65171 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65174 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65183 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65186 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65190 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65196 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+INFO:     127.0.0.1:65208 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65226 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65236 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65239 - "GET /api/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65251 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65252 - "GET /api/runs/03e74d58/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:65253 - "GET /api/runs/03e74d58/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65256 - "GET /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65260 - "GET /api/runs/03e74d58/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:65262 - "GET /api/runs/03e74d58/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65265 - "GET /api/runs HTTP/1.1" 200 OK
+[safe-delete][SAFE_DELETE_FAIL_CLOSED] {"target": "D:\\MMAgent\\artifacts\\03e74d58", "reason": "windows-sandbox-recycle-bin-unavailable"}
+INFO:     127.0.0.1:65270 - "DELETE /api/runs/03e74d58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65281 - "GET /api/runs/01ef2e23/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:65282 - "GET /api/runs/01ef2e23/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65283 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65287 - "GET /api/runs/01ef2e23/paper HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\MMAgent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\main.py", line 179, in get_paper_endpoint
+    path = resolve_artifact(run_id, "paper.md")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\MMAgent\server\files.py", line 37, in resolve_artifact
+    raise FileNotFoundError(f"文件不存在: {rel_path}")
+FileNotFoundError: 文件不存在: paper.md
+INFO:     127.0.0.1:65290 - "GET /api/runs/01ef2e23/figures HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65292 - "GET /api/runs/01ef2e23 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65297 - "GET /api/runs HTTP/1.1" 200 OK
+[code_modeler]   ↳ LLM 调用进行中（已等待 120s / 360s）...
+[code_modeler]   ↳ LLM 调用进行中（已等待 180s / 360s）...
+[code_modeler]   ↳ LLM 调用进行中（已等待 240s / 360s）...
+[code_modeler] 代码生成完成（耗时 297.4s，1933 字符）
+[builder]     ↳ 模型代码就绪（烟幕干扰弹遮蔽时长模型，1933 字符），开始沙箱执行...
+[builder]     ↳ 代码执行成功（耗时 0.5s），校验结果...
+[builder]     ↳ 结果校验未通过: 缺少模拟结果
+[builder] 预算：CODE_REPAIR 消耗 1 次（结果校验），剩余 2
+[builder]   └ 第 2/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=simulation，方法=蒙特卡洛模拟，超时 360s）...
+[code_modeler] 模型设计完成（耗时 49.6s，模型=SmokeScreenShieldingDurationModel）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=SmokeScreenShieldingDurationModel，超时 360s）...
+[code_modeler] 代码生成完成（耗时 57.4s，1848 字符）
+[builder]     ↳ 模型代码就绪（SmokeScreenShieldingDurationModel，1848 字符），开始沙箱执行...
+[builder]     ↳ 代码执行成功（耗时 0.5s），校验结果...
+[builder]   └ 题目驱动建模成功（总耗时 453.7s，第 2 次尝试）
+[builder] 解题代码/数据/结果已保存: D:\MMAgent\artifacts\01ef2e23\questions\q1
+[builder] 建模完成: 蒙特卡洛模拟 (computation_status=success)
+[solver] 自评建议修订，重算小问 q1: 检查模型中遮蔽时长的计算逻辑，确保正确捕获烟幕干扰弹与导弹M1的相对位置和时间。验证输入数据是否正确，确保模拟参数合理。增加测试用例以验证模型在不同情况下的表现。
+[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）
+[builder] 题目驱动建模开始（题型=simulation，方法=蒙特卡洛模拟，最多尝试 2 次，模型设计/代码生成超时均为 6 分钟）
+[builder]   └ 第 1/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=simulation，方法=蒙特卡洛模拟，超时 360s）...
+[code_modeler] 模型设计完成（耗时 38.2s，模型=烟幕干扰弹遮蔽时长模型）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=烟幕干扰弹遮蔽时长模型，超时 360s）...
+[code_modeler]   ↳ LLM 调用进行中（已等待 60s / 360s）...
+[code_modeler] 代码生成完成（耗时 76.7s，1899 字符）
+[builder]     ↳ 模型代码就绪（烟幕干扰弹遮蔽时长模型，1899 字符），开始沙箱执行...
+[builder]     ↳ 代码执行成功（耗时 1.3s），校验结果...
+[builder]     ↳ 结果校验未通过: 缺少模拟结果
+[builder] 预算：CODE_REPAIR 消耗 1 次（结果校验），剩余 1
+[builder]   └ 第 2/2 次尝试...
+[code_modeler] 第 1 段：LLM 设计数学模型（题型=simulation，方法=蒙特卡洛模拟，超时 360s）...
+[code_modeler] 模型设计完成（耗时 43.5s，模型=烟幕干扰弹遮蔽时长模型）
+[code_modeler] 第 2 段：LLM 生成求解代码（模型=烟幕干扰弹遮蔽时长模型，超时 360s）...
+[code_modeler] 代码生成完成（耗时 58.8s，1559 字符）
+[builder]     ↳ 模型代码就绪（烟幕干扰弹遮蔽时长模型，1559 字符），开始沙箱执行...
+[builder]     ↳ 代码执行成功（耗时 1.1s），校验结果...
+[builder]   └ 题目驱动建模成功（总耗时 219.6s，第 2 次尝试）
+[builder] 解题代码/数据/结果已保存: D:\MMAgent\artifacts\01ef2e23\questions\q1
+[builder] 建模完成: 蒙特卡洛模拟 (computation_status=success)
+[solver] 小问 q1 求解完成 (task=simulation, method=蒙特卡洛模拟, computation=success)
+  ✔ [solve_question] 完成（684.8s）
+  ◇ [solve_question] 状态更新
+▶ [validate_result] 开始
+[validator] 小问 q1 验证完成: warning (task=simulation, checks=12, errors=0, warnings=5)
+  ✔ [validate_result] 完成（0.0s）
+  ◇ [validate_result] 状态更新
+▶ [gq_check] 开始
+[GQ] 小问 q1 验证通过 ✓
+  ✔ [gq_check] 完成（0.0s）
+  ◇ [gq_check] 状态更新：_gq_action=pass
+▶ [archive_result] 开始
+[question_loop] 归档小问 q1: status=validated
+  ✔ [archive_result] 完成（0.0s）
+  ◇ [archive_result] 状态更新：results=1
+▶ [select_question] 开始
+[question_loop] 选择小问: q2
+  ✔ [select_question] 完成（0.0s）
+  ◇ [select_question] 状态更新：workflow_status=solving  current_question_id=q2
+▶ [assemble_context] 开始
+[question_loop] 装配上下文: q2
   → 继承 1 个前问摘要
   ✔ [assemble_context] 完成（0.0s）
   ◇ [assemble_context] 状态更新
@@ -254,359 +927,3 @@ INFO:     127.0.0.1:60158 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
   ✔ [configure_question_budget] 完成（0.0s）
   ◇ [configure_question_budget] 状态更新
 ▶ [solve_question] 开始
-[explorer] 小问 q3: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q3: 需要提供具体的t1, t2, t3, v, theta数值，并确保满足所有约束条件。例如，计算烟幕弹的投放时间间隔是否符合至少1秒的要求，检查速度是否在70-140范围内，验证烟雾云中心是否在10米内
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q3 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（13.6s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q3 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 1
-[GQ] 小问 q3 需要重试 (第 1 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-[explorer] 小问 q3: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q3: 需要补充具体数值解，明确t1,t2,t3,theta1,theta2,theta3,v的取值，并验证是否满足所有约束条件。应计算烟幕遮蔽时间，确保符合20秒要求，并检查速度是否在70-140m/s范围
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q3 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（15.1s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q3 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 0
-[GQ] 小问 q3 需要重试 (第 2 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-[explorer] 小问 q3: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q3: 需要收集或生成相关数据以进行实际计算，明确烟幕干扰弹的投放时间、速度和角度参数，并验证是否满足所有约束条件。此外，应考虑导弹的飞行轨迹和烟幕扩散模型，确保覆盖时间最大化。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q3 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（16.5s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q3 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked
-[GQ] 小问 q3 被阻塞 ✗: ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=blocked
-▶ [archive_result] 开始
-[question_loop] 归档小问 q3: status=blocked
-  ✔ [archive_result] 完成（0.0s）
-  ◇ [archive_result] 状态更新：results=3
-▶ [select_question] 开始
-[question_loop] 选择小问: q4
-  ✔ [select_question] 完成（0.0s）
-  ◇ [select_question] 状态更新：workflow_status=solving  current_question_id=q4
-▶ [assemble_context] 开始
-[question_loop] 装配上下文: q4
-  → 继承 1 个前问摘要
-  ✔ [assemble_context] 完成（0.0s）
-  ◇ [assemble_context] 状态更新
-▶ [configure_question_budget] 开始
-  ✔ [configure_question_budget] 完成（0.0s）
-  ◇ [configure_question_budget] 状态更新
-▶ [solve_question] 开始
-INFO:     127.0.0.1:60207 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] 小问 q4: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q4: 需要提供具体的投放策略数值，如各干扰弹的投放位置和时间，并确保满足所有约束条件。进行实际计算以验证覆盖时间是否最大化。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q4 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（20.5s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q4 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 1
-[GQ] 小问 q4 需要重试 (第 1 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-[explorer] 小问 q4: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q4: 需要收集或生成相关数据，如目标区域位置、干扰弹投放时间窗口、烟幕覆盖范围等，以进行数学规划求解。确保模型包含所有约束条件，如导弹和无人机的速度限制，烟幕下沉速率等。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q4 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（16.5s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q4 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 0
-[GQ] 小问 q4 需要重试 (第 2 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-[explorer] 小问 q4: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 自评建议修订，重算小问 q4: 需要提供具体的投放策略数值，如各干扰弹的投放位置和时间，并进行模拟计算以验证是否满足遮蔽效果和所有约束条件。此外，应明确说明如何最大化覆盖时间。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q4 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（12.1s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q4 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked
-[GQ] 小问 q4 被阻塞 ✗: ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=blocked
-▶ [archive_result] 开始
-[question_loop] 归档小问 q4: status=blocked
-  ✔ [archive_result] 完成（0.0s）
-  ◇ [archive_result] 状态更新：results=4
-▶ [select_question] 开始
-[question_loop] 选择小问: q5
-  ✔ [select_question] 完成（0.0s）
-  ◇ [select_question] 状态更新：workflow_status=solving  current_question_id=q5
-▶ [assemble_context] 开始
-[question_loop] 装配上下文: q5
-  → 继承 1 个前问摘要
-  ✔ [assemble_context] 完成（0.0s）
-  ◇ [assemble_context] 状态更新
-▶ [configure_question_budget] 开始
-  ✔ [configure_question_budget] 完成（0.0s）
-  ◇ [configure_question_budget] 状态更新
-▶ [solve_question] 开始
-[explorer] 小问 q5: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-INFO:     127.0.0.1:60263 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60267 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60273 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[solver] 自评建议修订，重算小问 q5: 需要收集或生成相关数据，如导弹轨迹参数、无人机飞行路径和时间安排，以进行实际计算和验证。应明确每个无人机的投放时间和位置，确保满足约束条件。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q5 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（14.7s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q5 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 1
-[GQ] 小问 q5 需要重试 (第 1 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-INFO:     127.0.0.1:60280 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60283 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60288 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60293 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] 小问 q5: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-INFO:     127.0.0.1:60301 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-INFO:     127.0.0.1:60307 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60311 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60314 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[solver] 自评建议修订，重算小问 q5: 需要收集或生成相关数据，如无人机和导弹的运动轨迹、烟幕覆盖范围等，以进行实际计算和验证。应明确决策变量的取值范围和目标函数的具体形式，确保模型可解。此外，需考虑时间同步和烟幕覆盖的动态变化。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q5 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（16.7s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q5 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 消耗 1 次，剩余 0
-[GQ] 小问 q5 需要重试 (第 2 次): ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=retry
-▶ [solve_question] 开始
-INFO:     127.0.0.1:60319 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60323 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60328 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60332 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] 小问 q5: 候选 1 → 通过 1 → 淘汰 0
-  → 推荐: 数学规划 (score=0.795)
-INFO:     127.0.0.1:60337 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60340 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[explorer] LLM 决策: 数学规划 (canonical=linear_programming)
-[explorer] 决策: 数学规划 (备选 0, 淘汰 0, source=llm)
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-INFO:     127.0.0.1:60347 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60352 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-[solver] 自评建议修订，重算小问 q5: 需要收集实际数据并进行计算，建立数学模型来优化无人机的投放策略，考虑导弹轨迹、烟幕覆盖时间等因素，确保满足约束条件。
-[builder] 题目驱动建模未成功（error），回退预设方法: 无法准备数据 CSV（无数据矩阵）
-[builder] 建模完成: 数学规划 (computation_status=no_data)
-[solver] 小问 q5 求解完成 (task=optimization, method=数学规划, computation=no_data)
-  ✔ [solve_question] 完成（15.3s）
-  ◇ [solve_question] 状态更新
-▶ [validate_result] 开始
-[validator] 小问 q5 验证完成: failed (task=optimization, checks=10, errors=1, warnings=3)
-  ✔ [validate_result] 完成（0.0s）
-  ◇ [validate_result] 状态更新
-▶ [gq_check] 开始
-[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked
-[GQ] 小问 q5 被阻塞 ✗: ['optimization_solution_missing', 'validation_failed']
-  ✔ [gq_check] 完成（0.0s）
-  ◇ [gq_check] 状态更新：_gq_action=blocked
-▶ [archive_result] 开始
-[question_loop] 归档小问 q5: status=blocked
-  ✔ [archive_result] 完成（0.0s）
-  ◇ [archive_result] 状态更新：results=5
-▶ [select_question] 开始
-  ✔ [select_question] 完成（0.0s）
-  ◇ [select_question] 状态更新：workflow_status=all_questions_done
-▶ [global_review] 开始
-[global_review] 开始：全题一致性审查...
-[reviewer] 开始审查: 5 个小问结果
-[reviewer] 审查完成: failed (critical=6, major=11, minor=0)
-[global_review] 完成: status=failed, critical=6, major=11
-  ✔ [global_review] 完成（0.0s）
-  ◇ [global_review] 状态更新
-▶ [write_paper] 开始
-[write_paper] 开始：论文写作...
-[writer] 开始论文写作: 0 个已验证小问，5 个小问被阻塞（占位章节）
-[writer] 加载统一论文模板: 数学建模竞赛论文统一模板
-[writer] 论文写作完成: A题 烟幕干扰弹的投放策略 (12 节, 4032 字符, 0 图, 1 表)
-[write_paper] 完成: 12 个章节, 全文 4032 字符
-  ✔ [write_paper] 完成（0.0s）
-  ◇ [write_paper] 状态更新
-▶ [review_paper] 开始
-[review_paper] 开始：论文审查...
-[reviewer] 开始审查: 5 个小问结果
-[reviewer] 审查完成: failed (critical=5, major=11, minor=7)
-[review_paper] 完成: status=failed, critical=5, major=11
-  ✔ [review_paper] 完成（0.0s）
-[GF] 交付质量门未通过 (retry=0/2): ['critical_issues_unclosed:5', 'review_status_failed']
-  ◇ [review_paper] 状态更新
-▶ [gf_revise] 开始
-[GF] 开始第 1 次修订
-[GF] 待修复: 5 个严重问题, 11 个重要问题
-  → [critical] traceability: 小问 q1 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q2 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q3 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q4 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q5 计算状态为 no_data，数值结果不可追溯
-  ✔ [gf_revise] 完成（0.0s）
-  ◇ [gf_revise] 状态更新
-▶ [write_paper] 开始
-[write_paper] 开始：论文写作...
-[writer] 第 1 次修订，基于审查反馈改进论文
-[writer] 开始论文写作: 0 个已验证小问，5 个小问被阻塞（占位章节）
-[writer] 加载统一论文模板: 数学建模竞赛论文统一模板
-[writer] 论文写作完成: A题 烟幕干扰弹的投放策略 (12 节, 5352 字符, 0 图, 1 表)
-[write_paper] 完成: 12 个章节, 全文 5352 字符
-  ✔ [write_paper] 完成（0.0s）
-  ◇ [write_paper] 状态更新
-▶ [review_paper] 开始
-[review_paper] 开始：论文审查...
-[reviewer] 开始审查: 5 个小问结果
-[reviewer] 审查完成: failed (critical=5, major=11, minor=7)
-[review_paper] 完成: status=failed, critical=5, major=11
-  ✔ [review_paper] 完成（0.0s）
-[GF] 交付质量门未通过 (retry=1/2): ['critical_issues_unclosed:5', 'review_status_failed']
-  ◇ [review_paper] 状态更新
-▶ [gf_revise] 开始
-[GF] 开始第 2 次修订
-[GF] 待修复: 5 个严重问题, 11 个重要问题
-  → [critical] traceability: 小问 q1 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q2 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q3 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q4 计算状态为 no_data，数值结果不可追溯
-  → [critical] traceability: 小问 q5 计算状态为 no_data，数值结果不可追溯
-  ✔ [gf_revise] 完成（0.0s）
-  ◇ [gf_revise] 状态更新
-▶ [write_paper] 开始
-[write_paper] 开始：论文写作...
-[writer] 第 2 次修订，基于审查反馈改进论文
-[writer] 开始论文写作: 0 个已验证小问，5 个小问被阻塞（占位章节）
-[writer] 加载统一论文模板: 数学建模竞赛论文统一模板
-[writer] 论文写作完成: A题 烟幕干扰弹的投放策略 (12 节, 5352 字符, 0 图, 1 表)
-[write_paper] 完成: 12 个章节, 全文 5352 字符
-  ✔ [write_paper] 完成（0.0s）
-  ◇ [write_paper] 状态更新
-▶ [review_paper] 开始
-[review_paper] 开始：论文审查...
-[reviewer] 开始审查: 5 个小问结果
-[reviewer] 审查完成: failed (critical=5, major=11, minor=7)
-[review_paper] 完成: status=failed, critical=5, major=11
-  ✔ [review_paper] 完成（0.0s）
-[GF] 修订预算耗尽 (2/2)，强制交付并记录风险
-[GF] 未解决问题: ['critical_issues_unclosed:5', 'review_status_failed']
-  ◇ [review_paper] 状态更新
-▶ [deliver] 开始
-[deliver] 最终交付完成，产物目录: D:\MMAgent\artifacts\764b933b
-[deliver] 论文 Markdown 已保存: D:\MMAgent\artifacts\764b933b\paper.md
-[md2docx] 已用 pandoc 转换: D:\MMAgent\artifacts\764b933b\paper.docx
-[deliver] 论文 DOCX 已保存: D:\MMAgent\artifacts\764b933b\paper.docx
-[deliver] 审查报告已保存: D:\MMAgent\artifacts\764b933b\review_report.json
-  ✔ [deliver] 完成（0.6s）
-  ◇ [deliver] 状态更新：workflow_status=delivered
-INFO:     127.0.0.1:60358 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60365 - "GET /api/runs/764b933b/figures HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60366 - "GET /api/runs/764b933b/paper HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60367 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60373 - "GET /api/runs/764b933b/figures HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60374 - "GET /api/runs/764b933b/paper HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60376 - "GET /api/runs/764b933b HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60603 - "GET /api/runs/764b933b/files/paper.docx HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60629 - "GET /api/runs/764b933b/files/paper.md HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60640 - "GET /api/runs/764b933b/files/review_report.json HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60642 - "GET /api/runs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60645 - "GET /api/runs HTTP/1.1" 200 OK
-[safe-delete][SAFE_DELETE_FAIL_CLOSED] {"target": "D:\\MMAgent\\artifacts\\8186c4be", "reason": "windows-sandbox-recycle-bin-unavailable"}
-INFO:     127.0.0.1:60648 - "DELETE /api/runs/8186c4be HTTP/1.1" 200 OK

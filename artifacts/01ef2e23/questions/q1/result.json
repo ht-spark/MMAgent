@@ -1,0 +1,21 @@
+{
+  "status": "success",
+  "method": "蒙特卡洛模拟",
+  "model_name": "烟幕干扰弹遮蔽时长模型",
+  "results": {
+    "optimization": {
+      "solution": 1.5707963267948966,
+      "objective": 3.4641016151377544,
+      "constraint_check": {
+        "constraint1": "True",
+        "constraint2": "True"
+      }
+    },
+    "simulation": 3.4641016151377544,
+    "confidence_interval": [
+      3.4641016151377544,
+      3.4641016151377544
+    ]
+  },
+  "metrics": {}
+}

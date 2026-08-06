@@ -821,11 +821,19 @@ class ModelBuilder:
         import time
 
         csv_path = self._write_data_csv(data_prep)
-        if csv_path is None:
-            return {"status": "error", "error": "无法准备数据 CSV（无数据矩阵）"}
-
-        # 提示词瘦身（C）：数据摘要 800 字符、问题文本 1000 字符，减少生成 token
+        # 无数据文件时不 bail：让 LLM 生成自包含代码（题面参数直接写入代码常量）。
+        # 仅当确实需要外部数据却拿不到时才视为失败（此处交由 LLM 判断）。
         data_summary = self._build_data_summary(data_prep)[:800]
+        if csv_path is None:
+            data_summary = (
+                (data_summary + "\n" if data_summary else "")
+                + "【重要】本题无外部数据文件。请不要读取 CSV/Excel，"
+                "将题目给出的参数（如速度、距离、时间、坐标等）直接作为常量写入代码，"
+                "生成完全自包含的求解代码。"
+            )
+            print("[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）")
+
+        # 提示词瘦身（C）：问题文本 1000 字符，减少生成 token
         question_text = context.question_text[:1000]
 
         modeler = CodeModeler(self._llm)
