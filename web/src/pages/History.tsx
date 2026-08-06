@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { cancelRun, deleteRun, listRuns } from '../api'
 
-export default function History({ onOpen }: { onOpen: (runId: string) => void }) {
+export default function History({ onOpen }: { onOpen: (runId: string, step: 'progress' | 'result') => void }) {
   const [runs, setRuns] = useState<any[]>([])
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(true)
@@ -76,7 +76,7 @@ export default function History({ onOpen }: { onOpen: (runId: string) => void })
           <div key={r.run_id} className="run-card">
             <div
               className="run-card-main"
-              onClick={() => onOpen(r.run_id)}
+              onClick={() => onOpen(r.run_id, isActive(r.status) ? 'progress' : 'result')}
             >
               <div>
                 <div className="run-id">{r.run_id}</div>

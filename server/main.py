@@ -61,65 +61,78 @@ async def create_run_endpoint(
     llm_config: str = Form("{}", description="JSON: provider/api_key/base_url/model"),
 ):
     """提交一次解题任务（后台异步执行）。"""
-    # 解析模型配置
     try:
-        cfg = json.loads(llm_config) if llm_config else {}
-        ModelConfig(**cfg)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"llm_config 解析失败: {exc}")
-
-    # 题目：文本优先；其次读取文本文件
-    problem = problem_text
-    run_id = uuid.uuid4().hex[:8]
-    output_dir = ARTIFACTS_ROOT / run_id
-    input_dir = output_dir / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
-
-    if problem_file is not None and not problem:
-        raw = await problem_file.read()
+        # 解析模型配置
         try:
-            problem = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            raise HTTPException(
-                status_code=400,
-                detail="题目文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
+            cfg = json.loads(llm_config) if llm_config else {}
+            ModelConfig(**cfg)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"llm_config 解析失败: {exc}")
+
+        # 题目：文本优先；其次读取文本文件
+        problem = problem_text
+        run_id = uuid.uuid4().hex[:8]
+        output_dir = ARTIFACTS_ROOT / run_id
+        input_dir = output_dir / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
+
+        if problem_file is not None and not problem:
+            raw = await problem_file.read()
+            try:
+                problem = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="题目文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
+                )
+            # 存档题目文件
+            dest = input_dir / (problem_file.filename or "problem.txt")
+            dest.write_bytes(raw)
+
+        if not problem or not problem.strip():
+            raise HTTPException(status_code=400, detail="必须提供 problem_text 或 problem_file")
+
+        # 数据附件存档
+        data_paths: list[str] = []
+        if data_files:
+            for uf in data_files:
+                if uf is None:
+                    continue
+                content = await uf.read()
+                if not content:
+                    continue
+                dest = input_dir / (uf.filename or f"data_{len(data_paths)}.bin")
+                dest.write_bytes(content)
+                data_paths.append(str(dest))
+
+        preview = problem.strip()[:200].replace("\n", " ")
+        create_run(run_id, preview, cfg)
+
+        task = asyncio.create_task(
+            execute_run(
+                run_id=run_id,
+                problem_text=problem,
+                data_paths=data_paths,
+                output_dir=str(output_dir),
+                model_config=cfg,
             )
-        # 存档题目文件
-        dest = input_dir / (problem_file.filename or "problem.txt")
-        dest.write_bytes(raw)
-
-    if not problem or not problem.strip():
-        raise HTTPException(status_code=400, detail="必须提供 problem_text 或 problem_file")
-
-    # 数据附件存档
-    data_paths: list[str] = []
-    if data_files:
-        for uf in data_files:
-            if uf is None:
-                continue
-            content = await uf.read()
-            if not content:
-                continue
-            dest = input_dir / (uf.filename or f"data_{len(data_paths)}.bin")
-            dest.write_bytes(content)
-            data_paths.append(str(dest))
-
-    preview = problem.strip()[:200].replace("\n", " ")
-    create_run(run_id, preview, cfg)
-
-    task = asyncio.create_task(
-        execute_run(
-            run_id=run_id,
-            problem_text=problem,
-            data_paths=data_paths,
-            output_dir=str(output_dir),
-            model_config=cfg,
         )
-    )
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
+        _BACKGROUND_TASKS.add(task)
+        task.add_done_callback(_BACKGROUND_TASKS.discard)
 
-    return {"run_id": run_id, "status": "queued", "output_dir": str(output_dir)}
+        return {"run_id": run_id, "status": "queued", "output_dir": str(output_dir)}
+    except HTTPException:
+        # 已显式构造的 4xx 错误，原样返回
+        raise
+    except Exception as exc:  # noqa: BLE001
+        # 未捕获异常：把完整堆栈打到 stderr，并把异常类型/消息作为 detail 返回，
+        # 便于前端和本地终端直接看到根因（仅本地开发用，生产请收敛为通用提示）。
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"server error: {type(exc).__name__}: {exc}",
+        )
 
 
 @app.get("/api/runs", response_model=list[RunSummary])
@@ -204,11 +217,12 @@ async def download_file_endpoint(run_id: str, file_path: str):
 # 前端静态托管（若已构建 web/dist）
 # ---------------------------------------------------------------------------
 if WEB_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(WEB_DIST), html=True), name="web")
-
+    # 健康检查须在静态托管挂载之前注册，否则会被 "/" 挂载的 StaticFiles 吞掉（返回 404）
     @app.get("/healthz")
     async def healthz():
         return {"status": "ok"}
+
+    app.mount("/", StaticFiles(directory=str(WEB_DIST), html=True), name="web")
 else:
 
     @app.get("/")

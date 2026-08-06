@@ -23,8 +23,8 @@ export default function App() {
     setSection('new')
   }
 
-  function openFromHistory(runId: string) {
-    setTask({ step: 'result', runId })
+  function openFromHistory(runId: string, step: TaskStep = 'result') {
+    setTask({ step, runId })
     setSection('new')
   }
 
