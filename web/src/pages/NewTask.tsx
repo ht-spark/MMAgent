@@ -1,6 +1,5 @@
-import Submit from './Submit'
-import Progress from './Progress'
 import Result from './Result'
+import ChatModeling from './ChatModeling'
 
 type TaskStep = 'submit' | 'progress' | 'result'
 
@@ -10,43 +9,29 @@ type Props = {
   onHistory: () => void
 }
 
-const STEPS = ['数据上传', '执行求解', '输出结果']
-
 export default function NewTask({ task, setTask, onHistory }: Props) {
-  const idx = task.step === 'submit' ? 0 : task.step === 'progress' ? 1 : 2
-
-  return (
-    <div className="page page-fill">
-      <div className="stepper">
-        {STEPS.map((label, i) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', flex: i < 2 ? 1 : 'auto' }}>
-            <div className={`step ${i === idx ? 'active' : ''} ${i < idx ? 'done' : ''}`}>
-              <span className="step-num">{i < idx ? '✓' : i + 1}</span>
-              <span className="step-label">{label}</span>
-            </div>
-            {i < 2 && <span className="step-line" />}
-          </div>
-        ))}
-      </div>
-
-      {task.step === 'submit' && (
-        <Submit onSubmitted={(id) => setTask({ step: 'progress', runId: id })} />
-      )}
-
-      {task.step === 'progress' && task.runId && (
-        <Progress
-          runId={task.runId}
-          onDone={() => setTask((s) => ({ ...s, step: 'result' }))}
-        />
-      )}
-
-      {task.step === 'result' && task.runId && (
+  // 结果页保留原有查看体验
+  if (task.step === 'result' && task.runId) {
+    return (
+      <div className="page page-fill">
         <Result
           runId={task.runId}
           onBack={() => setTask({ step: 'submit', runId: null })}
           onHistory={onHistory}
         />
-      )}
+      </div>
+    )
+  }
+
+  // 提交 + 进度 两步合并为聊天式界面：
+  // - submit：聊天框 + 上传题目/数据，点开始建模
+  // - progress：实时把建模进度以聊天消息输出（resumeRunId 接管进行中任务）
+  return (
+    <div className="page page-fill">
+      <ChatModeling
+        resumeRunId={task.step === 'progress' ? task.runId : null}
+        onViewResult={(id) => setTask({ step: 'result', runId: id })}
+      />
     </div>
   )
 }

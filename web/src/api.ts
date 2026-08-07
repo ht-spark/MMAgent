@@ -77,3 +77,20 @@ export async function cancelRun(runId: string): Promise<void> {
     throw new Error((e as any).detail || `中断失败 (${res.status})`)
   }
 }
+
+/** 确认某小问的预算覆盖（弹窗提交）。use_defaults=true 表示沿用默认。 */
+export async function confirmBudget(
+  runId: string,
+  body: { question_id?: string; use_defaults?: boolean; limits?: Record<string, number> },
+): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/runs/${runId}/budget-confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}))
+    throw new Error((e as any).detail || `预算确认失败 (${res.status})`)
+  }
+  return res.json()
+}

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
@@ -22,10 +22,18 @@ from server.runs import (
     create_run,
     delete_run,
     execute_run,
+    get_pending_budget,
     get_run,
     list_runs,
+    submit_budget_decision,
 )
-from server.schemas import CreateRunResponse, ModelConfig, RunDetail, RunSummary
+from server.schemas import (
+    BudgetConfirmBody,
+    CreateRunResponse,
+    ModelConfig,
+    RunDetail,
+    RunSummary,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
@@ -184,6 +192,76 @@ async def cancel_run_endpoint(run_id: str):
             raise HTTPException(status_code=404, detail="run 不存在")
         raise HTTPException(status_code=409, detail=result["reason"])
     return {"ok": True, "run_id": run_id, "status": "cancelled"}
+
+
+_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
+@app.get("/api/runs/{run_id}/progress/stream")
+async def stream_run_progress(run_id: str):
+    """以 SSE 实时推送某个 run 的进度事件（节点级）。
+
+    前端用原生 EventSource 订阅（GET，无 body）。服务端周期性读取注册表，
+    把「新增」的 progress 事件逐条推给客户端；run 进入终态后发送 done 并关闭连接。
+    相比前端 2s 轮询，这里延迟更低、体验更接近"实时输出建模进度"。
+    """
+    if get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="run 不存在")
+
+    async def gen():
+        sent = 0
+        # 连接建立即回执，便于前端确认订阅成功
+        yield f'data: {json.dumps({"type": "subscribed", "run_id": run_id}, ensure_ascii=False)}\n\n'
+        while True:
+            row = get_run(run_id)
+            if row is None:
+                yield 'data: {"type":"error","message":"run 不存在"}\n\n'
+                return
+            events = row.get("progress") or []
+            status = row.get("status")
+            for ev in events[sent:]:
+                yield f"data: {json.dumps({'type': 'event', 'event': ev}, ensure_ascii=False)}\n\n"
+            sent = len(events)
+            if status in _TERMINAL_STATUSES:
+                done = {"type": "done", "status": status, "error": row.get("error")}
+                yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
+                return
+            # SSE 注释行：保持连接活跃，避免代理/浏览器因空闲断开
+            yield ": keep-alive\n\n"
+            await asyncio.sleep(0.6)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # 关闭反向代理缓冲，确保事件即时下发
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/runs/{run_id}/budget-confirm")
+async def confirm_budget_endpoint(run_id: str, body: BudgetConfirmBody):
+    """确认某小问的预算覆盖。
+
+    当 run 暂停在 configure_question_budget 节点等待用户确认时，前端弹窗提交：
+      - use_defaults=true：沿用默认预算；
+      - limits={search:15, candidate:5, ...}：覆盖该问的强制项上限。
+    无待确认请求时返回 409。
+    """
+    pending = get_pending_budget(run_id)
+    if not pending:
+        raise HTTPException(status_code=409, detail="当前没有待确认的预算请求")
+    decision = None if body.use_defaults else (body.limits or None)
+    # 仅保留强制项、正值（与 BudgetManager.set_question_limits 的过滤一致）
+    if decision:
+        decision = {k: v for k, v in decision.items() if isinstance(v, int) and v > 0}
+    ok = submit_budget_decision(run_id, decision)
+    if not ok:
+        raise HTTPException(status_code=409, detail="预算请求已被取消或已确认")
+    return {"ok": True, "run_id": run_id, "use_defaults": body.use_defaults, "limits": decision}
 
 
 @app.get("/api/runs/{run_id}/paper")
