@@ -1181,7 +1181,7 @@ def convert_paper_md_to_docx(
     md_file_path: str,
     output_dir: str | None = None,
 ) -> str:
-    """将论文 Markdown 文件转换为 DOCX。
+    """将报告 Markdown 文件转换为 DOCX。
 
     Args:
         md_file_path: Markdown 文件路径。

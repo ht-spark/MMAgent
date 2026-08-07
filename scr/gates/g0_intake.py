@@ -3,14 +3,14 @@
 对应 architecture.md §4.3。
 
 通过条件：
-  - 题目小问已完整提取
+  - 任务小问已完整提取
   - 附件均已读取或明确标记为不可读
   - 每问有目标与预期输出
   - 依赖关系无环
   - 关键数据缺口已记录
 
 失败处理：
-  - 只重跑题目解析或数据读取
+  - 只重跑任务解析或数据读取
   - 若文件损坏、题干缺页或关键语义无法消除，则进入 need_clarification
   - 不应伪造假设继续求解
 """
@@ -74,7 +74,7 @@ def check_g0(state: dict) -> GateResult:
             if f.read_status == "failed" and not f.error_message:
                 failed_checks.append(f"file_{f.file_name}_error_missing")
     
-    # 检查 5: 题目文本非空
+    # 检查 5: 任务文本非空
     if project_context and not project_context.problem_text.strip():
         failed_checks.append("problem_text_empty")
     

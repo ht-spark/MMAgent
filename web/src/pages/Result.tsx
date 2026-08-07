@@ -16,13 +16,13 @@ export default function Result({
 
   useEffect(() => {
     getRun(runId).then(setRun).catch(() => {})
-    getPaper(runId).then(setPaper).catch(() => setPaper('（暂无论文内容）'))
+    getPaper(runId).then(setPaper).catch(() => setPaper('（暂无报告内容）'))
     getFigures(runId).then(setFigures).catch(() => setFigures([]))
   }, [runId])
 
   const artifacts: string[] = run?.artifacts || []
 
-  // 分组：论文 / 审查 / 图表 / 其它
+  // 分组：报告 / 审查 / 图表 / 其它
   const isFig = (p: string) => p.startsWith('figures/')
   const paperDocx = artifacts.find((p) => p === 'paper.docx')
   const reviewJson = artifacts.find((p) => p === 'review_report.json')
@@ -48,11 +48,11 @@ export default function Result({
       </h2>
       {run && (
         <div className="meta-row">
-          论文标题：{run.paper_title || '-'} · 审查状态：{run.review_status || '-'}
+          报告标题：{run.paper_title || '-'} · 审查状态：{run.review_status || '-'}
         </div>
       )}
 
-      <h3 style={{ fontSize: 16, margin: '18px 0 8px' }}>论文预览（Markdown）</h3>
+      <h3 style={{ fontSize: 16, margin: '18px 0 8px' }}>报告预览（Markdown）</h3>
       <pre className="paper-box">{paper}</pre>
 
       <div className="dl-section">

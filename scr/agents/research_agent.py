@@ -51,7 +51,7 @@ class ResearchAgent(BaseAgent):
         problem_analysis: ProblemAnalysis,
         subproblems: list[SubProblem],
     ) -> list[KnowledgeGap]:
-        """识别题目的知识缺口。
+        """识别任务的知识缺口。
 
         对应 architecture.md §4 L1 gaps 节点：
           识别 domain_definition / mechanism / standard / data_source /

@@ -216,7 +216,7 @@ class DataInventory(BaseModel):
 
 
 class ProblemAnalysis(BaseModel):
-    """题目理解结果（L0 understand 节点输出）。
+    """任务理解结果（L0 understand 节点输出）。
 
     对应 architecture.md §4 L0：
       提取研究对象、背景、显式小问、约束、预期输出、关键词。
@@ -224,10 +224,10 @@ class ProblemAnalysis(BaseModel):
 
     Attributes:
         research_subject: 研究对象（如 "城市经济综合评价"）。
-        background: 题目背景描述。
-        explicit_questions: 题目明确要求回答的所有小问。
-        constraints: 题目中的约束条件。
-        expected_outputs: 题目期望的输出形式（如 "排名表"、"预测值"）。
+        background: 任务背景描述。
+        explicit_questions: 任务明确要求回答的所有小问。
+        constraints: 任务中的约束条件。
+        expected_outputs: 任务期望的输出形式（如 "排名表"、"预测值"）。
         keywords: 用于后续 L1 检索的关键术语。
     """
 

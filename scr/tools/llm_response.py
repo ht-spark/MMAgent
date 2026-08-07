@@ -5,7 +5,7 @@
   - 响应可能被 markdown 代码块、解释文字、前后缀包裹
   - JSON 可能被截断、含注释、或括号不匹配
 
-提供三个通用函数（不依赖具体 LLM/题目）：
+提供三个通用函数（不依赖具体 LLM/任务）：
   - ``strip_thinking``   剥离思维链标签
   - ``extract_json``     括号平衡法提取第一个完整 JSON 对象
   - ``extract_code``     提取 Python 代码（剥离思维链 + 代码块围栏）

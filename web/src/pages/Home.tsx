@@ -3,21 +3,21 @@ import { useEffect, useRef, useState } from 'react'
 type Props = { onStart: () => void; onDocs: () => void }
 
 const CAPABILITIES = [
-  { icon: 'M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16zM3 9h18M9 21V9', title: '题目解析', desc: '深度理解赛题背景，自动提取关键信息，识别问题类型与约束条件', tag: 'NLP · 知识图谱' },
+  { icon: 'M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16zM3 9h18M9 21V9', title: '任务解析', desc: '深度理解任务背景，自动提取关键信息，识别问题类型与约束条件', tag: 'NLP · 知识图谱' },
   { icon: 'M3 3h18v18H3zM3 9h18M9 21V9', title: '模型选择', desc: '基于问题特征智能推荐最优建模方法，覆盖 156+ 经典模型', tag: '决策树 · 匹配算法' },
   { icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6', title: '代码生成', desc: '自动生成 Python / MATLAB 代码，集成 SciPy、PuLP、Gurobi 等工具链', tag: 'Code-LLM · 沙箱执行' },
-  { icon: 'M3 3v18h18M7 14l4-4 4 4 6-6', title: '数据可视化', desc: '自动绘制专业级图表，论文级排版，支持 LaTeX 公式嵌入', tag: 'Matplotlib · D3.js' },
+  { icon: 'M3 3v18h18M7 14l4-4 4 4 6-6', title: '数据可视化', desc: '自动绘制专业级图表，报告级排版，支持 LaTeX 公式嵌入', tag: 'Matplotlib · D3.js' },
   { icon: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2', title: '结果分析', desc: '灵敏度分析、误差评估、模型对比，确保结论科学严谨', tag: '统计分析 · 蒙特卡洛' },
-  { icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8', title: '论文撰写', desc: '一键生成结构化建模论文，含摘要、模型、求解、结论完整章节', tag: 'LaTeX · 学术规范' },
+  { icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8', title: '报告撰写', desc: '一键生成结构化建模报告，含摘要、模型、求解、结论完整章节', tag: 'LaTeX · 学术规范' },
 ]
 
 const WORKFLOW = [
-  { n: '01', t: '题目理解', d: '自动解析赛题，提取关键信息', dur: '~30s' },
+  { n: '01', t: '任务理解', d: '自动解析任务，提取关键信息', dur: '~30s' },
   { n: '02', t: '思路分析', d: '多方案对比，确定建模路径', dur: '~2min' },
   { n: '03', t: '模型建立', d: '选择并构建数学模型', dur: '~5min' },
   { n: '04', t: '算法实现', d: '代码生成与运行验证', dur: '~3min' },
   { n: '05', t: '结果分析', d: '可视化与误差评估', dur: '~2min' },
-  { n: '06', t: '论文撰写', d: '一键生成完整论文', dur: '~8min' },
+  { n: '06', t: '报告撰写', d: '一键生成完整报告', dur: '~8min' },
 ]
 
 export default function Home({ onStart, onDocs }: Props) {
@@ -118,7 +118,7 @@ export default function Home({ onStart, onDocs }: Props) {
           </h1>
           <p className="hero-subtitle">
             融合大语言模型、符号计算与数值仿真的一体化建模平台<br />
-            从题目理解到论文撰写，全流程智能辅助
+            从任务理解到报告撰写，全流程智能辅助
           </p>
           <div className="hero-actions">
             <button className="btn-primary large" onClick={onStart}>
@@ -162,7 +162,7 @@ export default function Home({ onStart, onDocs }: Props) {
         <div className="section-header">
           <div className="section-tag">CORE CAPABILITIES</div>
           <h2 className="section-title">六大核心建模能力</h2>
-          <p className="section-subtitle">覆盖数学建模全流程，从问题分析到论文产出</p>
+          <p className="section-subtitle">覆盖数学建模全流程，从问题分析到报告产出</p>
         </div>
         <div className="capabilities-grid">
           {CAPABILITIES.map((c) => (
@@ -185,7 +185,7 @@ export default function Home({ onStart, onDocs }: Props) {
         <div className="section-header">
           <div className="section-tag">WORKFLOW</div>
           <h2 className="section-title">六步建模工作流</h2>
-          <p className="section-subtitle">从赛题发布到论文提交，智能化全流程辅助</p>
+          <p className="section-subtitle">从任务发布到报告交付，智能化全流程辅助</p>
         </div>
         <div className="workflow">
           <div className="workflow-line" />

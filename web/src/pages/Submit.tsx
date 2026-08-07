@@ -56,13 +56,13 @@ export default function Submit({ onSubmitted }: { onSubmitted: (runId: string) =
       <h2>新建建模任务</h2>
 
       <div className="field">
-        <label>题目文件</label>
+        <label>任务文件</label>
         <input
           type="file"
           accept=".md,.txt"
           onChange={(e) => setProblemFile(e.target.files?.[0] ?? null)}
         />
-        <div className="file-note">支持 .md / .txt。题目内容将以该文件传入智能体。</div>
+        <div className="file-note">支持 .md / .txt。任务内容将以该文件传入智能体。</div>
       </div>
 
       <div className="field">

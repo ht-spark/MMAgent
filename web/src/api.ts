@@ -45,7 +45,7 @@ export async function getRun(runId: string): Promise<any> {
 
 export async function getPaper(runId: string): Promise<string> {
   const res = await fetch(`/api/runs/${runId}/paper`)
-  if (!res.ok) throw new Error('获取论文失败')
+  if (!res.ok) throw new Error('获取报告失败')
   return res.text()
 }
 
@@ -76,4 +76,21 @@ export async function cancelRun(runId: string): Promise<void> {
     const e = await res.json().catch(() => ({}))
     throw new Error((e as any).detail || `中断失败 (${res.status})`)
   }
+}
+
+/** 确认某小问的预算覆盖（弹窗提交）。use_defaults=true 表示沿用默认。 */
+export async function confirmBudget(
+  runId: string,
+  body: { question_id?: string; use_defaults?: boolean; limits?: Record<string, number> },
+): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/runs/${runId}/budget-confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}))
+    throw new Error((e as any).detail || `预算确认失败 (${res.status})`)
+  }
+  return res.json()
 }

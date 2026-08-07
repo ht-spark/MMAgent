@@ -4,7 +4,7 @@
 
 {candidates}
 
-## 题目分析
+## 任务分析
 
 {problem_analysis}
 
@@ -28,7 +28,7 @@
 
 | 维度 | 权重 | 说明 |
 |------|------|------|
-| problem_fit | 0.25 | 与题目的匹配程度（题型吻合） |
+| problem_fit | 0.25 | 与任务的匹配程度（题型吻合） |
 | data_fit | 0.20 | 与数据的匹配程度（字段可获得） |
 | assumption_validity | 0.15 | 核心假设是否成立 |
 | validation_feasibility | 0.15 | 验证方法是否可行 |

@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ if str(PROJECT_ROOT) not in __import__("sys").path:
 
 from scr.math_modeling_agent.graph import run_graph  # noqa: E402
 from scr.math_modeling_agent.llm import create_llm  # noqa: E402
+from scr.runtime.budget import BudgetType  # noqa: E402
 
 _DB_PATH = PROJECT_ROOT / "server" / "runs.db"
 _MAX_PROGRESS_EVENTS = 500
@@ -31,6 +33,61 @@ _conn: sqlite3.Connection | None = None
 # 取消意图标志：run_id -> True。仅存在于进程内存；
 # 服务重启后后台任务本就不会存活，无需持久化。
 _cancel_flags: dict[str, bool] = {}
+
+# ---------------------------------------------------------------------------
+# 预算确认（人工介入）：run 跑到 configure_question_budget 节点时暂停，
+# 等待前端弹窗确认该问预算覆盖后再继续。仅进程内存。
+# ---------------------------------------------------------------------------
+_budget_lock = threading.Lock()
+# run_id -> {"event": Event, "question_id": str, "proposed": dict}
+_pending_budget: dict[str, dict] = {}
+# run_id -> 用户决定（dict[BudgetType值, int] 或 None=用默认）
+_budget_decisions: dict[str, dict | None] = {}
+
+
+def request_budget_confirmation(
+    run_id: str, question_id: str, proposed: dict
+) -> threading.Event:
+    """注册一个待确认的预算请求，返回用于阻塞等待的 Event。"""
+    ev = threading.Event()
+    with _budget_lock:
+        _pending_budget[run_id] = {
+            "event": ev,
+            "question_id": question_id,
+            "proposed": proposed,
+        }
+        _budget_decisions.pop(run_id, None)
+    return ev
+
+
+def get_pending_budget(run_id: str) -> dict | None:
+    """查询某个 run 当前是否有待确认的预算请求（供前端轮询/判断）。"""
+    with _budget_lock:
+        p = _pending_budget.get(run_id)
+        return dict(p) if p else None
+
+
+def submit_budget_decision(run_id: str, decision: dict | None) -> bool:
+    """前端提交预算决定；写入并唤醒阻塞中的回调。无 pending 返回 False。"""
+    with _budget_lock:
+        p = _pending_budget.get(run_id)
+        if not p:
+            return False
+        _budget_decisions[run_id] = decision
+        p["event"].set()
+    return True
+
+
+def take_budget_decision(run_id: str) -> dict | None:
+    """回调取出决定（并移除）。"""
+    with _budget_lock:
+        return _budget_decisions.pop(run_id, None)
+
+
+def clear_budget_pending(run_id: str) -> None:
+    with _budget_lock:
+        _pending_budget.pop(run_id, None)
+        _budget_decisions.pop(run_id, None)
 
 
 def _now() -> str:
@@ -348,6 +405,73 @@ async def execute_run(
     def _cancel_check() -> bool:
         return _cancel_flags.get(run_id, False)
 
+    def _budget_callback(state: dict) -> dict | None:
+        """每问 configure_question_budget 节点触发：暂停等用户在弹窗确认预算。
+
+        返回 {BudgetType: int} 作为该问覆盖；返回 None 表示沿用默认。
+        本函数在后台线程（asyncio.to_thread）中执行，可安全阻塞。
+        """
+        qid = state.get("current_question_id", "") or "current"
+        bm = state.get("budget_manager")
+        proposed: dict = {}
+        if bm is not None:
+            try:
+                proposed = {bt.value: r.limit for bt, r in bm.all_records().items()}
+            except Exception:  # noqa: BLE001
+                proposed = {}
+        ev = request_budget_confirmation(run_id, qid, proposed)
+        append_progress(
+            run_id,
+            {
+                "type": "budget_request",
+                "node": "configure_question_budget",
+                "question_id": qid,
+                "proposed": proposed,
+                "timestamp": time.time(),
+            },
+        )
+        # 阻塞等待用户决定；每秒检查一次取消意图，便于中断时及时退出
+        while not ev.wait(timeout=1.0):
+            if _cancel_flags.get(run_id, False):
+                clear_budget_pending(run_id)
+                append_progress(
+                    run_id,
+                    {
+                        "type": "budget_confirmed",
+                        "question_id": qid,
+                        "action": "cancelled",
+                        "timestamp": time.time(),
+                    },
+                )
+                return None
+        decision = take_budget_decision(run_id)
+        clear_budget_pending(run_id)
+        if not decision:
+            append_progress(
+                run_id,
+                {
+                    "type": "budget_confirmed",
+                    "question_id": qid,
+                    "action": "default",
+                    "timestamp": time.time(),
+                },
+            )
+            return None
+        append_progress(
+            run_id,
+            {
+                "type": "budget_confirmed",
+                "question_id": qid,
+                "action": "override",
+                "limits": decision,
+                "timestamp": time.time(),
+            },
+        )
+        try:
+            return {BudgetType(k): int(v) for k, v in decision.items()}
+        except Exception:  # noqa: BLE001
+            return None
+
     try:
         final_state = await asyncio.to_thread(
             run_graph,
@@ -359,6 +483,7 @@ async def execute_run(
             progress_callback=_callback,
             console=False,
             cancel_check=_cancel_check,
+            budget_config_callback=_budget_callback,
         )
         set_result(run_id, _summarize_final(final_state), _collect_artifacts(output_dir))
     except Exception as exc:  # noqa: BLE001

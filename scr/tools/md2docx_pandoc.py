@@ -1,6 +1,6 @@
 """Markdown + Pandoc → DOCX 转换器（优先方案）。
 
-将论文写作生成的带 LaTeX 公式的 Markdown 用 pandoc 转为 DOCX：
+将报告写作生成的带 LaTeX 公式的 Markdown 用 pandoc 转为 DOCX：
   - 公式：``$...$`` / ``$$...$$`` 自动转为 Word 原生公式（OMML），
     打开 Word 可直接编辑（区别于自研 python-docx 的 LaTeX→OMML 近似解析）
   - 图片：相对路径通过 ``--resource-path`` 解析
@@ -137,7 +137,7 @@ def convert_paper_md_to_docx(
     md_file_path: str | Path,
     output_dir: str | Path | None = None,
 ) -> str:
-    """将论文 Markdown 文件转换为 DOCX（pandoc 优先，python-docx 回退）。
+    """将报告 Markdown 文件转换为 DOCX（pandoc 优先，python-docx 回退）。
 
     Args:
         md_file_path: Markdown 文件路径。

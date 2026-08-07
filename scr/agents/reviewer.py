@@ -1,10 +1,10 @@
-"""论文审查 Agent（architecture.md §6.1 全题一致性审查）。
+"""报告审查 Agent（architecture.md §6.1 全任务一致性审查）。
 
 职责：
-  从评委视角对论文草稿进行全题一致性审查，产出 ReviewReport。
+  从评委视角对报告草稿进行全任务一致性审查，产出 ReviewReport。
 
 审查维度（architecture.md §6.1）：
-  1. 覆盖性：所有小问是否有结论，且结论覆盖题目要求
+  1. 覆盖性：所有小问是否有结论，且结论覆盖任务要求
   2. 一致性：数据口径、单位、符号、假设、前问结果使用是否一致
   3. 可追溯性：关键数值、图表、表格能否定位到计算产物
   4. 验证充分性：各模型验证是否充分，结论强度是否与证据一致
@@ -29,9 +29,9 @@ __all__ = ["Reviewer", "review_paper_node"]
 
 
 class Reviewer:
-    """论文审查 Agent（确定性检查，无 LLM）。
+    """报告审查 Agent（确定性检查，无 LLM）。
 
-    从评委视角审查论文草稿和小问结果，产出结构化的 ReviewReport。
+    从评委视角审查报告草稿和小问结果，产出结构化的 ReviewReport。
 
     Usage::
 
@@ -44,7 +44,7 @@ class Reviewer:
     # ------------------------------------------------------------------
 
     def review(self, state: dict) -> ReviewReport:
-        """执行全题一致性审查。
+        """执行全任务一致性审查。
 
         Args:
             state: 项目状态，需包含 question_results、project_context、paper_draft。
@@ -109,7 +109,7 @@ class Reviewer:
         question_results: dict[str, QuestionResult],
         project_context: ProjectContext | None,
     ) -> list[ReviewIssue]:
-        """检查所有小问是否覆盖题目要求。
+        """检查所有小问是否覆盖任务要求。
 
         Critical: 缺少小问结果、小问未通过验证。
         Major: 小问缺少结论。
@@ -124,7 +124,7 @@ class Reviewer:
                 issue_id=f"coverage_{idx}",
                 severity="critical",
                 category="coverage",
-                message="没有已验证的小问结果，无法生成完整论文",
+                message="没有已验证的小问结果，无法生成完整报告",
                 location="question_results",
                 suggested_fix="确保至少有一个小问通过 GQ 验证",
             ))
@@ -148,7 +148,7 @@ class Reviewer:
                     ))
                 elif result.status != "validated":
                     idx += 1
-                    # blocked 小问已在论文中以占位章节说明原因，视为 major（记录风险）
+                    # blocked 小问已在报告中以占位章节说明原因，视为 major（记录风险）
                     # 而非 critical（致命）；其他异常状态仍为 critical。
                     severity = (
                         "major" if result.status == "blocked" else "critical"
@@ -156,7 +156,7 @@ class Reviewer:
                     message = (
                         f"小问 {q.question_id} 状态为 {result.status}，未通过验证"
                         + (
-                            "（论文中已给出占位说明，建议后续重新求解）"
+                            "（报告中已给出占位说明，建议后续重新求解）"
                             if result.status == "blocked"
                             else ""
                         )
@@ -291,8 +291,8 @@ class Reviewer:
         """检查关键数值、图表、表格能否定位到计算产物。
 
         Critical: 小问无计算结果。
-        Major: 论文章节缺失、图表不可追溯。
-        Minor: 论文缺少图表引用。
+        Major: 报告章节缺失、图表不可追溯。
+        Minor: 报告缺少图表引用。
         """
         issues: list[ReviewIssue] = []
         idx = 0
@@ -340,20 +340,20 @@ class Reviewer:
                         suggested_fix="补充计算结果数据",
                     ))
 
-        # 检查 3.2: 论文草稿是否存在
+        # 检查 3.2: 报告草稿是否存在
         if paper_draft is None:
             idx += 1
             issues.append(ReviewIssue(
                 issue_id=f"traceability_{idx}",
                 severity="critical",
                 category="traceability",
-                message="论文草稿缺失，无法检查数值可追溯性",
+                message="报告草稿缺失，无法检查数值可追溯性",
                 location="paper_draft",
-                suggested_fix="执行论文写作生成 PaperDraft",
+                suggested_fix="执行报告写作生成 PaperDraft",
             ))
             return issues
 
-        # 检查 3.3: 论文中小问章节是否有内容
+        # 检查 3.3: 报告中小问章节是否有内容
         for qid in sorted(question_results.keys()):
             q_sections = paper_draft.get_sections_by_question(qid)
             if not q_sections:
@@ -362,9 +362,9 @@ class Reviewer:
                     issue_id=f"traceability_{idx}",
                     severity="major",
                     category="traceability",
-                    message=f"论文中缺少小问 {qid} 的章节",
+                    message=f"报告中缺少小问 {qid} 的章节",
                     location=qid,
-                    suggested_fix=f"补充小问 {qid} 的论文章节",
+                    suggested_fix=f"补充小问 {qid} 的报告章节",
                 ))
             else:
                 for section in q_sections:
@@ -382,7 +382,7 @@ class Reviewer:
                             suggested_fix="补充章节内容",
                         ))
 
-        # 检查 3.4: 图表是否在论文章节中引用
+        # 检查 3.4: 图表是否在报告章节中引用
         for qid in sorted(question_results.keys()):
             result = question_results[qid]
             q_sections = paper_draft.get_sections_by_question(qid)
@@ -395,7 +395,7 @@ class Reviewer:
                 section_figs.extend(s.figures)
                 section_tables.extend(s.tables)
 
-            # 如果结果有图表但论文章节没有记录
+            # 如果结果有图表但报告章节没有记录
             if result.figures and not section_figs:
                 idx += 1
                 issues.append(ReviewIssue(
@@ -404,10 +404,10 @@ class Reviewer:
                     category="traceability",
                     message=(
                         f"小问 {qid} 有 {len(result.figures)} 个图，"
-                        f"但论文章节未引用"
+                        f"但报告章节未引用"
                     ),
                     location=qid,
-                    suggested_fix="在论文中引用相关图表",
+                    suggested_fix="在报告中引用相关图表",
                 ))
             if result.tables and not section_tables:
                 idx += 1
@@ -417,10 +417,10 @@ class Reviewer:
                     category="traceability",
                     message=(
                         f"小问 {qid} 有 {len(result.tables)} 个表，"
-                        f"但论文章节未引用"
+                        f"但报告章节未引用"
                     ),
                     location=qid,
-                    suggested_fix="在论文中引用相关表格",
+                    suggested_fix="在报告中引用相关表格",
                 ))
 
         return issues
@@ -497,7 +497,7 @@ class Reviewer:
     def _check_format(
         self, paper_draft: PaperDraft | None
     ) -> list[ReviewIssue]:
-        """检查论文格式是否符合竞赛模板。
+        """检查报告格式是否符合竞赛模板。
 
         Major: 缺少必需章节、缺少摘要、缺少参考文献。
         Minor: 章节内容过短、缺少完整文本。
@@ -511,9 +511,9 @@ class Reviewer:
                 issue_id=f"format_{idx}",
                 severity="major",
                 category="format",
-                message="论文草稿缺失，无法检查格式",
+                message="报告草稿缺失，无法检查格式",
                 location="paper_draft",
-                suggested_fix="执行论文写作生成 PaperDraft",
+                suggested_fix="执行报告写作生成 PaperDraft",
             ))
             return issues
 
@@ -524,7 +524,7 @@ class Reviewer:
                 issue_id=f"format_{idx}",
                 severity="major",
                 category="format",
-                message="论文缺少摘要",
+                message="报告缺少摘要",
                 location="abstract",
                 suggested_fix="生成摘要（最后生成，不引入新数字）",
             ))
@@ -544,7 +544,7 @@ class Reviewer:
                     issue_id=f"format_{idx}",
                     severity="major",
                     category="format",
-                    message=f"论文缺少必需章节（section_id={sid}）",
+                    message=f"报告缺少必需章节（section_id={sid}）",
                     location=sid,
                     suggested_fix=f"补充章节 {sid}",
                 ))
@@ -556,7 +556,7 @@ class Reviewer:
                 issue_id=f"format_{idx}",
                 severity="major",
                 category="format",
-                message="论文缺少小问章节（无 4.x 子章节）",
+                message="报告缺少小问章节（无 4.x 子章节）",
                 location="4",
                 suggested_fix="为每个小问生成独立章节",
             ))
@@ -568,7 +568,7 @@ class Reviewer:
                 issue_id=f"format_{idx}",
                 severity="major",
                 category="citation",
-                message="论文缺少参考文献",
+                message="报告缺少参考文献",
                 location="references",
                 suggested_fix="补充方法相关的参考文献",
             ))
@@ -580,7 +580,7 @@ class Reviewer:
                 issue_id=f"format_{idx}",
                 severity="major",
                 category="format",
-                message="论文缺少完整文本（full_text 为空）",
+                message="报告缺少完整文本（full_text 为空）",
                 location="full_text",
                 suggested_fix="执行文本组装生成 full_text",
             ))
@@ -611,7 +611,7 @@ class Reviewer:
                 issue_id=f"format_{idx}",
                 severity="minor",
                 category="format",
-                message="论文中未包含任何公式",
+                message="报告中未包含任何公式",
                 location="formulas",
                 suggested_fix="补充模型公式并编号引用",
             ))
@@ -649,7 +649,7 @@ class Reviewer:
 
 
 def review_paper_node(state: dict) -> dict:
-    """LangGraph 节点：论文审查。
+    """LangGraph 节点：报告审查。
 
     读取 question_results 和 paper_draft，调用 Reviewer，输出 review_report。
 

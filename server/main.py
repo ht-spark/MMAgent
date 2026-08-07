@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
@@ -22,10 +22,18 @@ from server.runs import (
     create_run,
     delete_run,
     execute_run,
+    get_pending_budget,
     get_run,
     list_runs,
+    submit_budget_decision,
 )
-from server.schemas import CreateRunResponse, ModelConfig, RunDetail, RunSummary
+from server.schemas import (
+    BudgetConfirmBody,
+    CreateRunResponse,
+    ModelConfig,
+    RunDetail,
+    RunSummary,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
@@ -55,8 +63,8 @@ async def _on_startup() -> None:
 
 @app.post("/api/runs", response_model=CreateRunResponse)
 async def create_run_endpoint(
-    problem_text: str | None = Form(None, description="题目文本"),
-    problem_file: UploadFile | None = File(None, description="题目文件(.md/.txt)"),
+    problem_text: str | None = Form(None, description="任务文本"),
+    problem_file: UploadFile | None = File(None, description="任务文件(.md/.txt)"),
     data_files: list[UploadFile] | None = File(None, description="数据附件(可多个)"),
     llm_config: str = Form("{}", description="JSON: provider/api_key/base_url/model"),
 ):
@@ -69,7 +77,7 @@ async def create_run_endpoint(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"llm_config 解析失败: {exc}")
 
-        # 题目：文本优先；其次读取文本文件
+        # 任务：文本优先；其次读取文本文件
         problem = problem_text
         run_id = uuid.uuid4().hex[:8]
         output_dir = ARTIFACTS_ROOT / run_id
@@ -83,9 +91,9 @@ async def create_run_endpoint(
             except UnicodeDecodeError:
                 raise HTTPException(
                     status_code=400,
-                    detail="题目文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
+                    detail="任务文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
                 )
-            # 存档题目文件
+            # 存档任务文件
             dest = input_dir / (problem_file.filename or "problem.txt")
             dest.write_bytes(raw)
 
@@ -186,9 +194,79 @@ async def cancel_run_endpoint(run_id: str):
     return {"ok": True, "run_id": run_id, "status": "cancelled"}
 
 
+_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
+@app.get("/api/runs/{run_id}/progress/stream")
+async def stream_run_progress(run_id: str):
+    """以 SSE 实时推送某个 run 的进度事件（节点级）。
+
+    前端用原生 EventSource 订阅（GET，无 body）。服务端周期性读取注册表，
+    把「新增」的 progress 事件逐条推给客户端；run 进入终态后发送 done 并关闭连接。
+    相比前端 2s 轮询，这里延迟更低、体验更接近"实时输出建模进度"。
+    """
+    if get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="run 不存在")
+
+    async def gen():
+        sent = 0
+        # 连接建立即回执，便于前端确认订阅成功
+        yield f'data: {json.dumps({"type": "subscribed", "run_id": run_id}, ensure_ascii=False)}\n\n'
+        while True:
+            row = get_run(run_id)
+            if row is None:
+                yield 'data: {"type":"error","message":"run 不存在"}\n\n'
+                return
+            events = row.get("progress") or []
+            status = row.get("status")
+            for ev in events[sent:]:
+                yield f"data: {json.dumps({'type': 'event', 'event': ev}, ensure_ascii=False)}\n\n"
+            sent = len(events)
+            if status in _TERMINAL_STATUSES:
+                done = {"type": "done", "status": status, "error": row.get("error")}
+                yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
+                return
+            # SSE 注释行：保持连接活跃，避免代理/浏览器因空闲断开
+            yield ": keep-alive\n\n"
+            await asyncio.sleep(0.6)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # 关闭反向代理缓冲，确保事件即时下发
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/runs/{run_id}/budget-confirm")
+async def confirm_budget_endpoint(run_id: str, body: BudgetConfirmBody):
+    """确认某小问的预算覆盖。
+
+    当 run 暂停在 configure_question_budget 节点等待用户确认时，前端弹窗提交：
+      - use_defaults=true：沿用默认预算；
+      - limits={search:15, candidate:5, ...}：覆盖该问的强制项上限。
+    无待确认请求时返回 409。
+    """
+    pending = get_pending_budget(run_id)
+    if not pending:
+        raise HTTPException(status_code=409, detail="当前没有待确认的预算请求")
+    decision = None if body.use_defaults else (body.limits or None)
+    # 仅保留强制项、正值（与 BudgetManager.set_question_limits 的过滤一致）
+    if decision:
+        decision = {k: v for k, v in decision.items() if isinstance(v, int) and v > 0}
+    ok = submit_budget_decision(run_id, decision)
+    if not ok:
+        raise HTTPException(status_code=409, detail="预算请求已被取消或已确认")
+    return {"ok": True, "run_id": run_id, "use_defaults": body.use_defaults, "limits": decision}
+
+
 @app.get("/api/runs/{run_id}/paper")
 async def get_paper_endpoint(run_id: str):
-    """论文 Markdown 文本。"""
+    """报告 Markdown 文本。"""
     path = resolve_artifact(run_id, "paper.md")
     return PlainTextResponse(path.read_text(encoding="utf-8"))
 
