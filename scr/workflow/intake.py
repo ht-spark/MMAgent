@@ -3,7 +3,7 @@
 对应 architecture.md §4.1 输入摄入和 plan.md Phase 1.1-1.3。
 
 职责：
-  1. 读取题目文档（Markdown/TXT/PDF/DOCX 文本提取）
+  1. 读取任务文档（Markdown/TXT/PDF/DOCX 文本提取）
   2. 读取 CSV、Excel、JSON 数据文件；Excel 遍历全部 Sheet
   3. 生成确定性数据画像（行列数、字段类型、缺失率、单位线索、时间维度）
   4. 将原始输入登记为只读产物
@@ -41,7 +41,7 @@ from ..tools.file_tools import generate_data_inventories, read_file
 def run_intake(state: dict) -> dict:
     """LangGraph 节点：输入摄入。
 
-    读取题目和附件，生成数据画像，登记原始输入。
+    读取任务和附件，生成数据画像，登记原始输入。
 
     Args:
         state: 项目状态。需要包含 data_paths 和 output_dir。

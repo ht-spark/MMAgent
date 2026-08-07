@@ -1,4 +1,4 @@
-"""ProblemAnalyst — L0 题目理解 Agent。
+"""ProblemAnalyst — L0 任务理解 Agent。
 
 对应 architecture.md §4 L0 和 plan.md Phase 3.3：
   - understand：提取研究对象、背景、显式小问、约束、预期输出、关键词（禁止建模）
@@ -32,7 +32,7 @@ __all__ = ["ProblemAnalyst"]
 
 
 class ProblemAnalyst(BaseAgent):
-    """L0 题目理解 Agent。
+    """L0 任务理解 Agent。
 
     三个核心方法可独立调用，也可通过 ``analyze`` 串联执行。
 
@@ -45,7 +45,7 @@ class ProblemAnalyst(BaseAgent):
     """
 
     # ------------------------------------------------------------------
-    # understand — 理解题目
+    # understand — 理解任务
     # ------------------------------------------------------------------
 
     def understand(
@@ -53,14 +53,14 @@ class ProblemAnalyst(BaseAgent):
         problem_text: str,
         data_inventory: DataInventory | None = None,
     ) -> ProblemAnalysis:
-        """理解题目背景，提取关键信息。
+        """理解任务背景，提取关键信息。
 
         对应 architecture.md §4 L0 understand：
           提取研究对象、背景、显式小问、约束、预期输出、关键词。
           禁止推荐模型或开始求解。
 
         Args:
-            problem_text: 题目全文。
+            problem_text: 任务全文。
             data_inventory: 可选的附件数据画像，为 LLM 提供数据上下文。
 
         Returns:
@@ -84,7 +84,7 @@ class ProblemAnalyst(BaseAgent):
     # ------------------------------------------------------------------
 
     def decompose(self, problem_analysis: ProblemAnalysis) -> list[SubProblem]:
-        """将题目拆解为子问题 DAG。
+        """将任务拆解为子问题 DAG。
 
         对应 architecture.md §4 L0 decompose：
           每个子问题含 id、task、input_requirements、expected_outputs、
@@ -172,7 +172,7 @@ class ProblemAnalyst(BaseAgent):
         """串联执行 understand → decompose → classify。
 
         Args:
-            problem_text: 题目全文。
+            problem_text: 任务全文。
             data_inventory: 可选的附件数据画像。
 
         Returns:

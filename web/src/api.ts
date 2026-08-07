@@ -45,7 +45,7 @@ export async function getRun(runId: string): Promise<any> {
 
 export async function getPaper(runId: string): Promise<string> {
   const res = await fetch(`/api/runs/${runId}/paper`)
-  if (!res.ok) throw new Error('获取论文失败')
+  if (!res.ok) throw new Error('获取报告失败')
   return res.text()
 }
 

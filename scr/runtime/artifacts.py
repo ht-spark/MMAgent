@@ -2,14 +2,14 @@
 
 对应 architecture.md §6.3：
   artifacts/<run_id>/
-    input/          # 原始题目与附件登记
-    context/        # 题目理解、数据画像、依赖图
+    input/          # 原始任务与附件登记
+    context/        # 任务理解、数据画像、依赖图
     questions/Q1/   # 每问的代码、数据、图表、结果包
     questions/Q2/
     evidence/       # 检索来源与引用库
     paper/          # 草稿、终稿、参考文献
-    review/         # 全题与格式审查报告
-    final/          # 最终论文、代码、图表、提交清单
+    review/         # 全任务与格式审查报告
+    final/          # 最终报告、代码、图表、提交清单
 """
 from __future__ import annotations
 

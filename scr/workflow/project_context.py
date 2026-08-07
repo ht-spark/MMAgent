@@ -1,12 +1,12 @@
 """
 全局上下文建立工作流节点。
 职责：
-  1. 调用题目理解 Agent，提取背景、目标、约束、小问、预期输出和歧义点
+  1. 调用任务理解 Agent，提取背景、目标、约束、小问、预期输出和歧义点
   2. 拆分小问，建立依赖图
-  3. 生成题目-数据映射表
+  3. 生成任务-数据映射表
   4. 构建 ProjectContext
 
-题目理解器只负责回答"题目要求什么"，不在此阶段推荐模型。
+任务理解器只负责回答"任务要求什么"，不在此阶段推荐模型。
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from ..schemas.problem import ProblemAnalysis, SubProblem
 def run_context(state: dict) -> dict:
     """LangGraph 节点：全局上下文建立。
     
-    调用题目理解 Agent，构建 ProjectContext。
+    调用任务理解 Agent，构建 ProjectContext。
     
     Args:
         state: 项目状态。需要包含 problem_text, data_profile, llm, run_id。
@@ -47,7 +47,7 @@ def run_context(state: dict) -> dict:
     if budget_manager is not None and llm is not None:
         llm = InstrumentedLLM(llm, budget_manager, qid_getter=None)
     
-    # 调用题目理解 Agent
+    # 调用任务理解 Agent
     analysis, subproblems, classification = _run_problem_analysis(
         problem_text, data_profile, llm
     )
@@ -72,7 +72,7 @@ def _run_problem_analysis(
     data_profile: DataProfile | None,
     llm: Any | None,
 ) -> tuple[ProblemAnalysis | None, list[SubProblem], Any | None]:
-    """执行题目理解三步：understand → decompose → classify。
+    """执行任务理解三步：understand → decompose → classify。
     
     无 LLM 时使用占位分析。
     """
@@ -122,7 +122,7 @@ def _run_problem_analysis(
     
     try:
         t0 = time.monotonic()
-        log_step(logger, "context.understand", "started", detail="LLM 题目理解")
+        log_step(logger, "context.understand", "started", detail="LLM 任务理解")
         analysis = analyst.understand(problem_text, data_inventory)
         log_step(
             logger,
@@ -174,7 +174,7 @@ def _run_problem_analysis(
 
     try:
         t0 = time.monotonic()
-        log_step(logger, "context.classify", "started", detail="LLM 题目分类")
+        log_step(logger, "context.classify", "started", detail="LLM 任务分类")
         classification = analyst.classify(analysis, subproblems)
         log_step(
             logger,
@@ -237,7 +237,7 @@ def _build_project_context(
     # 依赖关系图
     question_dependencies = {sp.id: sp.dependencies for sp in subproblems}
     
-    # 题目-数据映射
+    # 任务-数据映射
     question_data_map = _map_questions_to_data(subproblems, data_profile)
     
     return ProjectContext(
@@ -257,7 +257,7 @@ def _map_questions_to_data(
     subproblems: list[SubProblem],
     data_profile: DataProfile | None,
 ) -> dict[str, list[str]]:
-    """生成题目-数据映射表。
+    """生成任务-数据映射表。
     
     根据子问题的 input_requirements 和数据画像的字段名进行模糊匹配。
     """
@@ -282,7 +282,7 @@ def _map_questions_to_data(
 
 
 def _extract_questions_heuristic(problem_text: str) -> list[str]:
-    """启发式提取题目中的显式小问。
+    """启发式提取任务中的显式小问。
 
     策略：以"问题N"为分隔符，捕获每个问题从标记开始到下一个"问题M"标记之前的完整文本。
     只匹配行首或段首的"问题N"模式，避免误匹配"在问题2的基础上"等引用。

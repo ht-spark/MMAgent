@@ -28,7 +28,7 @@ from ..schemas.context import DataProfile
 from ..schemas.formulation import MODELING_TASKS, ConstraintIR, FormulationIR, VariableIR
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
 
-#: 题目驱动建模的题型范围（LLM 建模 + 代码执行）
+#: 任务驱动建模的题型范围（LLM 建模 + 代码执行）
 from .code_modeler import CODE_BASED_TASKS
 
 #: 代码生成/执行/校验的重试上限
@@ -40,7 +40,7 @@ class ModelBuilder:
 
     Args:
         llm: 可选的 LLM 客户端（Phase 4 暂不使用，Phase 5+ 可用于模型精调）。
-        budget_manager: 可选的预算管理器。提供时，"题目驱动建模"路径的代码
+        budget_manager: 可选的预算管理器。提供时，"任务驱动建模"路径的代码
             生成/执行/校验重试会消耗 CODE_REPAIR；耗尽立即停止重试并返回 error。
     """
 
@@ -715,7 +715,7 @@ class ModelBuilder:
 
         data_matrix = data_prep.get("data_matrix")
 
-        # 题目驱动建模：有 LLM 且题型支持时，优先用 LLM 生成具体数学模型与
+        # 任务驱动建模：有 LLM 且题型支持时，优先用 LLM 生成具体数学模型与
         # 求解代码并沙箱执行，得到真实计算结果；失败则回退预设方法目录。
         if self._llm is not None and math_task in CODE_BASED_TASKS:
             try:
@@ -726,11 +726,11 @@ class ModelBuilder:
                 if code_computation.get("status") == "success":
                     return code_computation
                 print(
-                    f"[builder] 题目驱动建模未成功（{code_computation.get('status')}），"
+                    f"[builder] 任务驱动建模未成功（{code_computation.get('status')}），"
                     f"回退预设方法: {code_computation.get('error', '')[:120]}"
                 )
             except Exception as e:
-                print(f"[builder] 题目驱动建模异常，回退预设方法: {e}")
+                print(f"[builder] 任务驱动建模异常，回退预设方法: {e}")
 
         try:
             if data_matrix is not None and len(data_matrix) > 0:
@@ -779,7 +779,7 @@ class ModelBuilder:
         return computation
 
     # ------------------------------------------------------------------
-    # 题目驱动建模：LLM 生成模型 + 代码沙箱执行
+    # 任务驱动建模：LLM 生成模型 + 代码沙箱执行
     # ------------------------------------------------------------------
 
     def _execute_code_based(
@@ -792,7 +792,7 @@ class ModelBuilder:
         output_dir: str | Path | None = None,
         feedback: str = "",
     ) -> dict:
-        """题目驱动建模：分段调用 LLM（模型设计→代码生成），沙箱执行并校验。
+        """任务驱动建模：分段调用 LLM（模型设计→代码生成），沙箱执行并校验。
 
         流程：准备数据 CSV → LLM 设计数学模型 → LLM 生成求解代码
               （各 6 分钟超时）→ 沙箱执行 → 按题型校验 → 失败反馈修复重试。
@@ -828,7 +828,7 @@ class ModelBuilder:
             data_summary = (
                 (data_summary + "\n" if data_summary else "")
                 + "【重要】本题无外部数据文件。请不要读取 CSV/Excel，"
-                "将题目给出的参数（如速度、距离、时间、坐标等）直接作为常量写入代码，"
+                "将任务给出的参数（如速度、距离、时间、坐标等）直接作为常量写入代码，"
                 "生成完全自包含的求解代码。"
             )
             print("[builder] 无数据文件，要求 LLM 生成自包含代码（参数写入代码）")
@@ -853,7 +853,7 @@ class ModelBuilder:
             except Exception:
                 pass
         print(
-            f"[builder] 题目驱动建模开始（题型={math_task}，方法={method_name}，"
+            f"[builder] 任务驱动建模开始（题型={math_task}，方法={method_name}，"
             f"最多尝试 {max_attempts} 次，模型设计/代码生成超时均为 6 分钟）"
         )
 
@@ -932,7 +932,7 @@ class ModelBuilder:
 
                 # 5. 成功
                 print(
-                    f"[builder]   └ 题目驱动建模成功（总耗时 {time.time() - t_start:.1f}s，"
+                    f"[builder]   └ 任务驱动建模成功（总耗时 {time.time() - t_start:.1f}s，"
                     f"第 {attempt + 1} 次尝试）"
                 )
                 # 5.1 持久化解题代码/数据/结果到 artifacts/questions/<qid>/
@@ -966,7 +966,7 @@ class ModelBuilder:
                 }
 
             print(
-                f"[builder]   └ 题目驱动建模失败（总耗时 {time.time() - t_start:.1f}s）: "
+                f"[builder]   └ 任务驱动建模失败（总耗时 {time.time() - t_start:.1f}s）: "
                 f"{last_error[:150]}"
             )
             return {"status": "error", "error": last_error or "建模/执行/校验全部失败"}

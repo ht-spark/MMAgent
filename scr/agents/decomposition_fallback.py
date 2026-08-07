@@ -113,7 +113,7 @@ def _fallback_questions(analysis: ProblemAnalysis) -> list[str]:
         if questions:
             return questions
 
-    subject = _compact(analysis.research_subject) or "题目对象"
+    subject = _compact(analysis.research_subject) or "任务对象"
     return [f"围绕{subject}完成综合建模、求解与结果解释"]
 
 
@@ -122,9 +122,9 @@ def _infer_inputs(task: str, analysis: ProblemAnalysis) -> list[str]:
     if analysis.keywords:
         inputs.extend(analysis.keywords[:3])
     if re.search(r"数据|附件|指标|样本|观测|变量|字段", task):
-        inputs.append("题目附件数据与字段说明")
+        inputs.append("任务附件数据与字段说明")
     if not inputs:
-        inputs.append("题目条件与附件数据")
+        inputs.append("任务条件与附件数据")
     return _dedupe(inputs)[:4]
 
 

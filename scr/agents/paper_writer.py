@@ -1,7 +1,7 @@
 """
-论文写作 Agent
+报告写作 Agent
 职责：
-  从已验证的 QuestionResult 生成完整竞赛论文草稿。
+  从已验证的 QuestionResult 生成完整竞赛报告草稿。
 """
 from __future__ import annotations
 
@@ -626,9 +626,9 @@ _STATUS_LABELS: dict[str, str] = {
 
 
 class PaperWriter:
-    """论文写作 Agent（确定性模板，无 LLM）。
+    """报告写作 Agent（确定性模板，无 LLM）。
 
-    从已验证的小问结果包生成完整论文草稿，
+    从已验证的小问结果包生成完整报告草稿，
     遵循 architecture.md §6.2 推荐章节结构。
     集成可视化工具生成 PNG 图表，集成表格工具生成规范三线表。
 
@@ -647,7 +647,7 @@ class PaperWriter:
         """
         self._llm = llm
         self._prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
-        self._title: str = "数学建模论文"
+        self._title: str = "数学建模报告"
         self._output_dir: str = ""
         self._all_figures: dict[str, list[str]] = {}
         self._fig_counter: int = 0
@@ -664,7 +664,7 @@ class PaperWriter:
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # LLM 起草辅助（P1-B3：论文核心章节 LLM 写作，失败回退模板）
+    # LLM 起草辅助（P1-B3：报告核心章节 LLM 写作，失败回退模板）
     # ------------------------------------------------------------------
 
     def _load_prompt(self, name: str) -> str:
@@ -698,7 +698,7 @@ class PaperWriter:
         return "\n".join(lines).strip()
 
     def _llm_write_prompt(self, template_name: str, **kwargs: Any) -> str | None:
-        """用 LLM 起草一段论文正文；失败返回 None（调用方回退确定性模板）。"""
+        """用 LLM 起草一段报告正文；失败返回 None（调用方回退确定性模板）。"""
         if self._llm is None:
             return None
         try:
@@ -706,7 +706,7 @@ class PaperWriter:
             prompt = self._render_prompt(template, **kwargs)
             response = self._llm.invoke(prompt)
             text = getattr(response, "content", response)
-            # 剥离 <think> 思维链，防止混入论文正文
+            # 剥离 <think> 思维链，防止混入报告正文
             from ..tools.llm_response import strip_thinking
 
             text = strip_thinking(str(text))
@@ -743,8 +743,8 @@ class PaperWriter:
         }
 
         if gf_retry > 0:
-            print(f"[writer] 第 {gf_retry} 次修订，基于审查反馈改进论文")
-        print(f"[writer] 开始论文写作: {len(validated)} 个已验证小问"
+            print(f"[writer] 第 {gf_retry} 次修订，基于审查反馈改进报告")
+        print(f"[writer] 开始报告写作: {len(validated)} 个已验证小问"
               + (f"，{len(blocked)} 个小问被阻塞（占位章节）" if blocked else ""))
 
         # 设置输出目录
@@ -765,13 +765,13 @@ class PaperWriter:
                 total_figs = sum(len(v) for v in self._all_figures.values())
                 print(f"[writer] 已生成 {total_figs} 张图表")
             except Exception as e:
-                print(f"[writer] 图表生成失败（不影响论文写作）: {e}")
+                print(f"[writer] 图表生成失败（不影响报告写作）: {e}")
                 self._all_figures = {}
 
         # 派生标题
         self._title = self._derive_title(project_context)
 
-        # 选择论文模板（基于题型）
+        # 选择报告模板（基于题型）
         self._template = self._select_template(project_context)
 
         # 构建大纲（基于模板定制章节结构）
@@ -825,7 +825,7 @@ class PaperWriter:
         references = self._collect_references(validated)
 
         print(
-            f"[writer] 论文写作完成: {self._title} "
+            f"[writer] 报告写作完成: {self._title} "
             f"({len(sections)} 节, {len(full_text)} 字符, "
             f"{self._fig_counter} 图, {self._tbl_counter} 表)"
         )
@@ -845,10 +845,10 @@ class PaperWriter:
     def _select_template(
         self, project_context: ProjectContext | None
     ) -> PaperTemplate:
-        """加载统一论文模板。
+        """加载统一报告模板。
 
         模板已统一为「公共骨架 + 可伸缩问题章节」结构，不再按题型
-        （A-F）区分，因此无论题目类型如何都返回同一套模板。
+        （A-F）区分，因此无论任务类型如何都返回同一套模板。
         保留 project_context 参数以兼容既有调用。
 
         Args:
@@ -859,7 +859,7 @@ class PaperWriter:
         """
         self._template = get_template()
         self._template_guide = self._build_template_guide()
-        print(f"[writer] 加载统一论文模板: {self._template.name}")
+        print(f"[writer] 加载统一报告模板: {self._template.name}")
         return self._template
 
     @staticmethod
@@ -909,9 +909,9 @@ class PaperWriter:
         question_results: dict[str, QuestionResult],
         blocked: dict[str, QuestionResult] | None = None,
     ) -> list[PaperSection]:
-        """构建论文大纲。
+        """构建报告大纲。
 
-        根据论文模板定制章节标题，保持章节 ID 与内容填充逻辑兼容。
+        根据报告模板定制章节标题，保持章节 ID 与内容填充逻辑兼容。
         模板提供各题型的推荐章节结构和写作指导，
         本方法将模板章节映射到固定的 section_id 体系（1-7），
         以确保 write() 中的内容填充逻辑正常工作。
@@ -1010,12 +1010,12 @@ class PaperWriter:
     ) -> str:
         """返回默认章节标题。
 
-        模板中的章节标题来自示例论文，含有领域特定内容，
+        模板中的章节标题来自示例报告，含有领域特定内容，
         直接使用会导致标题泄露（如"交叉分发方案研究"出现在
-        农作物种植策略论文中）。因此统一使用通用默认标题。
+        农作物种植策略报告中）。因此统一使用通用默认标题。
 
         Args:
-            template: 论文模板（保留参数兼容性，当前未使用）。
+            template: 报告模板（保留参数兼容性，当前未使用）。
             keywords: 关键词列表（保留参数兼容性，当前未使用）。
             default: 默认标题。
 
@@ -1031,10 +1031,10 @@ class PaperWriter:
         """生成第 index 个问题章节的标题。
 
         使用通用格式 "问题X"（X 为中文数字），不使用模板中的
-        领域特定标题，避免将模板示例问题的标题泄露到实际论文中。
+        领域特定标题，避免将模板示例问题的标题泄露到实际报告中。
 
         Args:
-            template: 论文模板（保留参数兼容性，当前未使用）。
+            template: 报告模板（保留参数兼容性，当前未使用）。
             index: 问题序号（从 1 开始）。
             qid: 问题 ID。
 
@@ -1059,8 +1059,8 @@ class PaperWriter:
 
         包含问题背景概述、方法论、各问关键结果和总体结论。
         所有数值均来自 QuestionResult，不引入新数字。
-        采用学术论文摘要的规范写作风格。
-        摘要结构参考论文模板的 abstract_guide。
+        采用学术报告摘要的规范写作风格。
+        摘要结构参考报告模板的 abstract_guide。
         """
         template = self._template or get_template()
         lines: list[str] = []
@@ -1083,7 +1083,7 @@ class PaperWriter:
                 "【重要说明】本次运行未能产出任何有效的建模与求解结果——"
                 "所有子问题均因数据缺失、代码执行失败或验证未通过而被阻塞。"
                 "请检查：1) 是否上传了必需的数据文件；2) LLM 模型配置是否可用；"
-                "3) 题目参数是否完整。本报告为占位文档，不包含实际建模内容。"
+                "3) 任务参数是否完整。本报告为占位文档，不包含实际建模内容。"
             )
             return (bg_text + "\n" if bg_text else "") + notice
 
@@ -1193,7 +1193,7 @@ class PaperWriter:
         保留 template 参数以兼容既有调用。
 
         Args:
-            template: 论文模板（保留参数兼容性，当前未使用）。
+            template: 报告模板（保留参数兼容性，当前未使用）。
 
         Returns:
             问题描述短语。
@@ -1309,7 +1309,7 @@ class PaperWriter:
             "针对上述问题特点，本文采用分步求解的策略："
             "首先对数据进行全面画像和预处理，"
             "然后依次对各子问题进行建模、求解和验证，"
-            "最后整合各问结果完成论文写作。"
+            "最后整合各问结果完成报告写作。"
         )
 
         return "\n".join(lines)
@@ -1588,7 +1588,7 @@ class PaperWriter:
         source_text = (
             f"数据来源为{data_source}，"
             if data_source
-            else "结合题目条件与已整理的数据结构，"
+            else "结合任务条件与已整理的数据结构，"
         )
         return (
             f"从建模目标看，问题{qid}不仅需要给出可计算结果，还需要保证模型假设、变量含义与约束条件能够被追溯。"
@@ -1632,7 +1632,7 @@ class PaperWriter:
         if status in ("success", "optimal", "feasible"):
             return (
                 f"基于上述{method}模型，本文按照“数据整理-参数确定-模型求解-结果校验”的流程完成问题{qid}的计算。"
-                f"本节展示的{evidence_text}均由模型计算过程直接生成，避免在论文写作阶段对数值结论进行主观修饰。"
+                f"本节展示的{evidence_text}均由模型计算过程直接生成，避免在报告写作阶段对数值结论进行主观修饰。"
             )
         if status == "generic_stats":
             return (
@@ -1641,7 +1641,7 @@ class PaperWriter:
             )
         if status == "no_data":
             return (
-                f"由于问题{qid}缺少足够的外部观测数据，本文采用题目条件和代表性参数完成模型演算，"
+                f"由于问题{qid}缺少足够的外部观测数据，本文采用任务条件和代表性参数完成模型演算，"
                 f"并在结论部分明确该结果依赖的前提范围。"
             )
         if status in ("infeasible", "failed"):
@@ -1656,7 +1656,7 @@ class PaperWriter:
     def _write_blocked_section(
         self, qid: str, result: QuestionResult
     ) -> str:
-        """生成 blocked 小问的占位章节：说明阻塞原因，避免该问在论文中整节消失。
+        """生成 blocked 小问的占位章节：说明阻塞原因，避免该问在报告中整节消失。
 
         Args:
             qid: 小问 ID。
@@ -1697,7 +1697,7 @@ class PaperWriter:
 
         包含：问题描述、方法选择、模型建立、求解与结果、结果检验、结论。
         集成图表工具和可视化工具生成规范的图表。
-        文字描述采用学术论文风格，充分阐述建模思路和结果分析。
+        文字描述采用学术报告风格，充分阐述建模思路和结果分析。
         """
         lines: list[str] = []
         formulas: list[str] = []
@@ -2189,7 +2189,7 @@ class PaperWriter:
 
         lines.append(
             f"本文针对{problem_desc}问题，建立了系统的数学建模框架，"
-            "按照「问题分析—数据画像—建模求解—验证评估—论文写作」的规范流程，"
+            "按照「问题分析—数据画像—建模求解—验证评估—报告写作」的规范流程，"
             "依次完成了各子问题的建模、求解与验证。"
             "在建模过程中，本文注重以下几点："
             "其一，根据各子问题的数学特征选择最合适的建模方法；"
@@ -2513,7 +2513,7 @@ class PaperWriter:
         elif "residual_plot" in name_lower:
             return f"问题 {qid} 残差分析"
         elif "comparison_objectives" in name_lower:
-            return "各子问题目标值对比"
+            return "各子问任务标值对比"
         elif "deterministic_vs_stochastic" in name_lower:
             return "确定性 vs 不确定性优化对比"
         elif "data_table_sizes" in name_lower:
@@ -2569,7 +2569,7 @@ class PaperWriter:
         return str(v)
 
     def _derive_title(self, project_context: ProjectContext | None) -> str:
-        """从项目上下文派生论文标题。
+        """从项目上下文派生报告标题。
 
         优先从问题文本中提取"X题"标题模式；
         无法提取时使用背景摘要首行；最后回退到默认标题。
@@ -2577,7 +2577,7 @@ class PaperWriter:
         import re
 
         if project_context is None:
-            return "数学建模论文"
+            return "数学建模报告"
 
         # 尝试从 problem_text 提取标题
         if project_context.problem_text:
@@ -2609,7 +2609,7 @@ class PaperWriter:
                 if len(first_line) > 5:
                     return first_line[:60]
 
-        return "数学建模论文"
+        return "数学建模报告"
 
     def _collect_references(
         self, question_results: dict[str, QuestionResult]
@@ -2637,7 +2637,7 @@ class PaperWriter:
     def _collect_keywords(
         self, question_results: dict[str, QuestionResult]
     ) -> list[str]:
-        """收集论文关键词。"""
+        """收集报告关键词。"""
         keywords: set[str] = set()
         for result in question_results.values():
             findings = result.findings
@@ -2657,10 +2657,10 @@ class PaperWriter:
 
 
 def write_paper_node(state: dict) -> dict:
-    """LangGraph 节点：论文写作。
+    """LangGraph 节点：报告写作。
 
     读取 question_results，调用 PaperWriter，输出 paper_draft。
-    修订时会读取 review_report 和 _gf_retry_count 以改进论文。
+    修订时会读取 review_report 和 _gf_retry_count 以改进报告。
 
     Args:
         state: 项目状态。需要包含 question_results。

@@ -897,7 +897,7 @@ def _heuristic_score(
       - interpretability (0.15): 可解释性（简单方法更高）
       - robustness (0.10): 鲁棒性（有无淘汰条件）
       - suitability (0.10): 与任务类型的匹配度
-      - text_match (0.20): 题目文本与方法的匹配度
+      - text_match (0.20): 任务文本与方法的匹配度
 
     Returns:
       0-1 之间的分数。
@@ -942,7 +942,7 @@ def _heuristic_score(
     # suitability: 与任务类型匹配（已在目录中按类型组织，所以匹配度高）
     score += 0.10 * 0.9
 
-    # text_match: 题目文本与方法的匹配度
+    # text_match: 任务文本与方法的匹配度
     score += 0.20 * _text_match_score(method, interpretation)
 
     # 外部方法（网络搜索）的微调：根据搜索相关性调整
@@ -958,9 +958,9 @@ def _text_match_score(
     method: dict,
     interpretation: ProblemInterpretation,
 ) -> float:
-    """计算题目文本与方法的匹配度（0-1）。
+    """计算任务文本与方法的匹配度（0-1）。
 
-    根据题目文本中的关键词与方法描述的匹配程度评分。
+    根据任务文本中的关键词与方法描述的匹配程度评分。
     匹配度高的方法获得更高分数，从而实现方法推荐的差异化。
     """
     # 从 math_task_description 中提取文本

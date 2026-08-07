@@ -33,7 +33,7 @@ class KnowledgeGap(BaseModel):
 
     Attributes:
         gap_type: 缺口类型。
-        description: 缺口描述（题目在哪些方面需要补充知识）。
+        description: 缺口描述（任务在哪些方面需要补充知识）。
         priority: 优先级（high/medium/low）。
         related_subproblems: 关联的子问题 id 列表。
     """
@@ -56,7 +56,7 @@ class KnowledgeGapList(BaseModel):
 
 
 SourcePreference = Literal[
-    "academic_paper",      # 学术论文
+    "academic_paper",      # 学术报告
     "official_standard",   # 官方标准
     "government_data",     # 政府数据
     "research_report",     # 研究报告

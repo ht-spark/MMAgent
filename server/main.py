@@ -63,8 +63,8 @@ async def _on_startup() -> None:
 
 @app.post("/api/runs", response_model=CreateRunResponse)
 async def create_run_endpoint(
-    problem_text: str | None = Form(None, description="题目文本"),
-    problem_file: UploadFile | None = File(None, description="题目文件(.md/.txt)"),
+    problem_text: str | None = Form(None, description="任务文本"),
+    problem_file: UploadFile | None = File(None, description="任务文件(.md/.txt)"),
     data_files: list[UploadFile] | None = File(None, description="数据附件(可多个)"),
     llm_config: str = Form("{}", description="JSON: provider/api_key/base_url/model"),
 ):
@@ -77,7 +77,7 @@ async def create_run_endpoint(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"llm_config 解析失败: {exc}")
 
-        # 题目：文本优先；其次读取文本文件
+        # 任务：文本优先；其次读取文本文件
         problem = problem_text
         run_id = uuid.uuid4().hex[:8]
         output_dir = ARTIFACTS_ROOT / run_id
@@ -91,9 +91,9 @@ async def create_run_endpoint(
             except UnicodeDecodeError:
                 raise HTTPException(
                     status_code=400,
-                    detail="题目文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
+                    detail="任务文件暂仅支持 UTF-8 文本(.md/.txt)；二进制请改用 problem_text 粘贴或后续版本接入解析。",
                 )
-            # 存档题目文件
+            # 存档任务文件
             dest = input_dir / (problem_file.filename or "problem.txt")
             dest.write_bytes(raw)
 
@@ -266,7 +266,7 @@ async def confirm_budget_endpoint(run_id: str, body: BudgetConfirmBody):
 
 @app.get("/api/runs/{run_id}/paper")
 async def get_paper_endpoint(run_id: str):
-    """论文 Markdown 文本。"""
+    """报告 Markdown 文本。"""
     path = resolve_artifact(run_id, "paper.md")
     return PlainTextResponse(path.read_text(encoding="utf-8"))
 

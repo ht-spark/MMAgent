@@ -382,7 +382,7 @@ class QuestionSolver(BaseAgent):
     ) -> dict | None:
         """LLM 对求解结果做自评反思（P2-C1）。
 
-        判断结果是否回答了题目、数值是否合理；verdict=revise 时由调用方
+        判断结果是否回答了任务、数值是否合理；verdict=revise 时由调用方
         携带建议重算一次。失败或无 LLM 时返回 None（跳过反思，不阻塞）。
         """
         if self._llm is None:
@@ -465,7 +465,7 @@ class QuestionSolver(BaseAgent):
     def _guess_math_task(self, context: CurrentQuestionContext) -> str:
         """启发式判断数学任务类型。
 
-        基于题目文本关键词判断：
+        基于任务文本关键词判断：
           - 评价/排序/评估 → evaluation
           - 预测/趋势/预报 → prediction
           - 模拟/仿真（含"通过模拟数据求解"等明确指示）→ simulation
@@ -626,7 +626,7 @@ class QuestionSolver(BaseAgent):
             limitations=self._build_limitations(decision_record, interpretation, model_output),
             improvement_directions=[
                 "Phase 5: 完成题型验证与结果沉淀",
-                "Phase 6: 整合到论文写作",
+                "Phase 6: 整合到报告写作",
             ],
         )
 

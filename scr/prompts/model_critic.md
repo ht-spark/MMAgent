@@ -4,7 +4,7 @@
 
 {scored_candidates}
 
-## 题目分析
+## 任务分析
 
 {problem_analysis}
 
@@ -26,7 +26,7 @@
 2. **authoritative_source**：推荐模型是否有 S/A 级证据支持？
 3. **candidate_diversity**：候选之间是否有差异（不同家族或不同复杂度）？
 4. **simple_model_present**：是否包含简单模型（如线性方法、规则方法）？是否被简单模型无理由否决？
-5. **assumption_reasonableness**：核心假设是否合理（基于题目条件）？
+5. **assumption_reasonableness**：核心假设是否合理（基于任务条件）？
 6. **data_availability**：所需数据是否都能从附件中获取？
 7. **validation_clarity**：每个候选是否有明确的验证方法？
 8. **recommendation_traceability**：推荐理由是否可追溯到证据 ID？

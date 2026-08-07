@@ -1,13 +1,13 @@
-"""数学建模竞赛论文统一模板。
+"""数学建模竞赛报告统一模板。
 
 设计原则：不按题型（A/B/C/D/E/F）区分模板，而是统一为一套
-「公共骨架 + 可伸缩问题章节」结构，用于引导 LLM 撰写竞赛论文：
+「公共骨架 + 可伸缩问题章节」结构，用于引导 LLM 撰写竞赛报告：
 
   - 公共骨架：摘要、问题重述、问题分析与技术路线、模型假设、
     符号说明、模型评价与推广、参考文献、附录。
-  - 问题章节：按题目的子问题数量动态生成，每个子问题套用统一的
+  - 问题章节：按任务的子问题数量动态生成，每个子问题套用统一的
     五段式写法（问题分析 → 数据预处理 → 模型建立 → 模型求解 →
-    结果分析与检验），与题目类型无关。
+    结果分析与检验），与任务类型无关。
   - 方法库：按任务类型（机理 / 优化 / 评价 / 预测 / 数据挖掘）组织的
     常用方法索引，供 LLM 逐问选择，而不是预设某一种方法。
 
@@ -68,7 +68,7 @@ class SectionSpec:
 
 @dataclass(frozen=True)
 class PaperTemplate:
-    """论文模板（统一结构，公共骨架部分）。
+    """报告模板（统一结构，公共骨架部分）。
 
     Attributes:
         name: 模板名称。
@@ -94,8 +94,8 @@ _SECTION_PROBLEM_RESTATEMENT = SectionSpec(
     title="问题重述",
     writing_guide=(
         "1.1 问题背景：阐述问题的现实背景（政策、行业、技术或学术背景），说明研究意义。\n"
-        "1.2 问题提出：用自己的语言重述题目，逐条列出各子问题，明确每个问题的已知条件、约束与求解目标。\n"
-        "注意：不要照抄题目原文，重述后的问题应能直接对应后文的章节安排。"
+        "1.2 问题提出：用自己的语言重述任务，逐条列出各子问题，明确每个问题的已知条件、约束与求解目标。\n"
+        "注意：不要照抄任务原文，重述后的问题应能直接对应后文的章节安排。"
     ),
     min_words=400,
 )
@@ -117,7 +117,7 @@ _SECTION_ASSUMPTIONS = SectionSpec(
     title="模型假设",
     writing_guide=(
         "列出建模所需的全部假设条件，要求：\n"
-        "- 每条假设附一句合理性说明（依据题目条件、常识或文献）；\n"
+        "- 每条假设附一句合理性说明（依据任务条件、常识或文献）；\n"
         "- 假设要覆盖所有后文模型，不要出现模型用了却未声明的隐含假设；\n"
         "- 假设要适度：过度简化会削弱结果可信度，过少简化会让模型不可解。"
     ),
@@ -224,10 +224,10 @@ def build_problem_section(problem_index: int, section_number: int | None = None)
 
 
 def build_paper_outline(num_problems: int) -> list[SectionSpec]:
-    """生成含 num_problems 个子问题的完整论文大纲。
+    """生成含 num_problems 个子问题的完整报告大纲。
 
     Args:
-        num_problems: 题目的子问题数量（通常为 3~6）。
+        num_problems: 任务的子问题数量（通常为 3~6）。
 
     Returns:
         完整章节列表：公共骨架（前 4 章）+ 各问题章节 + 公共骨架（评价/文献/附录）。
@@ -273,7 +273,7 @@ METHOD_LIBRARY: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 UNIFIED_TEMPLATE = PaperTemplate(
-    name="数学建模竞赛论文统一模板",
+    name="数学建模竞赛报告统一模板",
     fixed_sections=[
         *_PRE_PROBLEM_SECTIONS,
         *_POST_PROBLEM_SECTIONS,
@@ -313,17 +313,17 @@ UNIFIED_TEMPLATE = PaperTemplate(
 
 
 def render_outline_prompt(num_problems: int) -> str:
-    """生成可直接注入 LLM 的论文写作引导提示词。
+    """生成可直接注入 LLM 的报告写作引导提示词。
 
     Args:
-        num_problems: 题目的子问题数量。
+        num_problems: 任务的子问题数量。
 
     Returns:
         完整的写作引导文本（大纲 + 各章写作指导 + 摘要指导 + 方法库 + 写作要点）。
     """
     sections = build_paper_outline(num_problems)
     lines: list[str] = [
-        "# 数学建模竞赛论文写作引导",
+        "# 数学建模竞赛报告写作引导",
         "",
         f"本文共 {num_problems} 个子问题，请严格按以下章节结构撰写：",
         "",
@@ -360,7 +360,7 @@ def render_outline_prompt(num_problems: int) -> str:
 
 
 def get_template(problem_type: str = "") -> PaperTemplate:
-    """获取论文模板。统一模板不分题型，参数仅作兼容保留，将被忽略。"""
+    """获取报告模板。统一模板不分题型，参数仅作兼容保留，将被忽略。"""
     return UNIFIED_TEMPLATE
 
 

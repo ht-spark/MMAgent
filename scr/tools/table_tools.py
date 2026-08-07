@@ -153,11 +153,11 @@ def format_metrics_table(
         "min_entropy": ("最小熵值", "熵权法指标"),
     }
 
-    # 需要跳过的代码级指标（不应在论文中展示）
+    # 需要跳过的代码级指标（不应在报告中展示）
     _SKIP_METRIC_KEYS = {
         "solver_status", "solver", "method", "status", "message",
         "simulation_seed",  # 随机种子是代码实现细节
-        "baseline_objective",  # 基线目标值是内部对比用，非论文指标
+        "baseline_objective",  # 基线目标值是内部对比用，非报告指标
         "best_case_objective",  # 最优场景目标值是内部统计
         "scenario_objectives",  # 场景目标值列表是原始数据
         "n_features",  # 特征数是代码级信息

@@ -3,14 +3,14 @@
 对应 architecture.md §6.3 交付质量门 GF。
 
 最终通过条件：
-  - 题目覆盖完整
+  - 任务覆盖完整
   - 图文表公式齐备
   - 引用可追溯
   - 所有数值可复现
   - 格式符合竞赛模板
   - 审查问题已关闭或显式接受风险
 
-本门在论文写作和审查之后执行，判定是否可以交付最终产物。
+本门在报告写作和审查之后执行，判定是否可以交付最终产物。
 
 通过条件（本模块实现）：
   1. review_report 存在
@@ -19,7 +19,7 @@
   4. paper_draft 存在且 full_text 非空
 
 失败处理：
-  - 不通过 → 返回 "revise"，回退到论文写作或审查修复
+  - 不通过 → 返回 "revise"，回退到报告写作或审查修复
   - 通过 → 返回 "deliver"，进入最终交付
   - 超过修订预算（2次） → 强制交付，记录风险
 """
@@ -62,19 +62,19 @@ def check_gf(state: dict) -> GateResult:
         if review_report.overall_status == "failed":
             failed_checks.append("review_status_failed")
 
-    # 检查 4: 论文草稿是否存在
+    # 检查 4: 报告草稿是否存在
     if paper_draft is None:
         failed_checks.append("paper_draft_missing")
     else:
-        # 检查 5: 论文完整文本非空
+        # 检查 5: 报告完整文本非空
         if not paper_draft.full_text.strip():
             failed_checks.append("paper_full_text_empty")
 
-        # 检查 6: 论文有章节
+        # 检查 6: 报告有章节
         if not paper_draft.sections:
             failed_checks.append("paper_sections_empty")
 
-        # 检查 7: 论文有摘要
+        # 检查 7: 报告有摘要
         if not paper_draft.abstract.strip():
             failed_checks.append("paper_abstract_empty")
 
@@ -116,7 +116,7 @@ def route_gf(state: dict) -> str:
 
     Returns:
         "deliver" → 进入最终交付
-        "revise"  → 回退到论文写作或审查修复
+        "revise"  → 回退到报告写作或审查修复
     """
     result = check_gf(state)
     log_step(

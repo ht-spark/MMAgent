@@ -70,7 +70,7 @@ class ReusableSummary(BaseModel):
 class QuestionResult(BaseModel):
     """小问结果包（architecture.md §3.3）。
     
-    每个小问完成后写入结果库，并视为后续问题和论文的唯一可信输入。
+    每个小问完成后写入结果库，并视为后续问题和报告的唯一可信输入。
     """
     question_id: str
     status: Literal["pending", "solving", "validating", "validated", "blocked"] = "pending"

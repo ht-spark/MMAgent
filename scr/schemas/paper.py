@@ -1,6 +1,6 @@
-"""论文与审查 Schema。
+"""报告与审查 Schema。
 
-对应 architecture.md §6.2 论文写作和 §6.3 交付质量门。
+对应 architecture.md §6.2 报告写作和 §6.3 交付质量门。
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class PaperSection(BaseModel):
-    """论文章节。"""
+    """报告章节。"""
     section_id: str  # 如 "1", "6.1", "abstract"
     title: str
     content: str = ""
@@ -21,7 +21,7 @@ class PaperSection(BaseModel):
 
 
 class PaperDraft(BaseModel):
-    """论文草稿。"""
+    """报告草稿。"""
     title: str = ""
     sections: list[PaperSection] = Field(default_factory=list)
     abstract: str = ""  # 最后生成

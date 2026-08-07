@@ -103,7 +103,7 @@ def _degrade_node_failure(
     question_id: str | None,
     error: Exception,
 ) -> dict:
-    """节点异常的系统性降级（通用，不针对具体题目/代码路径）。
+    """节点异常的系统性降级（通用，不针对具体任务/代码路径）。
 
     原则：任何节点抛错都不应终止整题运行。
       - ``solve_question`` 失败 → 构造 ``status="blocked"`` 的最小
@@ -208,7 +208,7 @@ def _intake_node(state: ProjectState) -> dict:
 @_logged_node("context")
 def _context_node(state: ProjectState) -> dict:
     """context 节点：全局上下文建立。"""
-    print("[context] 开始：题目理解 + 小问拆分...")
+    print("[context] 开始：任务理解 + 小问拆分...")
     result = run_context(state)
     pc = result.get("project_context")
     if pc:
@@ -270,8 +270,8 @@ def _archive_result_node(state: ProjectState) -> dict:
 
 @_logged_node("global_review")
 def _global_review_node(state: ProjectState) -> dict:
-    """global_review 节点：全题一致性审查（Phase 6 §6.1）。"""
-    print("[global_review] 开始：全题一致性审查...")
+    """global_review 节点：全任务一致性审查（Phase 6 §6.1）。"""
+    print("[global_review] 开始：全任务一致性审查...")
     result = review_paper_node(state)
     report = result.get("review_report")
     if report:
@@ -282,8 +282,8 @@ def _global_review_node(state: ProjectState) -> dict:
 
 @_logged_node("write_paper")
 def _write_paper_node(state: ProjectState) -> dict:
-    """write_paper 节点：论文写作（Phase 6 §6.2）。"""
-    print("[write_paper] 开始：论文写作...")
+    """write_paper 节点：报告写作（Phase 6 §6.2）。"""
+    print("[write_paper] 开始：报告写作...")
     result = write_paper_node(state)
     paper = result.get("paper_draft")
     if paper:
@@ -294,8 +294,8 @@ def _write_paper_node(state: ProjectState) -> dict:
 
 @_logged_node("review_paper")
 def _review_paper_node(state: ProjectState) -> dict:
-    """review_paper 节点：论文审查（Phase 6 §6.1）。"""
-    print("[review_paper] 开始：论文审查...")
+    """review_paper 节点：报告审查（Phase 6 §6.1）。"""
+    print("[review_paper] 开始：报告审查...")
     result = review_paper_node(state)
     report = result.get("review_report")
     if report:
@@ -308,7 +308,7 @@ def _review_paper_node(state: ProjectState) -> dict:
 def _deliver_node(state: ProjectState) -> dict:
     """deliver 节点：最终交付。
 
-    保存论文 Markdown、转换为 DOCX、保存审查报告。
+    保存报告 Markdown、转换为 DOCX、保存审查报告。
     """
     import os
     import json
@@ -317,20 +317,20 @@ def _deliver_node(state: ProjectState) -> dict:
     os.makedirs(output_dir, exist_ok=True)
     print(f"[deliver] 最终交付完成，产物目录: {output_dir}")
 
-    # 保存论文 Markdown
+    # 保存报告 Markdown
     paper = state.get("paper_draft")
     paper_path = ""
     if paper and paper.full_text:
         paper_path = os.path.join(output_dir, "paper.md")
         with open(paper_path, "w", encoding="utf-8") as f:
             f.write(paper.full_text)
-        print(f"[deliver] 论文 Markdown 已保存: {paper_path}")
+        print(f"[deliver] 报告 Markdown 已保存: {paper_path}")
 
         # 转换为 DOCX（优先 pandoc：LaTeX 公式转 Word 原生公式）
         try:
             from ..tools.md2docx_pandoc import convert_paper_md_to_docx
             docx_path = convert_paper_md_to_docx(paper_path, output_dir)
-            print(f"[deliver] 论文 DOCX 已保存: {docx_path}")
+            print(f"[deliver] 报告 DOCX 已保存: {docx_path}")
         except Exception as e:
             print(f"[deliver] DOCX 转换失败（不影响交付）: {e}")
 
@@ -471,7 +471,7 @@ def build_graph(checkpoint: bool = True):
     # archive_result → select_question (循环回去选下一问)
     builder.add_edge("archive_result", "select_question")
 
-    # Phase 6 边：全题审查 + 论文写作 + 交付
+    # Phase 6 边：全任务审查 + 报告写作 + 交付
     # global_review → write_paper → review_paper → gf_check
     builder.add_edge("global_review", "write_paper")
     builder.add_edge("write_paper", "review_paper")
@@ -513,10 +513,10 @@ def run_graph(
 
     完整执行 Phase 0 ~ Phase 6：
       输入摄入 → 全局上下文 → G0 质量门 → 逐问求解闭环（含验证）
-      → 全题审查 → 论文写作 → 论文审查 → 交付
+      → 全任务审查 → 报告写作 → 报告审查 → 交付
 
     通过 G0 后，按依赖顺序逐问求解，每问经过建模计算、题型验证和 GQ 门后归档。
-    所有小问处理完毕后，进行全题审查、论文写作和交付。
+    所有小问处理完毕后，进行全任务审查、报告写作和交付。
 
     预算：
       - budget_manager：默认 None 时自动创建 BudgetManager（运行级单例）。
@@ -525,7 +525,7 @@ def run_graph(
         在每问 `assemble_context` 之后、`solve_question` 之前触发。
 
     Args:
-        problem_text: 题目文本。
+        problem_text: 任务文本。
         data_paths: 数据文件路径（单个或列表，Excel 自动展开所有 sheet）。
         output_dir: 产物目录。
         llm: 可选 LLM 注入。

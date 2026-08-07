@@ -164,7 +164,7 @@ def _print_budget_report(budget_manager: BudgetManager) -> None:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """初始化项目：创建状态、产物目录、日志。"""
-    # 读取题目
+    # 读取任务
     p = Path(args.problem)
     problem_text = p.read_text(encoding="utf-8") if p.exists() and p.is_file() else args.problem
 
@@ -199,7 +199,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # 复制输入文件到产物目录
     if p.exists() and p.is_file():
         artifacts.copy_input(p)
-        logger.info(f"已复制题目文件: {p.name}")
+        logger.info(f"已复制任务文件: {p.name}")
 
     for dp in data_paths:
         dp_path = Path(dp)
@@ -223,7 +223,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"\n后续阶段将实现:")
     print(f"  Phase 1: 输入摄入与全局上下文")
     print(f"  Phase 2: 逐问求解闭环")
-    print(f"  Phase 6: 全题审查与论文写作")
+    print(f"  Phase 6: 全任务审查与报告写作")
 
     return 0
 
@@ -239,7 +239,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     from .graph import run_graph
 
-    # 读取题目
+    # 读取任务
     p = Path(args.problem)
     problem_text = p.read_text(encoding="utf-8") if p.exists() and p.is_file() else args.problem
 
@@ -312,10 +312,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             for entry in dl.entries[-5:]:  # 只显示最近 5 条
                 print(f"  [{entry.decision_type}] {entry.description}")
 
-        # 论文草稿摘要
+        # 报告草稿摘要
         paper = result.get("paper_draft")
         if paper:
-            print(f"\n--- 论文草稿 ---")
+            print(f"\n--- 报告草稿 ---")
             print(f"标题: {paper.title or '(未设置)'}")
             print(f"章节数: {len(paper.sections)}")
             print(f"全文长度: {len(paper.full_text)} 字符")
@@ -369,14 +369,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # init — 初始化项目骨架
     init_parser = subparsers.add_parser("init", help="初始化项目骨架")
-    init_parser.add_argument("--problem", required=True, help="题目文本或文件路径")
+    init_parser.add_argument("--problem", required=True, help="任务文本或文件路径")
     init_parser.add_argument("--data", nargs="+", help="数据文件路径（可多个）")
     init_parser.add_argument("--output", help="产物输出目录")
     init_parser.add_argument("--no-llm", action="store_true", help="不使用 LLM")
 
     # run — 运行工作流
     run_parser = subparsers.add_parser("run", help="运行工作流（当前为骨架）")
-    run_parser.add_argument("--problem", required=True, help="题目文本或文件路径")
+    run_parser.add_argument("--problem", required=True, help="任务文本或文件路径")
     run_parser.add_argument("--data", nargs="+", help="数据文件路径（可多个）")
     run_parser.add_argument("--output", help="产物输出目录")
     run_parser.add_argument("--no-llm", action="store_true", help="不使用 LLM")

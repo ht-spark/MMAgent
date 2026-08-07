@@ -24,7 +24,7 @@ export default function NewTask({ task, setTask, onHistory }: Props) {
   }
 
   // 提交 + 进度 两步合并为聊天式界面：
-  // - submit：聊天框 + 上传题目/数据，点开始建模
+  // - submit：聊天框 + 上传任务/数据，点开始建模
   // - progress：实时把建模进度以聊天消息输出（resumeRunId 接管进行中任务）
   return (
     <div className="page page-fill">

@@ -77,7 +77,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     } else {
       push(
         'assistant',
-        '你好，我是 MMAgent 建模助手。\n请在下方输入题目文本，或用按钮上传「题目文件」；可同时附加若干「数据附件」。准备好后点击「开始建模」，我会把建模进度实时推送到这里。',
+        '你好，我是 MMAgent 建模助手。\n请在下方输入任务文本，或用按钮上传「任务文件」；可同时附加若干「数据附件」。准备好后点击「开始建模」，我会把建模进度实时推送到这里。',
         'info',
       )
     }
@@ -131,7 +131,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
         setPhase('done')
         const status = data.status
         if (status === 'succeeded') {
-          push('assistant', '✅ 建模完成！论文与图表已生成，点击右上角「查看结果」查看完整产物。', 'success')
+          push('assistant', '✅ 建模完成！报告与图表已生成，点击右上角「查看结果」查看完整产物。', 'success')
         } else if (status === 'cancelled') {
           push('assistant', '⚠️ 任务已被中断。', 'warn')
         } else {
@@ -149,7 +149,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     if (busy || phase !== 'compose') return
     const text = problemText.trim()
     if (!text && !problemFile) {
-      push('assistant', '请先输入题目文本，或上传题目文件，再开始建模。', 'warn')
+      push('assistant', '请先输入任务文本，或上传任务文件，再开始建模。', 'warn')
       return
     }
     if (!activeCfg) {
@@ -160,8 +160,8 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
 
     // 用户消息：汇总提交内容
     const parts: string[] = []
-    if (problemFile) parts.push(`题目文件：${problemFile.name}`)
-    if (text) parts.push(`题目：${text.length > 120 ? text.slice(0, 120) + '…' : text}`)
+    if (problemFile) parts.push(`任务文件：${problemFile.name}`)
+    if (text) parts.push(`任务：${text.length > 120 ? text.slice(0, 120) + '…' : text}`)
     if (dataFiles.length) parts.push(`数据附件 ${dataFiles.length} 个：${dataFiles.map((f) => f.name).join('、')}`)
     push('user', parts.join('\n'))
 
@@ -178,7 +178,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       const r = await createRun(fd)
       setRunId(r.run_id)
       setPhase('running')
-      push('assistant', `已收到题目与数据，开始建模（任务 ${r.run_id}）。实时进度如下：`, 'info')
+      push('assistant', `已收到任务与数据，开始建模（任务 ${r.run_id}）。实时进度如下：`, 'info')
       attachStream(r.run_id)
     } catch (err) {
       push('assistant', `提交失败：${err instanceof Error ? err.message : String(err)}`, 'error')
@@ -260,7 +260,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
             {problemFile && (
               <span className="file-chip">
                 📄 {problemFile.name}
-                <button aria-label="移除题目文件" onClick={() => setProblemFile(null)} disabled={!composing}>
+                <button aria-label="移除任务文件" onClick={() => setProblemFile(null)} disabled={!composing}>
                   ×
                 </button>
               </span>
@@ -284,7 +284,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           className="chatapp-textarea"
           placeholder={
             composing
-              ? '在此输入题目文本，或用下方按钮上传题目文件 / 数据附件…'
+              ? '在此输入任务文本，或用下方按钮上传任务文件 / 数据附件…'
               : phase === 'running'
                 ? '建模进行中，完成后可查看结果'
                 : '本次建模已结束'
@@ -303,7 +303,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
 
         <div className="chatapp-toolbar">
           <label className={`attach-btn ${composing ? '' : 'disabled'}`}>
-            📄 题目文件
+            📄 任务文件
             <input
               type="file"
               accept=".md,.txt"

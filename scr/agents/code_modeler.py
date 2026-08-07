@@ -1,6 +1,6 @@
-"""题目驱动的 LLM 建模器：分段生成数学模型与求解代码。
+"""任务驱动的 LLM 建模器：分段生成数学模型与求解代码。
 
-对应"题目驱动建模 + 代码执行"计算层的建模端，分两段调用 LLM：
+对应"任务驱动建模 + 代码执行"计算层的建模端，分两段调用 LLM：
   1. ``generate_model``   — 只生成数学模型 JSON（快，独立超时）
   2. ``generate_code``    — 基于模型设计生成求解代码（慢，独立超时）
 
@@ -23,7 +23,7 @@ from typing import Any
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "code_based_modeling.md"
 _CODE_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "code_generation.md"
 
-#: 允许参与"题目驱动建模"的任务类型
+#: 允许参与"任务驱动建模"的任务类型
 CODE_BASED_TASKS = {
     "optimization",
     "stochastic_optimization",
