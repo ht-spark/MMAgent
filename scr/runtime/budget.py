@@ -1,7 +1,7 @@
 """预算与降级管理。
 
 对应 architecture.md §8.3：
-  预算包括联网检索次数、方法候选数量、代码修复次数、验证迭代次数、时间和令牌。
+  预算包括联网检索次数、方法候选数量、代码修复次数、验证迭代次数、时间和 token。
   预算紧张时的降级顺序为：减少低价值候选、优先简单基线、减少非关键图表、
   保留必要验证；不得跳过数据质量检查、数值复现和任务覆盖检查。
 
@@ -9,7 +9,7 @@
   - 强制（enforced）：SEARCH / CANDIDATE / CODE_REPAIR / VALIDATION_ITERATION。
     按小问独立计数，超额拒绝继续；每问开始时自动重置；用户可临时覆盖单问上限。
   - 监控（monitor）：TIME / TOKEN。
-    全程累计，不强制阻塞；用于事后报告"每问耗时/令牌"和"任务总耗时/总令牌"。
+    全程累计，不强制阻塞；用于事后报告"每问耗时/token"和"任务总耗时/总 token"。
 
 典型用法：
 
@@ -41,8 +41,10 @@ class BudgetType(str, Enum):
     CANDIDATE = "candidate"                 # 方法候选数量
     CODE_REPAIR = "code_repair"             # 代码修复次数
     VALIDATION_ITERATION = "validation"     # 验证迭代次数
+    INTAKE_RETRY = "intake_retry"           # G0 输入质量门重试次数
+    PAPER_REVISION = "paper_revision"       # GF 交付质量门修订次数
     TIME = "time"                           # 时间预算（秒）
-    TOKEN = "token"                         # 令牌预算
+    TOKEN = "token"                         # token 预算
 
 
 # 强制类型：按小问计数、超额拒绝、按问重置（用户可临时覆盖）
@@ -51,6 +53,8 @@ ENFORCED_BUDGETS: frozenset[BudgetType] = frozenset({
     BudgetType.CANDIDATE,
     BudgetType.CODE_REPAIR,
     BudgetType.VALIDATION_ITERATION,
+    BudgetType.INTAKE_RETRY,
+    BudgetType.PAPER_REVISION,
 })
 
 # 监控类型：全程累计、不阻塞
@@ -66,6 +70,8 @@ DEFAULT_BUDGETS: dict[BudgetType, int] = {
     BudgetType.CANDIDATE: 4,
     BudgetType.CODE_REPAIR: 3,
     BudgetType.VALIDATION_ITERATION: 2,
+    BudgetType.INTAKE_RETRY: 3,
+    BudgetType.PAPER_REVISION: 2,
     BudgetType.TIME: 3600,     # 1 小时（监控阈值，不强制）
     BudgetType.TOKEN: 100000,
 }
@@ -78,6 +84,8 @@ DEGRADATION_ORDER: list[BudgetType] = [
     BudgetType.TOKEN,
     BudgetType.CODE_REPAIR,
     BudgetType.VALIDATION_ITERATION,
+    BudgetType.INTAKE_RETRY,
+    BudgetType.PAPER_REVISION,
 ]
 
 
@@ -349,7 +357,7 @@ class BudgetManager:
                 )
             elif bt == BudgetType.TOKEN:
                 suggestions.append(
-                    f"令牌预算已用 {ratio:.0%}（监控项），建议减少非关键 LLM 调用"
+                    f"token 预算已用 {ratio:.0%}（监控项），建议减少非关键 LLM 调用"
                 )
             elif bt == BudgetType.CODE_REPAIR:
                 suggestions.append(

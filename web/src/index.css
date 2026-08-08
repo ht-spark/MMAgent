@@ -804,6 +804,10 @@ body {
     flex-shrink: 0;
 }
 
+.msg-avatar-user {
+    background: linear-gradient(135deg, #64748b, #334155);
+}
+
 .msg-content {
     max-width: 80%;
     background: var(--bg-card-solid);

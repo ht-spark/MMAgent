@@ -756,11 +756,12 @@ class PaperWriter:
         self._project_context = project_context
         self._data_profile = data_profile
 
-        # 生成所有图表 PNG
-        if validated:
+        # 生成所有图表 PNG（包括 blocked 结果，只要含有 computation 数据即可生成图表）
+        all_results_for_figures = {**validated, **blocked}
+        if all_results_for_figures:
             try:
                 self._all_figures = generate_all_figures(
-                    validated, data_profile, self._output_dir
+                    all_results_for_figures, data_profile, self._output_dir
                 )
                 total_figs = sum(len(v) for v in self._all_figures.values())
                 print(f"[writer] 已生成 {total_figs} 张图表")

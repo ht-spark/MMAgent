@@ -21,16 +21,13 @@ export default function Result({
   }, [runId])
 
   const artifacts: string[] = run?.artifacts || []
-
-  // 分组：报告 / 审查 / 图表 / 其它
-  const isFig = (p: string) => p.startsWith('figures/')
-  const paperDocx = artifacts.find((p) => p === 'paper.docx')
-  const reviewJson = artifacts.find((p) => p === 'review_report.json')
-  const otherFiles = artifacts.filter(
-    (p) => !isFig(p) && p !== 'paper.md' && p !== 'paper.docx' && p !== 'review_report.json',
-  )
-
   const dl = (p: string) => `/api/runs/${runId}/files/${encodeURIComponent(p)}`
+
+  // 仅展示：paper.md / paper.docx / 图表 / 解题代码
+  const paperDocx = artifacts.find((p) => p === 'paper.docx')
+  const codeFiles = artifacts
+    .filter((p) => /^questions\/[^/]+\/solution\.py$/.test(p))
+    .map((p) => ({ path: p, name: `解题代码（${p.split('/')[1]}）.py` }))
 
   return (
     <div className="form-card">
@@ -56,7 +53,7 @@ export default function Result({
       <pre className="paper-box">{paper}</pre>
 
       <div className="dl-section">
-        <div className="dl-group-title">下载全部产物</div>
+        <div className="dl-group-title">下载产物</div>
         <ul className="dl-list">
           <li>
             <a href={dl('paper.md')} target="_blank" rel="noreferrer">
@@ -70,17 +67,10 @@ export default function Result({
               </a>
             </li>
           )}
-          {reviewJson && (
-            <li>
-              <a href={dl(reviewJson)} target="_blank" rel="noreferrer">
-                review_report.json
-              </a>
-            </li>
-          )}
-          {otherFiles.map((p) => (
-            <li key={p}>
-              <a href={dl(p)} target="_blank" rel="noreferrer">
-                {p.split('/').pop()}
+          {codeFiles.map((cf) => (
+            <li key={cf.path}>
+              <a href={dl(cf.path)} target="_blank" rel="noreferrer">
+                {cf.name}
               </a>
             </li>
           ))}

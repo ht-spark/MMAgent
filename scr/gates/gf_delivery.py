@@ -21,16 +21,32 @@
 失败处理：
   - 不通过 → 返回 "revise"，回退到报告写作或审查修复
   - 通过 → 返回 "deliver"，进入最终交付
-  - 超过修订预算（2次） → 强制交付，记录风险
+  - 超过修订预算 → 强制交付，记录风险
+
+预算：通过 BudgetManager 的 PAPER_REVISION 类型管理修订上限，
+不内置额外常量。
 """
 from __future__ import annotations
 
+from ..runtime.budget import BudgetManager, BudgetType
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
 from ..schemas.paper import PaperDraft, ReviewReport
 
-# GF 修订预算
-GF_MAX_RETRIES = 2
+
+def _get_budget_info(state: dict) -> tuple[int, int, bool]:
+    """从 BudgetManager 获取 GF 预算信息。
+
+    Returns:
+        (budget_used, budget_remaining, can_retry)
+    """
+    bm: BudgetManager | None = state.get("budget_manager")
+    if bm is None:
+        return 0, 0, False
+    record = bm.get_record(BudgetType.PAPER_REVISION)
+    if record is None:
+        return 0, 0, False
+    return record.used, record.remaining, bm.check(BudgetType.PAPER_REVISION)
 
 
 def check_gf(state: dict) -> GateResult:
@@ -43,7 +59,7 @@ def check_gf(state: dict) -> GateResult:
         GateResult，passed=True 时可交付，否则需要修订。
     """
     failed_checks: list[str] = []
-    retry_count = state.get("_gf_retry_count", 0)
+    budget_used, budget_remaining, can_retry = _get_budget_info(state)
 
     review_report: ReviewReport | None = state.get("review_report")
     paper_draft: PaperDraft | None = state.get("paper_draft")
@@ -80,31 +96,31 @@ def check_gf(state: dict) -> GateResult:
 
     passed = len(failed_checks) == 0
 
-    # 超过修订预算时强制交付（产出风险说明）
-    if not passed and retry_count >= GF_MAX_RETRIES:
-        print(f"[GF] 修订预算耗尽 ({retry_count}/{GF_MAX_RETRIES})，强制交付并记录风险")
+    # 修订预算耗尽时强制交付（产出风险说明）
+    if not passed and not can_retry:
+        print(f"[GF] 修订预算耗尽 (used={budget_used})，强制交付并记录风险")
         print(f"[GF] 未解决问题: {failed_checks}")
         return GateResult(
             gate_id="GF",
             passed=True,
             failed_checks=failed_checks,
             action="pass",
-            budget_used=retry_count,
+            budget_used=budget_used,
             budget_remaining=0,
         )
 
     if passed:
         print("[GF] 交付质量门通过，可以交付")
     else:
-        print(f"[GF] 交付质量门未通过 (retry={retry_count}/{GF_MAX_RETRIES}): {failed_checks}")
+        print(f"[GF] 交付质量门未通过 (used={budget_used}, remaining={budget_remaining}): {failed_checks}")
 
     return GateResult(
         gate_id="GF",
         passed=passed,
         failed_checks=failed_checks,
         action="pass" if passed else "retry",
-        budget_used=retry_count,
-        budget_remaining=max(0, GF_MAX_RETRIES - retry_count),
+        budget_used=budget_used,
+        budget_remaining=budget_remaining,
     )
 
 
@@ -126,7 +142,7 @@ def route_gf(state: dict) -> str:
         detail=(
             f"action={result.action}, "
             f"failed_checks={result.failed_checks or '无'}, "
-            f"budget_used={result.budget_used}/{GF_MAX_RETRIES}"
+            f"budget_used={result.budget_used}, remaining={result.budget_remaining}"
         ),
     )
     if result.passed:

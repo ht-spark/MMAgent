@@ -115,10 +115,15 @@ def _get_conn() -> sqlite3.Connection:
                 problem_preview TEXT,
                 model_config TEXT,
                 progress_json TEXT,
-                artifacts_json TEXT
+                artifacts_json TEXT,
+                task_name TEXT
             )
             """
         )
+        # 兼容已有数据库：若 task_name 列不存在则添加
+        cols = {r[1] for r in _conn.execute("PRAGMA table_info(runs)").fetchall()}
+        if "task_name" not in cols:
+            _conn.execute("ALTER TABLE runs ADD COLUMN task_name TEXT")
         _conn.commit()
     return _conn
 
@@ -128,7 +133,7 @@ def _get_conn() -> sqlite3.Connection:
 # ---------------------------------------------------------------------------
 
 
-def create_run(run_id: str, problem_preview: str, model_config: dict) -> None:
+def create_run(run_id: str, problem_preview: str, model_config: dict, task_name: str | None = None) -> None:
     """登记一次新运行（状态 queued）。"""
     safe_cfg = {
         k: v for k, v in (model_config or {}).items() if k != "api_key"
@@ -137,8 +142,8 @@ def create_run(run_id: str, problem_preview: str, model_config: dict) -> None:
         _get_conn().execute(
             """
             INSERT INTO runs
-                (run_id, status, created_at, updated_at, problem_preview, model_config, progress_json, artifacts_json)
-            VALUES (?, 'queued', ?, ?, ?, ?, '[]', '[]')
+                (run_id, status, created_at, updated_at, problem_preview, model_config, progress_json, artifacts_json, task_name)
+            VALUES (?, 'queued', ?, ?, ?, ?, '[]', '[]', ?)
             """,
             (
                 run_id,
@@ -146,9 +151,21 @@ def create_run(run_id: str, problem_preview: str, model_config: dict) -> None:
                 _now(),
                 problem_preview,
                 json.dumps(safe_cfg, ensure_ascii=False),
+                task_name,
             ),
         )
         _get_conn().commit()
+
+
+def rename_run(run_id: str, task_name: str) -> bool:
+    """更新任务名称。返回是否成功（run_id 存在即成功）。"""
+    with _lock:
+        cur = _get_conn().execute(
+            "UPDATE runs SET task_name=?, updated_at=? WHERE run_id=?",
+            (task_name, _now(), run_id),
+        )
+        _get_conn().commit()
+        return cur.rowcount > 0
 
 
 def mark_running(run_id: str) -> None:
@@ -485,6 +502,22 @@ async def execute_run(
             cancel_check=_cancel_check,
             budget_config_callback=_budget_callback,
         )
+        # 任务完成后推送预算统计（time/token），前端在聊天中展示
+        bm = final_state.get("budget_manager")
+        if bm is not None:
+            try:
+                totals = bm.get_total_usage()
+                append_progress(
+                    run_id,
+                    {
+                        "type": "budget_summary",
+                        "time_total": totals.get(BudgetType.TIME, 0),
+                        "token_total": totals.get(BudgetType.TOKEN, 0),
+                        "timestamp": time.time(),
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass
         set_result(run_id, _summarize_final(final_state), _collect_artifacts(output_dir))
     except Exception as exc:  # noqa: BLE001
         # 记录完整堆栈，便于排查 NoneType.get 等深层 bug

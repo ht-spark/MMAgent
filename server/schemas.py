@@ -31,6 +31,7 @@ class RunSummary(BaseModel):
     review_status: str | None = None
     error: str | None = None
     problem_preview: str | None = None
+    task_name: str | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "RunSummary":
@@ -46,6 +47,7 @@ class RunSummary(BaseModel):
             review_status=row.get("review_status"),
             error=row.get("error"),
             problem_preview=row.get("problem_preview"),
+            task_name=row.get("task_name"),
         )
 
 

@@ -70,7 +70,51 @@ def sanitize_subproblems(
             )
         )
 
-    return cleaned or fallback_subproblems_from_analysis(analysis)
+    cleaned = cleaned or fallback_subproblems_from_analysis(analysis)
+
+    # 一致性校验：当显式小问只有 1 个但 LLM 生成了多个子问题时，合并为 1 个
+    explicit_count = len([q for q in analysis.explicit_questions if _compact(q)])
+    if explicit_count == 1 and len(cleaned) > 1:
+        print(
+            f"[decompose] 单问任务但 LLM 生成了 {len(cleaned)} 个子问题，"
+            f"自动合并为 1 个子问题",
+            flush=True,
+        )
+        cleaned = _consolidate_to_single(cleaned, analysis)
+
+    return cleaned
+
+
+def _consolidate_to_single(
+    subproblems: list[SubProblem], analysis: ProblemAnalysis
+) -> list[SubProblem]:
+    """Merge multiple subproblems into a single one when the task has only 1 question."""
+    # 使用原始显式小问文本作为主任务描述
+    question_text = _compact(analysis.explicit_questions[0]) if analysis.explicit_questions else ""
+
+    # 合并所有子问题的输入和预期输出
+    all_inputs: list[str] = []
+    all_outputs: list[str] = []
+    task_parts: list[str] = []
+    for sp in subproblems:
+        if sp.task:
+            task_parts.append(sp.task)
+        all_inputs.extend(sp.input_requirements or [])
+        all_outputs.extend(sp.expected_outputs or [])
+
+    # 如果原始小问文本存在，优先使用它作为 task；否则拼接子问题 task
+    merged_task = question_text or "；".join(task_parts) if task_parts else "完成综合建模与求解"
+
+    return [
+        SubProblem(
+            id="q1",
+            task=merged_task,
+            input_requirements=_dedupe(all_inputs)[:6],
+            expected_outputs=_dedupe(all_outputs)[:6] or _infer_expected_outputs(merged_task, 1, analysis),
+            dependencies=[],
+            parallelizable=False,
+        )
+    ]
 
 
 def fallback_subproblems_from_analysis(analysis: ProblemAnalysis) -> list[SubProblem]:

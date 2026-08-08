@@ -16,26 +16,37 @@
   - 假设或模型不适配 → 回到方法决策（Phase 3+ 实现）
   - 多次失败 → 标记为 blocked，说明原因
 
-预算（architecture.md §5.6）：
-  - 方法重选不超过 2 次
-  - 代码修复不超过 3 次
-  - 验证迭代不超过 2 次
-  - 预算耗尽不是"伪造通过"，而是产出风险说明
+预算：通过 BudgetManager 的 VALIDATION_ITERATION 类型管理重试上限，
+不内置额外常量。预算耗尽不是"伪造通过"，而是产出风险说明。
 
 Phase 5 集成：启用实质检查（computation、validation）。
 """
 from __future__ import annotations
 
+from ..runtime.budget import BudgetManager, BudgetType
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
 from ..schemas.question import QuestionResult
 
 
-# 重试预算
-GQ_MAX_RETRIES = 2  # GQ 验证迭代最多 2 次
+def _get_budget_info(state: dict, question_id: str = "") -> tuple[int, int, bool]:
+    """从 BudgetManager 获取 GQ 预算信息。
 
-# Phase 5：启用实质检查
-PHASE2_LENIENT = False
+    Returns:
+        (budget_used, budget_remaining, can_retry)
+    """
+    bm: BudgetManager | None = state.get("budget_manager")
+    if bm is None:
+        return 0, 0, False
+    record = bm.get_record(BudgetType.VALIDATION_ITERATION)
+    if record is None:
+        return 0, 0, False
+    qid = question_id or None
+    return (
+        record.used,
+        bm.remaining(BudgetType.VALIDATION_ITERATION, question_id=qid),
+        bm.check(BudgetType.VALIDATION_ITERATION, question_id=qid),
+    )
 
 
 def check_gq(state: dict) -> GateResult:
@@ -60,13 +71,14 @@ def check_gq(state: dict) -> GateResult:
     # 终态短路：结果已被标记 blocked（如节点异常降级），直接保持 blocked，
     # 不重算其他字段（避免 solve 失败降级后又被 GQ 拉回 retry 浪费求解）
     if current_result.status == "blocked":
+        b_used, b_rem, _ = _get_budget_info(state, current_qid)
         return GateResult(
             gate_id="GQ",
             passed=False,
             failed_checks=["result_blocked"],
             action="blocked",
-            budget_used=0,
-            budget_remaining=GQ_MAX_RETRIES,
+            budget_used=b_used,
+            budget_remaining=b_rem,
         )
 
     # 检查 2: question_id 匹配
@@ -202,8 +214,8 @@ def run_gq_node(state: dict) -> dict:
             force_blocked = True
             print(f"[GQ] 预算：VALIDATION_ITERATION 已耗尽，强制 blocked")
     else:
-        # 无预算：沿用 GQ_MAX_RETRIES 常量（默认回退路径）
-        force_blocked = not (result.action == "retry" and retry_count < GQ_MAX_RETRIES)
+        # 无 BudgetManager 时直接阻塞
+        force_blocked = True
 
     if not force_blocked:
         # 可重试
@@ -229,8 +241,9 @@ def run_gq_node(state: dict) -> dict:
     # 超过重试预算或不可重试 → 标记为 blocked
     if current_result:
         current_result.status = "blocked"
+        _, b_rem, _ = _get_budget_info(state, current_qid)
         current_result.error_message = (
-            f"GQ 验证失败，已用尽验证迭代预算 ({retry_count}/{GQ_MAX_RETRIES})。"
+            f"GQ 验证失败，验证迭代预算已耗尽 (剩余 {b_rem})。"
             f"失败项: {', '.join(result.failed_checks)}"
         )
     print(f"[GQ] 小问 {current_qid} 被阻塞 ✗: {result.failed_checks}")
@@ -272,8 +285,9 @@ def route_after_gq(state: dict) -> str:
 
 
 def _build_gate_result(failed_checks: list[str], state: dict) -> GateResult:
-    """根据失败项和重试预算构建 GateResult。"""
-    retry_count = state.get("_solve_retry_count", 0)
+    """根据失败项和 BudgetManager 预算构建 GateResult。"""
+    question_id = state.get("current_question_id", "")
+    budget_used, budget_remaining, can_retry = _get_budget_info(state, question_id)
 
     if not failed_checks:
         return GateResult(
@@ -281,28 +295,28 @@ def _build_gate_result(failed_checks: list[str], state: dict) -> GateResult:
             passed=True,
             failed_checks=[],
             action="pass",
-            budget_used=retry_count,
-            budget_remaining=max(0, GQ_MAX_RETRIES - retry_count),
+            budget_used=budget_used,
+            budget_remaining=budget_remaining,
         )
 
     # 有失败项，判断是否可以重试
-    if retry_count < GQ_MAX_RETRIES:
+    if can_retry:
         return GateResult(
             gate_id="GQ",
             passed=False,
             failed_checks=failed_checks,
             action="retry",
-            budget_used=retry_count,
-            budget_remaining=max(0, GQ_MAX_RETRIES - retry_count),
+            budget_used=budget_used,
+            budget_remaining=budget_remaining,
         )
 
-    # 超过重试次数
+    # 预算耗尽
     return GateResult(
         gate_id="GQ",
         passed=False,
         failed_checks=failed_checks,
         action="blocked",
-        budget_used=retry_count,
+        budget_used=budget_used,
         budget_remaining=0,
     )
 

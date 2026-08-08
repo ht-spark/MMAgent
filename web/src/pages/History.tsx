@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cancelRun, deleteRun, listRuns } from '../api'
 
 export default function History({ onOpen }: { onOpen: (runId: string, step: 'progress' | 'result') => void }) {
@@ -15,6 +15,23 @@ export default function History({ onOpen }: { onOpen: (runId: string, step: 'pro
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }
+
+  // 进入页面自动加载（无需手动点刷新）
+  useEffect(() => {
+    load()
+  }, [])
+
+  // 有进行中任务时自动轮询刷新（每 4 秒）
+  const hasActive = runs.some((r) => r.status === 'queued' || r.status === 'running')
+  useEffect(() => {
+    if (!hasActive) return
+    const timer = setInterval(() => {
+      listRuns()
+        .then(setRuns)
+        .catch(() => {})
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [hasActive])
 
   function askDelete(r: any) {
     setPendingDel(r.run_id)
@@ -56,7 +73,10 @@ export default function History({ onOpen }: { onOpen: (runId: string, step: 'pro
       <div className="page-head">
         <div>
           <h1 className="page-title">历史任务</h1>
-          <div className="page-sub">查看过往所有建模任务与产物</div>
+          <div className="page-sub">
+            查看过往所有建模任务与产物
+            {hasActive && <span className="auto-refresh-hint">· 进行中任务自动刷新</span>}
+          </div>
         </div>
         <button className="back-link" onClick={load}>
           刷新
@@ -85,10 +105,13 @@ export default function History({ onOpen }: { onOpen: (runId: string, step: 'pro
                 </div>
               </div>
               <div className="run-main">
-                <div className="run-title">{r.paper_title || '未命名任务'}</div>
+                <div className="run-title">{r.task_name || r.paper_title || '未命名任务'}</div>
                 <div className="run-preview">{r.problem_preview || '（无题面预览）'}</div>
               </div>
-              <span className={`status-tag ${r.status}`}>{r.status}</span>
+              <span className={`status-tag ${r.status}`}>
+                {isActive(r.status) && <span className="status-pulse" />}
+                {r.status === 'queued' ? '排队中' : r.status === 'running' ? '建模中' : r.status === 'succeeded' ? '已完成' : r.status === 'failed' ? '失败' : r.status === 'cancelled' ? '已中断' : r.status}
+              </span>
             </div>
             {isActive(r.status) ? (
               <button

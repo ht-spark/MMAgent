@@ -776,6 +776,25 @@ class ModelBuilder:
             computation["error"] = str(e)[:200]
             computation["results"] = {"error": str(e)[:200]}
 
+        # 预设方法路径：生成并保存 solution.py（与 LLM 代码路径产物结构一致）
+        if computation.get("status") == "success" and output_dir and context.question_id:
+            try:
+                code = self._generate_preset_solution_code(
+                    method_name, method_key, data_prep, computation, formulation
+                )
+                data_csv_path = self._write_data_csv(data_prep)
+                self._persist_question_artifacts(
+                    question_id=context.question_id,
+                    output_dir=output_dir,
+                    code=code,
+                    data_csv_path=data_csv_path,
+                    results=computation.get("results", {}),
+                    method_name=method_name,
+                    model_name=formulation.get("method", method_name),
+                )
+            except Exception as e:
+                print(f"[builder] 预设方法代码保存失败（不影响计算）: {e}")
+
         return computation
 
     # ------------------------------------------------------------------
@@ -1038,6 +1057,172 @@ class ModelBuilder:
 
         print(f"[builder] 解题代码/数据/结果已保存: {q_dir}")
         return q_dir
+
+    def _generate_preset_solution_code(
+        self,
+        method_name: str,
+        method_key: str,
+        data_prep: dict,
+        computation: dict,
+        formulation: dict,
+    ) -> str:
+        """为预设方法路径生成 solution.py 脚本。
+
+        根据 method_key 选择对应的计算逻辑模板，生成可独立运行的 Python 脚本。
+        脚本从同目录 data.csv 读取数据，执行计算并输出结果。
+        """
+        feature_names = data_prep.get("feature_names") or []
+        n_samples = data_prep.get("n_samples", 0)
+
+        # 选择计算逻辑模板
+        if method_key == "entropy_weight" or "熵权法" in method_name:
+            compute_block = '''# 熵权法计算权重
+n, m = data.shape
+# 归一化（正向指标）
+data_norm = np.zeros_like(data, dtype=float)
+for j in range(m):
+    col = data[:, j]
+    col_min, col_max = col.min(), col.max()
+    if col_max - col_min > 1e-12:
+        data_norm[:, j] = (col - col_min) / (col_max - col_min)
+    else:
+        data_norm[:, j] = 0.0
+
+# 计算信息熵
+P = data_norm / (data_norm.sum(axis=0, keepdims=True) + 1e-12)
+e = -np.sum(P * np.log(P + 1e-12), axis=0) / np.log(n)
+d = 1 - e
+weights = d / d.sum()
+
+# 计算综合得分
+scores = data_norm @ weights
+print("各指标权重:", weights)
+print("综合得分:", scores)'''
+
+        elif method_key == "topsis" or "TOPSIS" in method_name:
+            compute_block = '''# TOPSIS 综合评价
+n, m = data.shape
+# 标准化
+norm = np.sqrt((data ** 2).sum(axis=0))
+data_norm = data / (norm + 1e-12)
+
+# 等权重
+weights = np.ones(m) / m
+data_weighted = data_norm * weights
+
+# 正负理想解
+ideal_best = data_weighted.max(axis=0)
+ideal_worst = data_weighted.min(axis=0)
+
+# 计算距离
+d_best = np.sqrt(((data_weighted - ideal_best) ** 2).sum(axis=1))
+d_worst = np.sqrt(((data_weighted - ideal_worst) ** 2).sum(axis=1))
+
+# 相对接近度
+closeness = d_worst / (d_best + d_worst + 1e-12)
+ranking = np.argsort(-closeness) + 1
+print("相对接近度:", closeness)
+print("排名:", ranking)'''
+
+        elif method_key == "linear_regression" or "线性回归" in method_name:
+            compute_block = '''# 线性回归
+n, m = data.shape
+X = data[:, :-1]
+y = data[:, -1]
+# 最小二乘法
+X_ext = np.column_stack([X, np.ones(n)])
+beta = np.linalg.lstsq(X_ext, y, rcond=None)[0]
+y_pred = X_ext @ beta
+r2 = 1 - ((y - y_pred) ** 2).sum() / ((y - y.mean()) ** 2 + 1e-12)
+print("回归系数:", beta)
+print("R²:", r2)'''
+
+        elif method_key == "gm11" or "灰色" in method_name or "GM" in method_name:
+            compute_block = '''# GM(1,1) 灰色预测
+x0 = data[:, 0] if data.ndim > 1 else data
+n = len(x0)
+# 累加生成
+x1 = np.cumsum(x0)
+z1 = -0.5 * (x1[:-1] + x1[1:])
+B = np.column_stack([z1, np.ones(n - 1)])
+Y = x0[1:]
+a, b = np.linalg.lstsq(B, Y, rcond=None)[0]
+# 预测
+k = np.arange(n + 5)
+x1_pred = (x0[0] - b / a) * np.exp(-a * k) + b / a
+x0_pred = np.diff(np.concatenate([[x0[0]], x1_pred]))
+print("发展系数 a:", a)
+print("灰作用量 b:", b)
+print("预测值:", x0_pred)'''
+
+        elif method_key in ("linear_programming", "integer_programming") or any(
+            kw in method_name for kw in ["线性规划", "整数规划", "数学规划"]
+        ):
+            compute_block = '''# 线性规划求解
+from scipy.optimize import linprog
+n, m = data.shape
+# 目标函数系数（示例：最大化第一列，取负转化为最小化）
+c = -data[0, :m] if n > 0 else np.zeros(m)
+# 约束：A_ub @ x <= b_ub
+A_ub = data[1:, :m] if n > 1 else np.zeros((1, m))
+b_ub = data[1:, m] if data.shape[1] > m else np.zeros(n - 1) if n > 1 else np.zeros(1)
+bounds = [(0, None)] * m
+result = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+if result.success:
+    print("最优解:", result.x)
+    print("最优值:", -result.fun)
+else:
+    print("求解失败:", result.message)'''
+
+        else:
+            # 通用模板
+            compute_block = '''# 通用数据分析
+n, m = data.shape
+print(f"数据规模: {n} 行 × {m} 列")
+print("描述统计:")
+print(f"  均值: {data.mean(axis=0)}")
+print(f"  标准差: {data.std(axis=0)}")
+print(f"  最小值: {data.min(axis=0)}")
+print(f"  最大值: {data.max(axis=0)}")'''
+
+        feature_str = ", ".join(repr(f) for f in feature_names) if feature_names else ""
+        method_str = method_name or method_key or "预设方法"
+
+        code = f'''"""
+{method_str} - 求解代码
+
+由 MMAgent 预设方法路径自动生成。
+数据来源: 同目录 data.csv
+计算结果: 见同目录 result.json
+"""
+import numpy as np
+import pandas as pd
+import json
+
+# 读取数据
+df = pd.read_csv("data.csv")
+feature_names = [{feature_str}]
+data = df.values.astype(float)
+
+print("=" * 60)
+print("方法: {method_str}")
+print(f"样本量: {{len(data)}}")
+print(f"特征: {{list(df.columns)}}")
+print("=" * 60)
+
+{compute_block}
+
+# 保存结果
+results = {{
+    "method": "{method_str}",
+    "n_samples": int(len(data)),
+    "feature_names": list(df.columns),
+}}
+with open("result.json", "w", encoding="utf-8") as f:
+    json.dump(results, f, ensure_ascii=False, indent=2, default=str)
+print("\\n结果已保存到 result.json")
+'''
+        return code
 
     def _write_data_csv(self, data_prep: dict) -> str | None:
         """将数据矩阵（含表头）写入临时 CSV，供生成代码读取。"""

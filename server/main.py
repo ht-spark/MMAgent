@@ -25,6 +25,7 @@ from server.runs import (
     get_pending_budget,
     get_run,
     list_runs,
+    rename_run,
     submit_budget_decision,
 )
 from server.schemas import (
@@ -67,6 +68,7 @@ async def create_run_endpoint(
     problem_file: UploadFile | None = File(None, description="任务文件(.md/.txt)"),
     data_files: list[UploadFile] | None = File(None, description="数据附件(可多个)"),
     llm_config: str = Form("{}", description="JSON: provider/api_key/base_url/model"),
+    task_name: str | None = Form(None, description="任务名称（用户自定义）"),
 ):
     """提交一次解题任务（后台异步执行）。"""
     try:
@@ -114,7 +116,7 @@ async def create_run_endpoint(
                 data_paths.append(str(dest))
 
         preview = problem.strip()[:200].replace("\n", " ")
-        create_run(run_id, preview, cfg)
+        create_run(run_id, preview, cfg, task_name=task_name)
 
         task = asyncio.create_task(
             execute_run(
@@ -179,6 +181,14 @@ async def delete_run_endpoint(run_id: str):
     return {"ok": True, "run_id": run_id}
 
 
+@app.patch("/api/runs/{run_id}/name")
+async def rename_run_endpoint(run_id: str, name: str = Form(...)):
+    """更新任务名称。"""
+    if not rename_run(run_id, name):
+        raise HTTPException(status_code=404, detail="run 不存在")
+    return {"ok": True, "run_id": run_id, "task_name": name}
+
+
 @app.post("/api/runs/{run_id}/cancel")
 async def cancel_run_endpoint(run_id: str):
     """中断一个正在执行（queued/running）的任务。
@@ -198,18 +208,20 @@ _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
 
 
 @app.get("/api/runs/{run_id}/progress/stream")
-async def stream_run_progress(run_id: str):
+async def stream_run_progress(run_id: str, after: int = 0):
     """以 SSE 实时推送某个 run 的进度事件（节点级）。
 
     前端用原生 EventSource 订阅（GET，无 body）。服务端周期性读取注册表，
     把「新增」的 progress 事件逐条推给客户端；run 进入终态后发送 done 并关闭连接。
     相比前端 2s 轮询，这里延迟更低、体验更接近"实时输出建模进度"。
+
+    after 参数：跳过前 N 条已加载的事件，用于断线重连/恢复模式时避免重复。
     """
     if get_run(run_id) is None:
         raise HTTPException(status_code=404, detail="run 不存在")
 
     async def gen():
-        sent = 0
+        sent = max(0, after)
         # 连接建立即回执，便于前端确认订阅成功
         yield f'data: {json.dumps({"type": "subscribed", "run_id": run_id}, ensure_ascii=False)}\n\n'
         while True:

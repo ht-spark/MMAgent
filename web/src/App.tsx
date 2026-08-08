@@ -13,6 +13,7 @@ const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ
 
 export default function App() {
   const [section, setSection] = useState<Section>('home')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [task, setTask] = useState<{ step: TaskStep; runId: string | null }>({
     step: 'submit',
     runId: null,
@@ -43,6 +44,8 @@ export default function App() {
       {section !== 'home' && (
         <Sidebar
           section={section}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
           onHome={() => setSection('home')}
           onNew={startNew}
           onHistory={() => setSection('history')}
@@ -51,7 +54,15 @@ export default function App() {
         />
       )}
 
-      <main className={`content ${section === 'home' ? 'content--full' : ''}`}>
+      <main
+        className={`content ${
+          section === 'home'
+            ? 'content--full'
+            : sidebarCollapsed
+              ? 'content--collapsed'
+              : ''
+        }`}
+      >
         {section === 'home' && <Home onStart={startNew} onDocs={() => setSection('docs')} />}
         {section === 'new' && (
           <NewTask task={task} setTask={setTask} onHistory={() => setSection('history')} />

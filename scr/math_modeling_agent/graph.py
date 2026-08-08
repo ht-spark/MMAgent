@@ -24,7 +24,7 @@ from ..agents.reviewer import review_paper_node
 from ..gates.gf_delivery import route_gf
 from ..gates.g0_intake import route_g0
 from ..gates.gq_question import route_after_gq, run_gq_node
-from ..runtime.budget import BudgetManager
+from ..runtime.budget import BudgetManager, BudgetType
 from ..workflow.intake import run_intake
 from ..workflow.project_context import run_context
 from ..workflow.question_loop import (
@@ -44,6 +44,9 @@ from .state import ProjectState, create_initial_state
 # 各运行的日志器（按 run_id 隔离，避免并发运行互相踩）
 _run_loggers: dict[str, logging.Logger] = {}
 
+# 各运行的进度回调（按 run_id 隔离，供 _logged_node 在节点开始时推送事件）
+_run_progress_callbacks: dict[str, Callable[[dict], None]] = {}
+
 
 def _get_logger(run_id: str | None = None) -> logging.Logger:
     """获取运行日志器。优先返回指定 run_id 的日志器，否则返回默认。"""
@@ -62,11 +65,28 @@ def _logged_node(name: str):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(state: ProjectState) -> dict:
-            logger = _get_logger(state.get("run_id"))
+            run_id = state.get("run_id")
+            logger = _get_logger(run_id)
             question_id = state.get("current_question_id")
             t0 = time.monotonic()
             log_step(logger, f"node.{name}", "started", question_id=question_id)
             print(f"▶ [{name}] 开始", flush=True)
+
+            # 节点开始时推送进度事件，让前端立即显示"XXX进行中"动画
+            cb = _run_progress_callbacks.get(run_id)
+            if cb is not None:
+                try:
+                    cb({
+                        "type": "node_start",
+                        "node": name,
+                        "run_id": run_id,
+                        "workflow_status": state.get("workflow_status"),
+                        "current_question_id": question_id,
+                        "timestamp": time.time(),
+                    })
+                except Exception:
+                    pass
+
             try:
                 result = fn(state)
                 duration = time.monotonic() - t0
@@ -103,7 +123,8 @@ def _degrade_node_failure(
     question_id: str | None,
     error: Exception,
 ) -> dict:
-    """节点异常的系统性降级（通用，不针对具体任务/代码路径）。
+    """
+    节点异常的系统性降级。
 
     原则：任何节点抛错都不应终止整题运行。
       - ``solve_question`` 失败 → 构造 ``status="blocked"`` 的最小
@@ -221,7 +242,12 @@ def _context_node(state: ProjectState) -> dict:
 
 @_logged_node("g0_retry")
 def _g0_retry_node(state: ProjectState) -> dict:
-    """G0 重试时递增计数器。"""
+    """G0 重试时消费 INTAKE_RETRY 预算。"""
+    bm: BudgetManager | None = state.get("budget_manager")
+    if bm is not None:
+        ok = bm.consume(BudgetType.INTAKE_RETRY, amount=1)
+        rem = bm.remaining(BudgetType.INTAKE_RETRY)
+        print(f"[G0] 预算：INTAKE_RETRY 消耗 1 次，剩余 {rem}")
     retry_count = state.get("_g0_retry_count", 0)
     return {"_g0_retry_count": retry_count + 1}
 
@@ -366,7 +392,13 @@ def _deliver_node(state: ProjectState) -> dict:
 
 @_logged_node("gf_revise")
 def _gf_revise_node(state: ProjectState) -> dict:
-    """GF 修订时递增计数器并传递审查反馈。"""
+    """GF 修订时消费 PAPER_REVISION 预算并传递审查反馈。"""
+    bm: BudgetManager | None = state.get("budget_manager")
+    if bm is not None:
+        ok = bm.consume(BudgetType.PAPER_REVISION, amount=1)
+        rem = bm.remaining(BudgetType.PAPER_REVISION)
+        print(f"[GF] 预算：PAPER_REVISION 消耗 1 次，剩余 {rem}")
+
     retry_count = state.get("_gf_retry_count", 0)
     review_report = state.get("review_report")
     print(f"[GF] 开始第 {retry_count + 1} 次修订")
@@ -391,19 +423,8 @@ def _gf_revise_node(state: ProjectState) -> dict:
 
 
 def build_graph(checkpoint: bool = True):
-    """构建 LangGraph 主图。
-
-    完整实现 Phase 0 ~ Phase 6：
-      START → intake → context → G0
-        G0 pass → select_question → has_next: assemble → solve → validate → GQ
-                                                                   pass/blocked: archive → select_question
-                                                                   retry: solve (重试)
-                                done: global_review → write_paper → review_paper → GF
-                                                                   deliver: END
-                                                                   revise: write_paper
-        G0 retry → g0_retry → intake
-        G0 human → END
-
+    """
+    构建 LangGraph 主图。
     Args:
         checkpoint: 是否启用 MemorySaver checkpoint（可 resume）。
 
@@ -511,7 +532,7 @@ def run_graph(
 ) -> dict:
     """用 LangGraph 运行完整工作流。
 
-    完整执行 Phase 0 ~ Phase 6：
+    完整执行：
       输入摄入 → 全局上下文 → G0 质量门 → 逐问求解闭环（含验证）
       → 全任务审查 → 报告写作 → 报告审查 → 交付
 
@@ -559,6 +580,10 @@ def run_graph(
         console_level=logging.WARNING,
     )
     _run_loggers[run_id] = logger
+
+    # 注册进度回调，供 _logged_node 在节点开始时推送 node_start 事件
+    if progress_callback is not None:
+        _run_progress_callbacks[run_id] = progress_callback
 
     print(f"▶ Run ID: {run_id}")
     print(f"▶ 输出目录: {output_dir}")
@@ -619,4 +644,8 @@ def run_graph(
             )
         except Exception:
             pass
+
+    # 清理进度回调注册
+    _run_progress_callbacks.pop(run_id, None)
+
     return dict(final_state)
