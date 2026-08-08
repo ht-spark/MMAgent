@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -24,7 +23,6 @@ class BaseAgent:
     Args:
         llm: 可选的 LLM 客户端。需实现 ``with_structured_output(schema)`` 和
              ``invoke(prompt)`` 接口（如 langchain 的 ChatOpenAI）。
-             测试时传入 FakeLLM；生产时不传则从环境变量自动创建。
         prompt_dir: prompt 模板目录，默认为 ``scr/prompts/``。
     """
 
@@ -51,34 +49,17 @@ class BaseAgent:
         return self._llm
 
     def _create_default_llm(self) -> Any:
-        """从环境变量创建默认 LLM 客户端（langchain ChatOpenAI）。
+        """通过共享工厂创建默认的 OpenAI 兼容 LLM 客户端。"""
+        from ..math_modeling_agent.llm import create_llm
 
-        支持两种配置：
-          1. OpenAI: OPENAI_API_KEY + MODEL_NAME + OPENAI_BASE_URL
-          2. DeepSeek（兼容 OpenAI 接口）: DEEPSEEK_API_KEY + DEEPSEEK_MODEL + DEEPSEEK_BASE_URL
-        """
-        # 优先尝试 OpenAI
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
-            model_name = os.getenv("MODEL_NAME", "gpt-4o")
-            base_url = os.getenv("OPENAI_BASE_URL")
-        else:
-            # 尝试 DeepSeek
-            api_key = os.getenv("DEEPSEEK_API_KEY")
-            if not api_key:
-                raise RuntimeError(
-                    "No API key found. Set OPENAI_API_KEY or DEEPSEEK_API_KEY "
-                    "in .env, or pass an llm instance to the agent constructor."
-                )
-            model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-            base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-
-        from langchain_openai import ChatOpenAI
-
-        kwargs: dict[str, Any] = {"model": model_name, "api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
-        return ChatOpenAI(**kwargs)
+        llm = create_llm()
+        if llm is None:
+            raise RuntimeError(
+                "No API key found or LLM configuration is incomplete. Set LLM_API_KEY, LLM_BASE_URL, and "
+                "LLM_MODEL (or legacy OPENAI_/DEEPSEEK_ variables), or pass an llm "
+                "instance to the agent constructor."
+            )
+        return llm
 
     # ------------------------------------------------------------------
     # Prompt 管理

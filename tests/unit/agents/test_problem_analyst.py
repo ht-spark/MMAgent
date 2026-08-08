@@ -381,6 +381,15 @@ class TestPromptTemplates:
 
 
 class TestErrorHandling:
+    def test_base_agent_uses_shared_llm_factory(self, monkeypatch):
+        """默认 Agent 应与网页任务使用同一 LLM 客户端工厂。"""
+        from scr.math_modeling_agent import llm as llm_factory
+
+        expected_llm = object()
+        monkeypatch.setattr(llm_factory, "create_llm", lambda: expected_llm)
+
+        assert BaseAgent().llm is expected_llm
+
     def test_no_llm_no_api_key(self, monkeypatch):
         """没有 LLM 且没有 API Key → RuntimeError。"""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)

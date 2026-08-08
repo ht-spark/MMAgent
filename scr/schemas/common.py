@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class GateResult(BaseModel):
-    """Gate 判定结果（对应 architecture.md §5.1）。
+    """Gate 判定结果。
 
     Attributes:
         gate_id: Gate 标识符（如 "G1"、"G2"）。

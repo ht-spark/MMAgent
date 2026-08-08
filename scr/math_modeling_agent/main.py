@@ -27,34 +27,10 @@ from ..tools.file_tools import read_file
 
 
 def _create_llm_from_env() -> Any | None:
-    """从环境变量创建 LLM。
+    """通过共享工厂读取当前环境的 OpenAI 兼容 LLM 配置。"""
+    from .llm import create_llm
 
-    支持两种配置：
-      1. OpenAI: OPENAI_API_KEY + MODEL_NAME + OPENAI_BASE_URL
-      2. DeepSeek（兼容 OpenAI 接口）: DEEPSEEK_API_KEY + DEEPSEEK_MODEL + DEEPSEEK_BASE_URL
-    """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        model_name = os.getenv("MODEL_NAME", "gpt-4o")
-        base_url = os.getenv("OPENAI_BASE_URL")
-    else:
-        api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            return None
-        model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-        print(f"[main] 使用 DeepSeek API（model={model_name}）")
-
-    try:
-        from langchain_openai import ChatOpenAI
-
-        kwargs: dict[str, Any] = {"model": model_name, "api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
-        return ChatOpenAI(**kwargs)
-    except ImportError:
-        print("[main] 警告：langchain-openai 未安装，LLM 功能不可用")
-        return None
+    return create_llm()
 
 
 # ---------------------------------------------------------------------------

@@ -2,13 +2,13 @@
 LLM 客户端工厂。
 
 支持按请求显式传参（provider / api_key / base_url / model），
-也兼容原有环境变量配置（OPENAI_* / DEEPSEEK_*）。
+也兼容通用环境变量（LLM_*）和原有配置（OPENAI_* / DEEPSEEK_*）。
 
 provider 取值：
   - "openai"    : OpenAI 兼容（含自定义 base_url）
   - "deepseek"  : DeepSeek（兼容 OpenAI 接口）
   - "custom"    : 完全自定义，必须同时提供 api_key / base_url / model
-  - None        : 按环境变量自动选择（优先 OPENAI，其次 DEEPSEEK）
+  - None        : 按环境变量自动选择（优先 LLM_*，其次 OPENAI、DEEPSEEK）
 """
 from __future__ import annotations
 
@@ -43,12 +43,22 @@ def create_llm(
     resolved_url = base_url
     resolved_model = model
 
+    # 通用 OpenAI 兼容配置，适用于任意服务商。
+    env_generic_provider = os.getenv("LLM_PROVIDER")
+    env_generic_key = os.getenv("LLM_API_KEY")
+    env_generic_url = os.getenv("LLM_BASE_URL")
+    env_generic_model = os.getenv("LLM_MODEL")
+
     # 自动探测 provider（仅在未显式指定时）
     env_openai = os.getenv("OPENAI_API_KEY")
     env_deepseek = os.getenv("DEEPSEEK_API_KEY")
 
     if resolved_provider is None:
-        if env_openai:
+        if env_generic_provider:
+            resolved_provider = env_generic_provider
+        elif env_generic_key:
+            resolved_provider = "custom"
+        elif env_openai:
             resolved_provider = "openai"
         elif env_deepseek:
             resolved_provider = "deepseek"
@@ -64,6 +74,9 @@ def create_llm(
         resolved_model = resolved_model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
         resolved_url = resolved_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
     elif resolved_provider == "custom":
+        resolved_key = resolved_key or env_generic_key
+        resolved_url = resolved_url or env_generic_url
+        resolved_model = resolved_model or env_generic_model
         if not (resolved_key and resolved_url and resolved_model):
             return None
     else:
