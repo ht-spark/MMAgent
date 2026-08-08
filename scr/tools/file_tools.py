@@ -1,14 +1,11 @@
-"""文件读取与数据画像工具。
+"""
+文件读取与数据画像工具。
 
 确定性工具，不依赖 LLM，可单测、可复现。
 
 功能：
   - 读取 CSV / Excel / MATLAB(.mat) / Markdown 文件
   - 对数据文件生成确定性画像（data_inventory）
-
-对应 plan.md:
-  - Phase 3.1: tools/file_tools.py — CSV/Excel/JSON/Markdown/MAT 读取
-  - Phase 3.2: tools/data_tools.py 的 data_inventory — 附件确定性画像
 
 画像包含：行列数、字段类型、缺失率、单位线索、时间维度。
 它是 L2 硬过滤的关键输入：
@@ -39,6 +36,7 @@ __all__ = [
     "read_excel_all_sheets",
     "read_mat",
     "read_mat_all_variables",
+    "read_json",
     "read_markdown",
     "read_file",
     "generate_data_inventory",
@@ -285,6 +283,22 @@ def read_mat_all_variables(
     return result
 
 
+def read_json(path: str | Path, **kwargs: Any) -> pd.DataFrame:
+    """读取 JSON 或 JSON Lines 文件为 DataFrame。
+
+    常规 JSON 读取失败时自动按 JSON Lines 重试，兼容常见的数据附件导出格式。
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"JSON file not found: {p}")
+    try:
+        return pd.read_json(p, **kwargs)
+    except ValueError:
+        if "lines" in kwargs:
+            raise
+        return pd.read_json(p, lines=True, **kwargs)
+
+
 def _read_mat_v73(path: Path) -> dict[str, pd.DataFrame]:
     """读取 MATLAB v7.3 格式（HDF5）的 .mat 文件。
 
@@ -338,7 +352,8 @@ def read_file(path: str | Path) -> pd.DataFrame | str:
     """根据扩展名自动分发读取。
 
     Args:
-        path: 文件路径。支持 .csv / .xlsx / .xls / .mat / .md / .markdown / .txt。
+        path: 文件路径。支持 .csv / .xlsx / .xls / .mat / .json / .jsonl / .ndjson /
+              .md / .markdown / .txt。
 
     Returns:
         DataFrame（表格文件）或 str（文本文件）。
@@ -356,11 +371,13 @@ def read_file(path: str | Path) -> pd.DataFrame | str:
         return read_excel(p)
     if ext == ".mat":
         return read_mat(p)
+    if ext in (".json", ".jsonl", ".ndjson"):
+        return read_json(p)
     if ext in (".md", ".markdown", ".txt"):
         return read_markdown(p)
     raise ValueError(
         f"Unsupported file type '{ext}'. "
-        f"Supported: .csv, .xlsx, .xls, .mat, .md, .markdown, .txt"
+        f"Supported: .csv, .xlsx, .xls, .mat, .json, .jsonl, .ndjson, .md, .markdown, .txt"
     )
 
 

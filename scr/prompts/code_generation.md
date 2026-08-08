@@ -16,9 +16,10 @@
 
 ## 代码硬性约定
 
-- 只能使用标准库 + `numpy` / `pandas` / `scipy` / `sklearn` / `pulp`
+- 只能使用标准库 + `numpy` / `pandas` / `scipy` / `sklearn` / `pulp` / `matplotlib`
+- 深度学习/神经网络任务仅使用已安装的 `sklearn.neural_network` 或 NumPy 实现；不得导入 PyTorch、TensorFlow 或其他未声明依赖。
 - 用 `pandas.read_csv(os.environ["MODEL_DATA_PATH"])` 读取数据（尝试 `utf-8` 失败后回退 `gbk`）
-- 禁止：写文件、网络请求、读取其他环境变量、只定义函数不调用
+- 禁止：网络请求、读取其他环境变量、只定义函数不调用；除 `MODEL_FIGURE_DIR` 中的 PNG 图表外不得写文件
 - 代码必须真实求解上述数学模型，禁止返回占位/固定值
 - 计算完成后，结果必须打包为字典 `result` 并执行：
   ```python
@@ -33,6 +34,12 @@
   - 以及 `metrics`（模型质量指标，dict）、可选 `explanation`（结果解释）
 - 数值必须为有限值（float/int），禁止 NaN/Inf
 - 代码必须完整、顶层可执行，运行时间控制在 30 秒以内（大计算请抽样或降低规模）
+- 必须使用 `matplotlib` 生成至少一张与模型结论直接相关的 PNG，保存到 `os.environ["MODEL_FIGURE_DIR"]`，并在 `savefig` 后关闭图形。
+  - 凸优化、线性/整数规划：决策变量分配或目标值/约束裕量图。
+  - 统计模型：拟合值-观测值、残差或置信区间图。
+  - 机器学习/神经网络：预测-真实值或混淆矩阵；若有训练过程，再画损失曲线。
+  - 仿真/随机模型：样本分布、轨迹或置信区间图。
+  - 综合评价：权重、得分或排序图。
 
 ## 输出格式
 

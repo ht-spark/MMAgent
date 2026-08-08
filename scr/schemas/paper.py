@@ -1,7 +1,4 @@
-"""报告与审查 Schema。
-
-对应 architecture.md §6.2 报告写作和 §6.3 交付质量门。
-"""
+"""定义报告草稿、章节和审查结论的数据结构。"""
 from __future__ import annotations
 
 from typing import Literal

@@ -1,7 +1,4 @@
-"""模型决策 Schema（L2 内部）。
-
-对应 plan.md Phase 1.5 与 architecture.md §4 L2。
-"""
+"""定义候选模型、评分和模型审查结果的数据结构。"""
 from __future__ import annotations
 
 from typing import Literal

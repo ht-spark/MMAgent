@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scr.tools.md2docx_pandoc import (
+from scr.tools.md2docx import (
     convert_paper_md_to_docx,
     find_pandoc,
     pandoc_available,

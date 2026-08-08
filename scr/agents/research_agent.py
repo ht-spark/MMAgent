@@ -1,14 +1,7 @@
-"""ResearchAgent — L1 研究子智能体。
+"""规划研究检索并整理可引用证据。
 
-对应 architecture.md §4 L1 与 plan.md Phase 4.9：
-  - identify_gaps：识别知识缺口（domain_definition / mechanism / standard /
-                  data_source / model_precedent / parameter_range /
-                  evaluation_metric / validation_method / constraint / implementation）
-  - plan_queries：为缺口生成中英文查询组
-  - extract_evidence：从来源中提取证据项（一个 claim 一条证据）
-
-Agent 不直接执行搜索，搜索由 research/ 下的确定性组件处理；
-这里只负责调用 LLM 做推理与规划。
+识别领域知识、参数、验证标准和实现条件中的缺口，生成中英文查询，并将
+检索内容整理为与具体主张对应的结构化证据；实际网络访问由工具层执行。
 """
 from __future__ import annotations
 

@@ -1,7 +1,4 @@
-"""研究管线 Schema（L1 内部）。
-
-对应 plan.md Phase 1.4 与 architecture.md §4 L1。
-"""
+"""定义知识缺口、检索请求和证据条目的数据结构。"""
 from __future__ import annotations
 
 from typing import Literal

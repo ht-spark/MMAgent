@@ -27,7 +27,7 @@ export default function NewTask({ task, setTask, onHistory }: Props) {
   // - submit：聊天框 + 上传任务/数据，点开始建模
   // - progress：实时把建模进度以聊天消息输出（resumeRunId 接管进行中任务）
   return (
-    <div className="page page-fill">
+    <div className="page page-fill chat-page">
       <ChatModeling
         resumeRunId={task.step === 'progress' ? task.runId : null}
         onViewResult={(id) => setTask({ step: 'result', runId: id })}

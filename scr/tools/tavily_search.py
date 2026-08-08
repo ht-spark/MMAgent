@@ -1,7 +1,7 @@
 """Tavily 联网搜索工具。
 
 用于方法探索阶段，通过联网搜索获取方法候选。
-方法探索完全由联网搜索+LLM思考驱动，不依赖预设方法目录。
+方法探索由联网搜索和 LLM 推理共同驱动，不依赖固定方法目录。
 
 功能：
   - TavilySearchTool.search: 通用搜索接口
@@ -15,8 +15,6 @@
   - 搜索结果可被 MethodExplorer 用于生成候选方法
   - 支持中英文双语查询，提高搜索覆盖面
 
-对应 architecture.md §5.3 方法探索与决策：
-  方法候选完全由联网搜索+LLM思考生成，不预设方法目录。
 """
 from __future__ import annotations
 

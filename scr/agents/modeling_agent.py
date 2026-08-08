@@ -1,14 +1,7 @@
-"""ModelingAgent — L2 模型决策 Agent。
+"""生成、评分并审查子问题的候选模型。
 
-对应 architecture.md §4 L2 与 plan.md Phase 5.2：
-  - generate_candidates：为每个子问题生成 2-4 个候选模型
-  - score_candidates：LLM 给单项分（0-1），代码用 SCORE_WEIGHTS 加权算总分
-  - criticize：检查缺口覆盖、权威来源、候选差异、是否遗漏简单模型等
-
-评分公式（architecture.md §4 L2）：
-  total = 0.25*problem_fit + 0.20*data_fit + 0.15*assumption_validity
-        + 0.15*validation_feasibility + 0.10*interpretability
-        + 0.10*implementation_feasibility + 0.05*innovation
+该智能体将问题分析、证据和数据要求转为多个候选模型，结合固定权重评分
+选出可解释、可实现、可验证的方案，并指出候选覆盖或证据上的缺口。
 """
 from __future__ import annotations
 

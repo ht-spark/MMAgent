@@ -1,11 +1,6 @@
-"""数据画像相关的 Pydantic Schema。
+"""定义数据画像、问题分析和子问题拆分使用的数据结构。
 
-对应 architecture.md §3.1 中的 data_inventory 和 plan.md Phase 1 中的
-DataInventory / DataField。
-
-这些 Schema 是 L2 硬过滤的关键输入：
-  - 无时间列 → 淘汰 ARIMA
-  - 样本量 < 30 → 淘汰机器学习类候选
+这些结构为方法筛选提供样本量、时间字段、数据质量和约束等依据。
 """
 from __future__ import annotations
 

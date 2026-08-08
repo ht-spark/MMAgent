@@ -1,4 +1,4 @@
-"""LLM 生成的建模代码执行沙箱。
+"""LLM 生成的建模代码隔离执行器。
 
 "任务驱动建模"计算层的执行端：在独立子进程中运行 LLM 生成的求解代码，
 提供超时终止、结果解析与基本环境隔离。
@@ -10,15 +10,19 @@
     其余 stdout 内容视为调试输出
   - 只允许数学计算：标准库 + numpy/pandas/scipy/sklearn/pulp
 
-安全模型：
+隔离边界：
   - 独立子进程 + timeout 强制终止（防死循环/失控计算）
   - 清除常见 API 密钥环境变量（防泄漏）
-  - 不提供网络/文件写入能力的显式授权（代码自带的库能力不在本层治理范围）
+  - 使用自动清理的临时工作目录，避免相对路径读写污染项目目录
+
+这不是操作系统级安全沙箱：若要执行来自不可信来源的代码，应部署到容器或
+受限运行环境中，并在该环境中限制网络、文件系统和资源配额。
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -44,6 +48,9 @@ def execute_model_code(
     code: str,
     data_csv_path: str | Path | None = None,
     timeout: int = 30,
+    figure_output_dir: str | Path | None = None,
+    figure_prefix: str = "",
+    require_figures: bool = False,
 ) -> dict:
     """在子进程中执行生成的建模代码。
 
@@ -51,6 +58,10 @@ def execute_model_code(
         code: 完整可运行的 Python 脚本。
         data_csv_path: 数据 CSV 路径（经 ``MODEL_DATA_PATH`` 传入代码）。
         timeout: 执行超时秒数。
+        figure_output_dir: 图表归档目录。模型代码应向 ``MODEL_FIGURE_DIR``
+            写入 PNG，执行器会在成功后复制到该目录。
+        figure_prefix: 归档图表的文件名前缀，通常为小问 ID。
+        require_figures: 为 True 时，未生成 PNG 视为执行失败。
 
     Returns:
         从代码输出中解析出的结果字典（``__MODEL_RESULT__`` 标记后的 JSON）。
@@ -61,18 +72,18 @@ def execute_model_code(
     """
     code = _validate_code(code)
 
-    # 写入临时脚本（避免命令行长度限制）
-    tmp_script = None
-    try:
-        fd, tmp_script = tempfile.mkstemp(suffix=".py", prefix="mma_model_", text=True)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(code)
-
-        env = _build_child_env(data_csv_path)
+    # 独立临时目录：相对路径读写不会污染项目产物目录，结束后自动清理。
+    with tempfile.TemporaryDirectory(prefix="mma_model_") as tmp_dir:
+        tmp_script = Path(tmp_dir) / "model.py"
+        tmp_figure_dir = Path(tmp_dir) / "figures"
+        tmp_figure_dir.mkdir()
+        tmp_script.write_text(code, encoding="utf-8")
+        env = _build_child_env(data_csv_path, tmp_figure_dir)
 
         try:
             proc = subprocess.run(
-                [sys.executable, tmp_script],
+                [sys.executable, str(tmp_script)],
+                cwd=tmp_dir,
                 env=env,
                 capture_output=True,
                 text=True,
@@ -88,13 +99,19 @@ def execute_model_code(
         if proc.returncode != 0:
             raise CodeExecutionError(_format_run_error(proc))
 
-        return _parse_result(proc.stdout)
-    finally:
-        if tmp_script and os.path.exists(tmp_script):
-            try:
-                os.unlink(tmp_script)
-            except OSError:
-                pass
+        result = _parse_result(proc.stdout)
+        figure_paths = _export_figures(
+            tmp_figure_dir,
+            figure_output_dir,
+            figure_prefix,
+        )
+        if require_figures and not figure_paths:
+            raise CodeExecutionError(
+                "模型代码未生成 PNG 图表；请保存至少一张诊断图到 MODEL_FIGURE_DIR"
+            )
+        if figure_paths:
+            result["figures"] = figure_paths
+        return result
 
 
 def _validate_code(code: str) -> str:
@@ -109,7 +126,10 @@ def _validate_code(code: str) -> str:
     return textwrap.dedent(code)
 
 
-def _build_child_env(data_csv_path: str | Path | None) -> dict:
+def _build_child_env(
+    data_csv_path: str | Path | None,
+    figure_dir: Path,
+) -> dict:
     """构建子进程环境：清除敏感变量，注入数据路径，固定 UTF-8 输出。"""
     env = {
         k: v
@@ -118,9 +138,31 @@ def _build_child_env(data_csv_path: str | Path | None) -> dict:
     }
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONNOUSERSITE"] = "1"
+    env["MODEL_FIGURE_DIR"] = str(figure_dir)
     if data_csv_path is not None:
         env["MODEL_DATA_PATH"] = str(data_csv_path)
     return env
+
+
+def _export_figures(
+    source_dir: Path,
+    output_dir: str | Path | None,
+    prefix: str,
+) -> list[str]:
+    """复制模型代码生成的 PNG 图表到任务产物目录。"""
+    if output_dir is None:
+        return []
+
+    destination_dir = Path(output_dir)
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    safe_prefix = "".join(char for char in prefix if char.isalnum() or char in "-_")
+    figure_paths: list[str] = []
+    for index, source in enumerate(sorted(source_dir.rglob("*.png")), start=1):
+        filename = f"{safe_prefix}_" if safe_prefix else ""
+        destination = destination_dir / f"{filename}{index}_{source.name}"
+        shutil.copy2(source, destination)
+        figure_paths.append(str(destination))
+    return figure_paths
 
 
 def _format_run_error(proc: subprocess.CompletedProcess) -> str:
@@ -182,3 +224,8 @@ def _check_finite_values(result: dict) -> None:
         raise CodeExecutionError(
             "结果包含非有限数值（NaN/Inf）: " + ", ".join(bad[:10])
         )
+
+
+# 统一绘图入口：传统预设模型仍复用既有确定性绘图实现，
+# 代码驱动模型则由 execute_model_code 直接收集 MODEL_FIGURE_DIR 中的图表。
+from .visualization_tools import generate_all_figures  # noqa: E402

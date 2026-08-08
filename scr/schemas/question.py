@@ -1,7 +1,4 @@
-"""小问求解相关 Schema。
-
-对应 architecture.md §3.3 QuestionResult, §5.1 CurrentQuestionContext, §5.2 ProblemInterpretation。
-"""
+"""定义子问题上下文、问题澄清、求解结果和可复用摘要。"""
 from __future__ import annotations
 
 from typing import Literal

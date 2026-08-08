@@ -1,18 +1,7 @@
-"""建模计算与可视化 Agent。
+"""将建模决策转为可执行计算和可复现产物。
 
-对应 architecture.md §5.5 建模、计算与可视化。
-
-职责：
-  1. build_formulation — 根据选中方法构建数学模型表述
-  2. prepare_data — 准备模型所需数据
-  3. execute — 执行计算（使用 numpy/scipy/pandas）
-  4. generate_outputs — 生成结果表格和图表描述
-
-设计要点：
-  - 确定性计算：使用标准库实现常见方法，不依赖 LLM
-  - 方法分发：按选中方法名称调用对应的计算函数
-  - 降级处理：无法计算时返回结构完整的占位结果
-  - 可复现性：记录计算参数和中间结果
+负责构建模型表述、准备数据、调用大模型生成或预设的求解代码、执行计算，
+并返回数值结果、表格、图表和复现所需的代码/数据文件。
 """
 from __future__ import annotations
 
@@ -135,7 +124,7 @@ class ModelBuilder:
         tables = self._generate_tables(
             selected_method, math_task, computation, data_preparation, context
         )
-        figures = self._generate_figure_descriptions(
+        figures = computation.get("figures") or self._generate_figure_descriptions(
             selected_method, math_task, computation, context
         )
 
@@ -615,6 +604,9 @@ class ModelBuilder:
                     from ..tools.file_tools import read_mat
                     var_name = table.sheet_name or None
                     df = read_mat(full_path, variable_name=var_name)
+                elif ext in (".json", ".jsonl", ".ndjson"):
+                    from ..tools.file_tools import read_json
+                    df = read_json(full_path)
                 else:
                     continue
 
@@ -925,7 +917,16 @@ class ModelBuilder:
                     f"{len(code)} 字符），开始沙箱执行..."
                 )
                 try:
-                    result = execute_model_code(code, data_csv_path=csv_path)
+                    figure_output_dir = (
+                        Path(output_dir) / "figures" if output_dir else None
+                    )
+                    result = execute_model_code(
+                        code,
+                        data_csv_path=csv_path,
+                        figure_output_dir=figure_output_dir,
+                        figure_prefix=context.question_id,
+                        require_figures=figure_output_dir is not None,
+                    )
                 except CodeExecutionError as e:
                     last_error = str(e)
                     feedback = f"求解代码执行失败: {last_error}"
@@ -972,6 +973,7 @@ class ModelBuilder:
                     "model_summary": model_json.get("model_summary", ""),
                     "results": result,
                     "metrics": result.get("metrics", {}) if isinstance(result, dict) else {},
+                    "figures": result.get("figures", []) if isinstance(result, dict) else [],
                     "parameters_used": model_json.get("key_parameters", {}),
                     "intermediate_values": {
                         "generation_attempts": attempt + 1,

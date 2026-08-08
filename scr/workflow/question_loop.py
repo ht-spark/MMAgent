@@ -1,13 +1,11 @@
-"""逐问求解闭环工作流节点。
-
-对应 architecture.md §5 阶段二：逐问求解闭环和 plan.md Phase 2。
+"""协调子问题选择、上下文装配和结果归档的工作流节点。
 
 职责：
   1. select_question — 根据依赖关系选择当前可执行的小问
   2. assemble_context — 装配 CurrentQuestionContext，选择性继承前问成果
   3. archive_result — 将当前小问结果归档到 question_results
 
-状态机（architecture.md §5 + plan.md Phase 2.4）：
+状态流转：
   pending → solving → validating → validated
                                     ↘ blocked
 

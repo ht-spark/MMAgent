@@ -1,7 +1,4 @@
-"""求解结果 Schema（L4 内部）。
-
-对应 plan.md Phase 1.7。
-"""
+"""定义代码执行后的数值结果、输出文件和失败原因。"""
 from __future__ import annotations
 
 from typing import Literal

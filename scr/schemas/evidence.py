@@ -1,8 +1,4 @@
-"""证据与产物库 Schema。
-
-对应 architecture.md §3.4。
-EvidenceItem 已在 research.py 中定义，这里引用并扩展。
-"""
+"""定义证据目录、任务产物、决策记录和运行账本的数据结构。"""
 from __future__ import annotations
 
 from typing import Literal

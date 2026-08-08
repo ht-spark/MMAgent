@@ -1,17 +1,6 @@
-"""小问求解器 Agent（Phase 4 实现）。
+"""完成单个子问题的端到端求解。
 
-对应 architecture.md §5.2-5.5 和 plan.md Phase 2-4。
-
-当前实现职责：
-  1. 读取 CurrentQuestionContext
-  2. 生成 ProblemInterpretation（问题澄清，§5.2）
-  3. 调用 MethodExplorer 进行方法探索与决策（§5.3-5.4）
-  4. 调用 ModelBuilder 执行建模计算与可视化（§5.5）
-  5. 生成结构完整的 QuestionResult（status="validating"）
-  6. 生成 ReusableSummary（供后续小问继承）
-
-Phase 5+ 将替换为：
-  - 题型验证与结果沉淀（§5.6-5.7）
+协调问题澄清、方法选择、模型计算和自评修订，将过程整理为标准的 QuestionResult 与可供后续子问题复用的摘要。
 """
 from __future__ import annotations
 

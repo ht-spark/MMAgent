@@ -1,13 +1,7 @@
-"""ProblemAnalyst — L0 任务理解 Agent。
+"""理解题目并建立可执行的子问题计划。
 
-对应 architecture.md §4 L0 和 plan.md Phase 3.3：
-  - understand：提取研究对象、背景、显式小问、约束、预期输出、关键词（禁止建模）
-  - decompose：拆为子问题 DAG（id/task/input/outputs/dependencies/parallelizable）
-  - classify：判定主类型 + 次类型
-
-调用链：understand → decompose → classify
-
-LLM 只做推理与信息提取，不生成数值。
+从题面提取研究对象、约束、目标和预期输出，将任务拆成带依赖关系的子问题，
+再判断任务类型。该智能体只做语义分析，不产生数值结论。
 """
 from __future__ import annotations
 

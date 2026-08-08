@@ -11,6 +11,7 @@ from pathlib import Path
 from scr.agents.paper_writer import PaperWriter
 from scr.schemas.context import ProjectContext, QuestionInfo
 from scr.schemas.question import QuestionResult
+from scr.tools.md2docx import convert_paper_md_to_docx
 
 
 class _Msg:
@@ -114,3 +115,29 @@ def test_write_falls_back_to_template_without_llm(tmp_path):
     assert "q1.3 模型建立" in full
     assert "q1.4 求解与结果" in full
     assert "模型建立段" not in full  # 未使用 LLM 文本
+
+
+def test_write_tolerates_list_shaped_computation_fields(tmp_path):
+    """求解器异常返回列表时，报告写作仍应完成，保证后续 DOCX 可交付。"""
+    result = _question_result()
+    result.computation["results"] = ["unexpected result"]
+    result.computation["metrics"] = ["unexpected metric"]
+    result.formulation["parameters"] = ["unexpected parameter"]
+
+    paper = PaperWriter().write(
+        {
+            "question_results": {"q1": result},
+            "project_context": _project_context(),
+            "data_profile": None,
+            "output_dir": str(tmp_path),
+        },
+        output_dir=str(tmp_path),
+    )
+
+    assert paper.full_text
+    assert "q1.4 求解与结果" in paper.full_text
+
+    markdown_path = tmp_path / "paper.md"
+    markdown_path.write_text(paper.full_text, encoding="utf-8")
+    docx_path = Path(convert_paper_md_to_docx(markdown_path))
+    assert docx_path.is_file()

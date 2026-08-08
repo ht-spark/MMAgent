@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,9 @@ except ImportError as _e:
 __all__ = [
     "markdown_to_docx",
     "convert_paper_md_to_docx",
+    "find_pandoc",
+    "pandoc_available",
+    "pandoc_to_docx",
 ]
 
 
@@ -1153,6 +1158,76 @@ class DocxBuilder:
 # ---------------------------------------------------------------------------
 
 
+def _project_tools_dir() -> Path:
+    """返回项目根目录下的 tools/ 目录。"""
+    return Path(__file__).resolve().parent.parent.parent / "tools"
+
+
+def find_pandoc() -> str | None:
+    """查找系统或项目内可用的 Pandoc 可执行文件。"""
+    exe_name = "pandoc.exe" if sys.platform == "win32" else "pandoc"
+    found = shutil.which(exe_name)
+    if found:
+        return found
+
+    for candidate in (
+        _project_tools_dir() / "pandoc" / exe_name,
+        _project_tools_dir() / exe_name,
+    ):
+        if candidate.exists():
+            return str(candidate)
+
+    if sys.platform == "win32":
+        candidate = Path.home() / "AppData" / "Local" / "Pandoc" / exe_name
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def pandoc_available() -> bool:
+    """Pandoc 是否可用。"""
+    return find_pandoc() is not None
+
+
+def pandoc_to_docx(
+    md_path: str | Path,
+    output_path: str | Path,
+    resource_path: str | Path | None = None,
+    reference_doc: str | Path | None = None,
+    extra_args: list[str] | None = None,
+) -> str:
+    """调用 Pandoc 将 Markdown 转为 DOCX（含可编辑 Word 公式）。"""
+    pandoc = find_pandoc()
+    if pandoc is None:
+        raise FileNotFoundError("系统未检测到 Pandoc")
+
+    md_path = Path(md_path)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    resource_path = Path(resource_path) if resource_path else md_path.parent
+
+    cmd = [
+        pandoc,
+        str(md_path),
+        "-o", str(output_path),
+        "--from", "markdown+tex_math_dollars+raw_tex",
+        "--resource-path", str(resource_path),
+    ]
+    if reference_doc is not None:
+        cmd += ["--reference-doc", str(reference_doc)]
+    if extra_args:
+        cmd += extra_args
+
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            proc.returncode, cmd, output=proc.stdout, stderr=proc.stderr[-2000:]
+        )
+    return str(output_path)
+
+
 def markdown_to_docx(
     md_text: str,
     output_path: str,
@@ -1183,6 +1258,9 @@ def convert_paper_md_to_docx(
 ) -> str:
     """将报告 Markdown 文件转换为 DOCX。
 
+    优先使用 Pandoc，以保留可编辑的 Word 原生公式；若未检测到 Pandoc
+    或 Pandoc 转换失败，则明确记录日志并回退到 Python-docx 实现。
+
     Args:
         md_file_path: Markdown 文件路径。
         output_dir: 输出目录（默认与 md 文件同目录）。
@@ -1194,6 +1272,21 @@ def convert_paper_md_to_docx(
     if not md_path.exists():
         raise FileNotFoundError(f"Markdown 文件不存在: {md_file_path}")
 
+    if output_dir is None:
+        output_dir = str(md_path.parent)
+    output_path = str(Path(output_dir) / f"{md_path.stem}.docx")
+
+    if pandoc_available():
+        try:
+            print("[md2docx] 检测到 Pandoc，使用 Pandoc 转换 DOCX...", flush=True)
+            result = pandoc_to_docx(md_path, output_path, resource_path=md_path.parent)
+            print(f"[md2docx] Pandoc 转换完成: {result}", flush=True)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            print(f"[md2docx] Pandoc 转换失败，将回退 Python-docx: {exc}", flush=True)
+    else:
+        print("[md2docx] 未检测到 Pandoc，使用 Python-docx 回退转换...", flush=True)
+
     md_text = md_path.read_text(encoding="utf-8")
 
     # 从 Markdown 提取标题
@@ -1204,17 +1297,14 @@ def convert_paper_md_to_docx(
         # 移除标题行，避免重复
         md_text = md_text.replace(title_match.group(0), "", 1)
 
-    # 输出路径
-    if output_dir is None:
-        output_dir = str(md_path.parent)
-    output_path = str(Path(output_dir) / f"{md_path.stem}.docx")
-
     # base_dir 用于解析图片路径
     base_dir = str(md_path.parent)
 
-    return markdown_to_docx(
+    result = markdown_to_docx(
         md_text,
         output_path,
         title=title,
         base_dir=base_dir,
     )
+    print(f"[md2docx] Python-docx 转换完成: {result}", flush=True)
+    return result

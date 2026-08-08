@@ -1,7 +1,4 @@
-"""数据处理 Schema（L3 内部）。
-
-对应 plan.md Phase 1.6。
-"""
+"""定义数据需求、预处理计划和质量风险的数据结构。"""
 from __future__ import annotations
 
 from typing import Literal

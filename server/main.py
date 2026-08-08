@@ -240,7 +240,7 @@ async def stream_run_progress(run_id: str, after: int = 0):
                 return
             # SSE 注释行：保持连接活跃，避免代理/浏览器因空闲断开
             yield ": keep-alive\n\n"
-            await asyncio.sleep(0.6)
+            await asyncio.sleep(0.15)
 
     return StreamingResponse(
         gen(),

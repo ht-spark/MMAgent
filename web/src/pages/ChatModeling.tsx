@@ -87,6 +87,85 @@ function fmtProgress(node: string, wf: string, gqAction?: string): string {
   return parts.join(' · ')
 }
 
+type ProgressCardProps = {
+  text: string
+  currentStep: string
+  running: boolean
+  budgetReq: { question_id: string; proposed: Record<string, number> } | null
+  budgetDraft: Record<string, number>
+  budgetBusy: boolean
+  onBudgetDraftChange: (key: string, value: number) => void
+  onBudgetSubmit: (useDefaults: boolean) => void
+}
+
+function ProgressCard({
+  text,
+  currentStep,
+  running,
+  budgetReq,
+  budgetDraft,
+  budgetBusy,
+  onBudgetDraftChange,
+  onBudgetSubmit,
+}: ProgressCardProps) {
+  const completedSteps = text.split('\n').filter(Boolean)
+
+  return (
+    <div className="progress-card" aria-live="polite">
+      {completedSteps.length > 0 && (
+        <div className="progress-history">
+          {completedSteps.map((step, index) => (
+            <div className="progress-row" key={`${step}-${index}`}>
+              <span className="progress-row-mark">·</span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={completedSteps.length > 0 ? 'progress-live progress-live-separated' : 'progress-live'}>
+        <span className="progress-live-text">
+          {running ? `${currentStep || '建模'}进行中` : '建模进度已结束'}
+        </span>
+        {running && (
+          <span className="progress-dots" aria-label="加载中">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        )}
+      </div>
+      {budgetReq && (
+        <div className="progress-budget">
+          <div className="progress-budget-title">确认{fmtQid(budgetReq.question_id)}预算</div>
+          <p>建模已暂停。可调整上限后确认覆盖，或直接使用默认预算继续。</p>
+          <div className="budget-fields">
+            {BUDGET_FIELDS.map((field) => (
+              <label key={field.key} className="budget-field">
+                <span className="budget-field-label">{field.label}</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={budgetDraft[field.key] ?? 0}
+                  disabled={!field.enforced || budgetBusy}
+                  onChange={(event) => onBudgetDraftChange(field.key, Number(event.target.value))}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="progress-budget-actions">
+            <button className="btn-ghost" onClick={() => onBudgetSubmit(true)} disabled={budgetBusy}>
+              使用默认
+            </button>
+            <button className="btn-primary" onClick={() => onBudgetSubmit(false)} disabled={budgetBusy}>
+              {budgetBusy ? '提交中…' : '确认覆盖'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** 预算项配置：仅展示强制项（监控项 time/token 不在弹窗中显示，完成后统计） */
 const BUDGET_FIELDS: { key: string; label: string; enforced: boolean }[] = [
   { key: 'search', label: '联网检索次数', enforced: true },
@@ -136,6 +215,10 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
   const esRef = useRef<EventSource | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const initRef = useRef(false)
+  const statsRef = useRef<{ time: number; token: number } | null>(null)
+  const progressMsgIdRef = useRef<number | null>(null)
+  const progressQueueRef = useRef<any[]>([])
+  const progressTimerRef = useRef<number | null>(null)
 
   function push(role: 'user' | 'assistant', text: string, kind: MsgKind = 'info', result?: ResultData) {
     setMessages((m) => [...m, { id: nextId(), role, text, kind, ts: Date.now(), result }])
@@ -157,7 +240,6 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     initRef.current = true
 
     if (resumeRunId) {
-      push('assistant', `正在恢复任务 ${resumeRunId} 的进度历史…`, 'info')
       loadHistoryAndResume(resumeRunId)
     } else {
       push(
@@ -168,6 +250,9 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     }
     return () => {
       esRef.current?.close()
+      if (progressTimerRef.current !== null) {
+        window.clearTimeout(progressTimerRef.current)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -178,29 +263,31 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
-  // 缓存预算统计，等 done 事件时一起展示
-  const statsRef = useRef<{ time: number; token: number } | null>(null)
-  // 合并进度消息的 ID，所有进度事件追加到同一条消息
-  const progressMsgIdRef = useRef<number | null>(null)
-
   /** 追加一行进度到合并进度消息（不存在则创建） */
-  function appendProgress(line: string) {
+  function ensureProgressMessage(): number {
+    if (progressMsgIdRef.current !== null) {
+      return progressMsgIdRef.current
+    }
+    const id = nextId()
+    progressMsgIdRef.current = id
     setMessages((msgs) => {
-      const pid = progressMsgIdRef.current
-      if (pid !== null) {
-        return msgs.map((m) =>
-          m.id === pid ? { ...m, text: m.text + '\n' + line, ts: Date.now() } : m,
-        )
-      }
-      const id = nextId()
-      progressMsgIdRef.current = id
-      return [...msgs, { id, role: 'assistant' as const, text: line, kind: 'progress' as const, ts: Date.now() }]
+      return [...msgs, { id, role: 'assistant' as const, text: '', kind: 'progress' as const, ts: Date.now() }]
     })
+    return id
+  }
+
+  function appendProgress(line: string) {
+    const id = ensureProgressMessage()
+    if (!line) return
+    setMessages((msgs) =>
+      msgs.map((m) =>
+        m.id === id ? { ...m, text: m.text ? `${m.text}\n${line}` : line, ts: Date.now() } : m,
+      ),
+    )
   }
 
   /** 批量设置进度消息文本（用于加载历史事件） */
   function setProgressText(lines: string[]) {
-    if (lines.length === 0) return
     const text = lines.join('\n')
     // 先确定消息 ID 并同步写入 ref，确保后续 SSE 事件能立即找到目标消息
     const id = progressMsgIdRef.current ?? nextId()
@@ -222,16 +309,15 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       const proposed: Record<string, number> = ev.proposed || {}
       setBudgetReq({ question_id: ev.question_id || '', proposed })
       setBudgetDraft({ ...proposed })
-      push('assistant', `⏸ ${fmtQid(ev.question_id || '')}预算待确认：请在弹窗中调整并点击「确认」继续建模。`, 'warn')
     } else if (ev.type === 'budget_confirmed') {
       setBudgetReq(null)
       const action = ev.action
       if (action === 'override') {
-        push('assistant', `✅ ${fmtQid(ev.question_id || '')}预算已按你的输入覆盖。`, 'success')
+        appendProgress(`预算配置 · ${fmtQid(ev.question_id || '')}已按输入覆盖`)
       } else if (action === 'default') {
-        push('assistant', `✅ ${fmtQid(ev.question_id || '')}预算沿用默认。`, 'info')
+        appendProgress(`预算配置 · ${fmtQid(ev.question_id || '')}沿用默认`)
       } else {
-        push('assistant', `⚠️ ${fmtQid(ev.question_id || '')}预算确认已取消。`, 'warn')
+        appendProgress(`预算配置 · ${fmtQid(ev.question_id || '')}确认已取消`)
       }
     } else if (ev.type === 'budget_summary') {
       statsRef.current = {
@@ -244,9 +330,10 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       const node = ev.node || 'step'
       setCurrentStep(NODE_CN[node] || node)
       if (progressMsgIdRef.current === null) {
-        appendProgress('')
+        ensureProgressMessage()
       }
     } else {
+      if (ev.type !== 'node') return
       // 普通节点进度（节点完成）：追加到合并进度消息
       const node = ev.node || 'step'
       const wf = ev.workflow_status || ''
@@ -255,9 +342,45 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       const qidSuffix = qid ? ` [${fmtQid(qid)}]` : ''
       const line = fmtProgress(node, wf, gqAction) + qidSuffix
       appendProgress(line)
-      // 更新当前步骤描述（用于动画）
-      setCurrentStep(NODE_CN[node] || node)
     }
+  }
+
+  /** 按顺序播放收到的节点事件，避免快步骤在同一帧内跳过。 */
+  function drainProgressQueue() {
+    const nextEvent = progressQueueRef.current.shift()
+    if (!nextEvent) {
+      progressTimerRef.current = null
+      return
+    }
+    handleProgressEvent(nextEvent)
+    progressTimerRef.current = window.setTimeout(drainProgressQueue, 180)
+  }
+
+  function queueProgressEvent(event: any) {
+    progressQueueRef.current.push(event)
+    if (progressTimerRef.current === null) {
+      drainProgressQueue()
+    }
+  }
+
+  function finishAfterProgressEvents(id: string, status: string, error?: string) {
+    const finish = () => {
+      if (progressQueueRef.current.length > 0 || progressTimerRef.current !== null) {
+        window.setTimeout(finish, 80)
+        return
+      }
+      setPhase('done')
+      setCurrentStep('')
+      if (status === 'succeeded') {
+        push('assistant', '✅ 建模完成！正在加载结果…', 'success')
+        loadResults(id)
+      } else if (status === 'cancelled') {
+        push('assistant', '⚠️ 任务已被中断。', 'warn')
+      } else {
+        push('assistant', `❌ 建模失败：${error || '未知错误'}`, 'error')
+      }
+    }
+    finish()
   }
 
   /** 恢复模式：先加载历史进度事件，再接管实时流 */
@@ -281,14 +404,20 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       // 将历史事件渲染为进度消息
       const lines: string[] = []
       let lastNode = ''
+      let pendingBudget: BudgetReq | null = null
       for (const ev of events) {
         if (ev.type === 'budget_summary') {
           statsRef.current = {
             time: ev.time_total || 0,
             token: ev.token_total || 0,
           }
-        } else if (ev.type === 'budget_request' || ev.type === 'budget_confirmed') {
-          // 预算类事件跳过（历史中不需要弹窗）
+        } else if (ev.type === 'budget_request') {
+          pendingBudget = {
+            question_id: ev.question_id || '',
+            proposed: ev.proposed || {},
+          }
+        } else if (ev.type === 'budget_confirmed') {
+          pendingBudget = null
         } else if (ev.type === 'node_start') {
           // 节点开始事件：只更新最后节点名，不追加进度行
           lastNode = ev.node || 'step'
@@ -302,9 +431,11 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           lastNode = node
         }
       }
-      if (lines.length > 0) {
-        setProgressText(lines)
-        setCurrentStep(NODE_CN[lastNode] || lastNode)
+      setProgressText(lines)
+      setCurrentStep(NODE_CN[lastNode] || lastNode)
+      if (pendingBudget && (status === 'queued' || status === 'running')) {
+        setBudgetReq(pendingBudget)
+        setBudgetDraft({ ...pendingBudget.proposed })
       }
 
       // 根据任务状态决定后续行为
@@ -320,7 +451,6 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
         push('assistant', '⚠️ 任务已被中断。', 'warn')
       } else {
         // 仍在运行：接管实时流，跳过已加载的事件
-        push('assistant', `已恢复任务进度，继续实时同步…（已完成 ${events.length} 个事件）`, 'info')
         attachStream(id, events.length)
       }
     } catch {
@@ -335,8 +465,13 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     // 仅当从头订阅时重置合并消息；恢复模式（after>0）保留已有进度消息
     if (after === 0) {
       progressMsgIdRef.current = null
+      progressQueueRef.current = []
+      if (progressTimerRef.current !== null) {
+        window.clearTimeout(progressTimerRef.current)
+        progressTimerRef.current = null
+      }
       // 立即创建进度消息，让用户马上看到"正在建模"动画
-      appendProgress('')
+      ensureProgressMessage()
       setCurrentStep('数据摄入')
     }
     const url = after > 0
@@ -359,20 +494,15 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
         return
       }
       if (data.type === 'event') {
-        handleProgressEvent(data.event || {})
+        const event = data.event || {}
+        if (event.type === 'node_start' || event.type === 'node') {
+          queueProgressEvent(event)
+        } else {
+          handleProgressEvent(event)
+        }
       } else if (data.type === 'done') {
         es.close()
-        setPhase('done')
-        setCurrentStep('')
-        const status = data.status
-        if (status === 'succeeded') {
-          push('assistant', '✅ 建模完成！正在加载结果…', 'success')
-          loadResults(id)
-        } else if (status === 'cancelled') {
-          push('assistant', '⚠️ 任务已被中断。', 'warn')
-        } else {
-          push('assistant', `❌ 建模失败：${data.error || '未知错误'}`, 'error')
-        }
+        finishAfterProgressEvents(id, data.status, data.error)
       } else if (data.type === 'error') {
         push('assistant', `❌ ${data.message || '进度流出错'}`, 'error')
       }
@@ -591,19 +721,21 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           <div key={m.id} className={`message ${m.role === 'user' ? 'user' : ''}`}>
             {m.role === 'assistant' && <div className="msg-avatar">M</div>}
             <div className={`msg-content kind-${m.kind}`}>
-              <div className="msg-text">{m.text}</div>
-              {/* 进度消息 + 运行中：在末尾显示动态"正在建模"动画 */}
-              {m.kind === 'progress' && phase === 'running' && (
-                <div className="progress-live">
-                  <span className="progress-live-text">
-                    {currentStep ? `${currentStep}进行中` : '正在建模'}
-                  </span>
-                  <span className="progress-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </span>
-                </div>
+              {m.kind === 'progress' ? (
+                <ProgressCard
+                  text={m.text}
+                  currentStep={currentStep}
+                  running={phase === 'running'}
+                  budgetReq={budgetReq}
+                  budgetDraft={budgetDraft}
+                  budgetBusy={budgetBusy}
+                  onBudgetDraftChange={(key, value) =>
+                    setBudgetDraft((draft) => ({ ...draft, [key]: value }))
+                  }
+                  onBudgetSubmit={submitBudget}
+                />
+              ) : (
+                <div className="msg-text">{m.text}</div>
               )}
               {m.result && (
                 <div className="result-block">
@@ -753,7 +885,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           value={problemText}
           onChange={(e) => setProblemText(e.target.value)}
           disabled={!composing}
-          rows={3}
+          rows={2}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
@@ -796,41 +928,6 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           </button>
         </div>
       </div>
-
-      {budgetReq && (
-        <div className="modal-mask" onClick={() => { /* 不允许点遮罩关闭，避免误操作 */ }}>
-          <div className="modal budget-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>确认{fmtQid(budgetReq.question_id)}预算</h3>
-            <p className="muted">
-              建模已暂停。可调整下方强制项上限后「确认覆盖」，或「使用默认」继续。
-            </p>
-            <div className="budget-fields">
-              {BUDGET_FIELDS.map((f) => (
-                <label key={f.key} className="budget-field">
-                  <span className="budget-field-label">{f.label}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={budgetDraft[f.key] ?? 0}
-                    disabled={!f.enforced || budgetBusy}
-                    onChange={(e) =>
-                      setBudgetDraft((d) => ({ ...d, [f.key]: Number(e.target.value) }))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="modal-actions">
-              <button className="btn-ghost" onClick={() => submitBudget(true)} disabled={budgetBusy}>
-                使用默认
-              </button>
-              <button className="btn-primary" onClick={() => submitBudget(false)} disabled={budgetBusy}>
-                {budgetBusy ? '提交中…' : '确认覆盖'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 预览模态框 */}
       {preview && (

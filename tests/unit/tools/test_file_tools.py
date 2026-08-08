@@ -20,6 +20,7 @@ from scr.tools.file_tools import (
     read_csv,
     read_excel,
     read_file,
+    read_json,
     read_mat,
     read_mat_all_variables,
     read_markdown,
@@ -90,6 +91,21 @@ class TestReadMarkdown:
         path = tmp_path / "notes.txt"
         path.write_text("plain text content", encoding="utf-8")
         assert read_markdown(path) == "plain text content"
+
+
+class TestReadJson:
+    def test_json_records_and_auto_dispatch(self, tmp_path: Path):
+        path = tmp_path / "records.json"
+        path.write_text('[{"城市": "甲", "值": 1}, {"城市": "乙", "值": 2}]', encoding="utf-8")
+
+        assert read_json(path)["值"].tolist() == [1, 2]
+        assert read_file(path)["城市"].tolist() == ["甲", "乙"]
+
+    def test_json_lines(self, tmp_path: Path):
+        path = tmp_path / "records.jsonl"
+        path.write_text('{"值": 1}\n{"值": 2}\n', encoding="utf-8")
+
+        assert read_file(path)["值"].tolist() == [1, 2]
 
 
 # ---------------------------------------------------------------------------

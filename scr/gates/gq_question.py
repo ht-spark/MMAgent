@@ -1,6 +1,4 @@
-"""GQ 小问结果质量门。
-
-对应 architecture.md §5.7 小问结果门。
+"""检查单个子问题的结果是否可归档并供后续任务使用。
 
 通过条件（全部满足才能写入 validated）：
   1. 回答了任务要求，且输出形式完整
@@ -10,16 +8,15 @@
   5. 结论与局限均已记录
   6. 已生成可供后续小问使用的 reusable_summary
 
-失败处理（architecture.md §5.6）：
-  - 数据口径或预处理错误 → 回到数据准备（Phase 4+ 实现）
-  - 代码、求解或收敛错误 → 修复当前计算任务（Phase 4+ 实现）
-  - 假设或模型不适配 → 回到方法决策（Phase 3+ 实现）
+失败处理：
+  - 数据口径或预处理错误 → 回到数据准备
+  - 代码、求解或收敛错误 → 修复当前计算任务
+  - 假设或模型不适配 → 回到方法决策
   - 多次失败 → 标记为 blocked，说明原因
 
 预算：通过 BudgetManager 的 VALIDATION_ITERATION 类型管理重试上限，
 不内置额外常量。预算耗尽不是"伪造通过"，而是产出风险说明。
 
-Phase 5 集成：启用实质检查（computation、validation）。
 """
 from __future__ import annotations
 

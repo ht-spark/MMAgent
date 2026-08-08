@@ -1,14 +1,7 @@
-"""BaseAgent — LLM Agent 基类。
+"""LLM 智能体的公共基类。
 
-职责：
-  - 加载 prompt 模板（prompts/*.md）
-  - 渲染模板（替换占位符）
-  - 调用 LLM 并返回 Pydantic 结构化输出
-
-设计要点：
-  - LLM 可注入（测试时传 FakeLLM，生产时从 config 创建 ChatOpenAI）
-  - prompt 模板用 {var} 占位符，渲染时只替换已知变量，不影响 JSON 示例中的 {}
-  - 对应 plan.md §1：Prompt 与代码分离，agents/ 依赖 schemas/prompts
+负责加载和渲染提示词模板，并将模型响应解析为 Pydantic 结构化结果。
+具体智能体继承本类以复用可注入的 LLM 调用能力。
 """
 from __future__ import annotations
 

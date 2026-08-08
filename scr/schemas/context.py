@@ -1,7 +1,4 @@
-"""项目全局上下文与数据画像 Schema。
-
-对应 architecture.md §3.1 ProjectContext 和 §3.2 DataProfile。
-"""
+"""定义任务上下文、子问题信息和数据画像的数据结构。"""
 from __future__ import annotations
 
 from typing import Literal

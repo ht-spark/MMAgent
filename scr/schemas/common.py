@@ -1,7 +1,4 @@
-"""通用 Schema：跨层共享的基础类型。
-
-对应 plan.md Phase 1.1。
-"""
+"""定义跨智能体和质量门共享的基础数据类型。"""
 from __future__ import annotations
 
 from typing import Literal

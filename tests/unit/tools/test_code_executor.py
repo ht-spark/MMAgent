@@ -67,6 +67,41 @@ class TestExecuteModelCode:
         with pytest.raises(CodeExecutionError, match="超时"):
             execute_model_code(code, timeout=3)
 
+    def test_relative_files_are_cleaned_with_the_execution_directory(
+        self, tmp_path: Path, monkeypatch
+    ):
+        output_name = "temporary_result.txt"
+        code = (
+            "import json\n"
+            f'open("{output_name}", "w", encoding="utf-8").write("ok")\n'
+            'print("__MODEL_RESULT__" + json.dumps({"ok": True}))\n'
+        )
+
+        monkeypatch.chdir(tmp_path)
+        assert execute_model_code(code) == {"ok": True}
+        assert not (tmp_path / output_name).exists()
+
+    def test_collects_model_generated_figures(self, tmp_path: Path):
+        code = (
+            "import json, os\n"
+            "import matplotlib.pyplot as plt\n"
+            "figure_path = os.path.join(os.environ['MODEL_FIGURE_DIR'], 'fit.png')\n"
+            "plt.plot([0, 1], [0, 1])\n"
+            "plt.savefig(figure_path)\n"
+            "plt.close()\n"
+            "print('__MODEL_RESULT__' + json.dumps({'objective': 1.0}))\n"
+        )
+
+        result = execute_model_code(
+            code,
+            figure_output_dir=tmp_path / "figures",
+            figure_prefix="q1",
+            require_figures=True,
+        )
+
+        assert len(result["figures"]) == 1
+        assert Path(result["figures"][0]).is_file()
+
     def test_empty_code(self):
         with pytest.raises(CodeExecutionError, match="为空"):
             execute_model_code("   \n  ")

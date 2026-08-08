@@ -15,7 +15,7 @@ from ..schemas.context import DataProfile, ProjectContext
 from ..schemas.paper import PaperDraft, PaperSection
 from ..schemas.question import QuestionResult
 from ..templates import get_template, PaperTemplate
-from ..tools.visualization_tools import generate_all_figures
+from ..tools.code_executor import generate_all_figures
 from ..tools.table_tools import (
     format_solution_table,
     format_metrics_table,
@@ -30,6 +30,56 @@ from ..tools.table_tools import (
 )
 
 __all__ = ["PaperWriter", "write_paper_node"]
+
+
+def _as_mapping(value: Any, field_name: str) -> dict[str, Any]:
+    """将不符合预期的映射字段降级为空字典，避免报告交付中断。"""
+    if isinstance(value, dict):
+        return value
+
+    print(
+        f"[writer] 忽略格式异常的 {field_name}（期望字典，实际 {type(value).__name__}）",
+    )
+    return {}
+
+
+def _normalize_question_result(
+    question_id: str,
+    result: QuestionResult,
+) -> QuestionResult:
+    """规范化报告所依赖的嵌套映射字段，保留原始求解状态不变。"""
+    computation = dict(_as_mapping(result.computation, f"{question_id}.computation"))
+    computation["results"] = _as_mapping(
+        computation.get("results", {}),
+        f"{question_id}.computation.results",
+    )
+    computation["metrics"] = _as_mapping(
+        computation.get("metrics", {}),
+        f"{question_id}.computation.metrics",
+    )
+
+    formulation = dict(_as_mapping(result.formulation, f"{question_id}.formulation"))
+    formulation["parameters"] = _as_mapping(
+        formulation.get("parameters", {}),
+        f"{question_id}.formulation.parameters",
+    )
+
+    return result.model_copy(
+        update={
+            "computation": computation,
+            "formulation": formulation,
+            "data_preparation": _as_mapping(
+                result.data_preparation,
+                f"{question_id}.data_preparation",
+            ),
+            "findings": _as_mapping(result.findings, f"{question_id}.findings"),
+            "decision_record": _as_mapping(
+                result.decision_record,
+                f"{question_id}.decision_record",
+            ),
+            "validation": _as_mapping(result.validation, f"{question_id}.validation"),
+        }
+    )
 
 
 def _instrumented_llm(state: dict) -> Any:
@@ -728,18 +778,27 @@ class PaperWriter:
             完整的 PaperDraft 对象。
         """
         # 提取状态数据
-        raw_results: dict[str, QuestionResult] = state.get("question_results", {})
+        raw_results = _as_mapping(
+            state.get("question_results", {}),
+            "question_results",
+        )
         project_context: ProjectContext | None = state.get("project_context")
         data_profile: DataProfile | None = state.get("data_profile")
         review_report = state.get("review_report")
         gf_retry = state.get("_gf_retry_count", 0)
 
+        normalized_results = {
+            qid: _normalize_question_result(qid, result)
+            for qid, result in raw_results.items()
+            if isinstance(result, QuestionResult)
+        }
+
         # 只使用已验证的结果；blocked 结果单独保留用于占位章节
         validated: dict[str, QuestionResult] = {
-            qid: r for qid, r in raw_results.items() if r.status == "validated"
+            qid: r for qid, r in normalized_results.items() if r.status == "validated"
         }
         blocked: dict[str, QuestionResult] = {
-            qid: r for qid, r in raw_results.items() if r.status == "blocked"
+            qid: r for qid, r in normalized_results.items() if r.status == "blocked"
         }
 
         if gf_retry > 0:
@@ -760,7 +819,12 @@ class PaperWriter:
         all_results_for_figures = {**validated, **blocked}
         if all_results_for_figures:
             try:
-                self._all_figures = generate_all_figures(
+                executed_figures = {
+                    qid: list(result.figures)
+                    for qid, result in all_results_for_figures.items()
+                    if result.figures
+                }
+                self._all_figures = executed_figures or generate_all_figures(
                     all_results_for_figures, data_profile, self._output_dir
                 )
                 total_figs = sum(len(v) for v in self._all_figures.values())
@@ -1706,17 +1770,26 @@ class PaperWriter:
         tables: list[str] = list(result.tables)
 
         # 获取计算结果和数据准备
-        computation = result.computation
-        data_prep = result.data_preparation
+        computation = dict(_as_mapping(result.computation, f"{qid}.computation"))
+        computation["results"] = _as_mapping(
+            computation.get("results", {}),
+            f"{qid}.computation.results",
+        )
+        computation["metrics"] = _as_mapping(
+            computation.get("metrics", {}),
+            f"{qid}.computation.metrics",
+        )
+        data_prep = _as_mapping(result.data_preparation, f"{qid}.data_preparation")
         feature_names = data_prep.get("feature_names", []) if data_prep else []
 
         # 获取题型和方法信息
         interp = result.problem_interpretation
-        findings = result.findings
+        findings = _as_mapping(result.findings, f"{qid}.findings")
+        decision_record = _as_mapping(result.decision_record, f"{qid}.decision_record")
         task = findings.get("math_task", interp.math_task if interp else "composite")
         method = findings.get(
             "selected_method",
-            result.decision_record.get("selected_method", "未知方法"),
+            decision_record.get("selected_method", "未知方法"),
         )
 
         # --- 问题描述 ---
@@ -1762,7 +1835,7 @@ class PaperWriter:
         lines.append("")
         lines.append(f"#### {qid}.2 方法选择")
         lines.append("")
-        decision = result.decision_record
+        decision = decision_record
         family = decision.get("selected_family", "")
         reason = decision.get(
             "selection_reason", decision.get("reason", "")
@@ -1810,7 +1883,11 @@ class PaperWriter:
         lines.append("")
         lines.append(f"#### {qid}.3 模型建立")
         lines.append("")
-        formulation = result.formulation
+        formulation = dict(_as_mapping(result.formulation, f"{qid}.formulation"))
+        formulation["parameters"] = _as_mapping(
+            formulation.get("parameters", {}),
+            f"{qid}.formulation.parameters",
+        )
         if formulation:
             # 输出 formulation 描述（去重，避免多问重复相同描述）
             desc = formulation.get("description", "")
@@ -2063,7 +2140,7 @@ class PaperWriter:
         # --- 结果检验 ---
         lines.append(f"#### {qid}.5 结果检验")
         lines.append("")
-        validation = result.validation
+        validation = _as_mapping(result.validation, f"{qid}.validation")
         if validation:
             # 检验分析段落
             lines.append(_academic_validation_analysis(task, qid, validation))

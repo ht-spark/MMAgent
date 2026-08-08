@@ -24,8 +24,9 @@ export default function App() {
     setSection('new')
   }
 
-  function openFromHistory(runId: string, step: TaskStep = 'result') {
-    setTask({ step, runId })
+  function openFromHistory(runId: string) {
+    // 所有历史任务都先恢复聊天上下文；ChatModeling 会根据任务状态展示进度或结果。
+    setTask({ step: 'progress', runId })
     setSection('new')
   }
 
