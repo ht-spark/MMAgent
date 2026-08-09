@@ -1,25 +1,29 @@
 """管理建模任务的资源预算和受限时的降级策略。
 
-  预算包括联网检索次数、方法候选数量、代码修复次数、验证迭代次数、时间和 token。
+  预算包括联网检索次数、方法候选数量、代码修复次数、验证迭代次数、G0/GF 重试次数。
   预算紧张时的降级顺序为：减少低价值候选、优先简单基线、减少非关键图表、
   保留必要验证；不得跳过数据质量检查、数值复现和任务覆盖检查。
 
 本模块同时承担两类不同性质的预算：
-  - 强制（enforced）：SEARCH / CANDIDATE / CODE_REPAIR / VALIDATION_ITERATION。
+  - 强制（enforced）：SEARCH / CANDIDATE / CODE_REPAIR / VALIDATION_ITERATION /
+    INTAKE_RETRY / PAPER_REVISION。
     按小问独立计数，超额拒绝继续；每问开始时自动重置；用户可临时覆盖单问上限。
+    其中 INTAKE_RETRY 和 PAPER_REVISION 为任务级预算，在任务启动时一次性配置。
   - 监控（monitor）：TIME / TOKEN。
-    全程累计，不强制阻塞；用于事后报告"每问耗时/token"和"任务总耗时/总 token"。
+    全程累计，无阈值，不强制阻塞；仅用于事后报告"每问耗时/token"和"任务总耗时/总 token"。
 
 典型用法：
 
     bm = BudgetManager()
+    # 任务启动时配置任务级预算（INTAKE_RETRY / PAPER_REVISION）
+    bm.update_run_limits({BudgetType.INTAKE_RETRY: 5, BudgetType.PAPER_REVISION: 3})
     # 消耗强制预算：超额返回 False
     if bm.consume(BudgetType.SEARCH, amount=1, question_id=qid):
         tavily.search(...)
     else:
         # 跳过本次搜索，进入降级
         ...
-    # 监控式记账：始终成功
+    # 监控式记账：始终成功（无阈值，仅统计）
     bm.record_monitor(BudgetType.TIME, elapsed_seconds, question_id=qid)
     bm.record_monitor(BudgetType.TOKEN, tokens_used, question_id=qid)
     # 用户在指定小问临时覆盖上限
@@ -63,7 +67,7 @@ MONITOR_BUDGETS: frozenset[BudgetType] = frozenset({
 })
 
 
-# 默认预算配置（强制项为单问上限；监控项为参考上限）
+# 默认预算配置（强制项为单问上限；监控项无阈值，纯统计）
 DEFAULT_BUDGETS: dict[BudgetType, int] = {
     BudgetType.SEARCH: 10,
     BudgetType.CANDIDATE: 4,
@@ -71,16 +75,15 @@ DEFAULT_BUDGETS: dict[BudgetType, int] = {
     BudgetType.VALIDATION_ITERATION: 2,
     BudgetType.INTAKE_RETRY: 3,
     BudgetType.PAPER_REVISION: 2,
-    BudgetType.TIME: 3600,     # 1 小时（监控阈值，不强制）
-    BudgetType.TOKEN: 100000,
+    BudgetType.TIME: 0,        # 纯监控，无阈值
+    BudgetType.TOKEN: 0,       # 纯监控，无阈值
 }
 
 
-# 降级顺序（从低价值到高价值；TIME/TOKEN 不可降级）
+# 降级顺序（从低价值到高价值；TIME/TOKEN 纯监控，不参与降级）
 DEGRADATION_ORDER: list[BudgetType] = [
     BudgetType.SEARCH,
     BudgetType.CANDIDATE,
-    BudgetType.TOKEN,
     BudgetType.CODE_REPAIR,
     BudgetType.VALIDATION_ITERATION,
     BudgetType.INTAKE_RETRY,
@@ -118,9 +121,9 @@ class BudgetRecord:
 
     @property
     def usage_ratio(self) -> float:
-        """强制项已用比例；监控项按 run_total / limit 估计。"""
+        """强制项已用比例；监控项无阈值，始终返回 0.0。"""
         if self.budget_type in MONITOR_BUDGETS:
-            return self.run_total / self.limit if self.limit > 0 else 0.0
+            return 0.0
         return self.used / self.limit if self.limit > 0 else 1.0
 
     def consume(self, amount: int = 1, *, override_limit: int | None = None) -> bool:
@@ -154,17 +157,19 @@ class BudgetManager:
     """预算管理器。
 
     一次性创建，全程持有。两类预算共享同一份 record，但语义不同：
-      - 强制项（SEARCH/CANDIDATE/CODE_REPAIR/VALIDATION_ITERATION）：
+      - 强制项（SEARCH/CANDIDATE/CODE_REPAIR/VALIDATION_ITERATION/INTAKE_RETRY/PAPER_REVISION）：
           - 默认上限来自 DEFAULT_BUDGETS；
-          - 通过 set_question_limits(qid, ...) 在指定小问临时覆盖；
+          - INTAKE_RETRY/PAPER_REVISION 为任务级，通过 update_run_limits() 在启动时配置；
+          - SEARCH/CANDIDATE/CODE_REPAIR/VALIDATION_ITERATION 通过 set_question_limits(qid, ...)
+            在指定小问临时覆盖；
           - 重试/消耗前调用 consume()，超额返回 False；
           - 新小问开始时调用 reset_for_new_question() 重置 used。
       - 监控项（TIME/TOKEN）：
-          - 始终调用 record_monitor() 记账，永不阻塞；
+          - 无阈值，始终调用 record_monitor() 记账，永不阻塞；
           - used 与 run_total 都在增长，前者在按问重置时清零。
 
     Args:
-        run_limits: 运行级上限覆盖（用于强制项的默认值与监控项的参考上限）。
+        run_limits: 运行级上限覆盖（用于强制项的默认值）。
         per_question_limits: 初始每问覆盖映射
             {question_id: {BudgetType: limit}}。
     """
@@ -279,6 +284,21 @@ class BudgetManager:
             q_usage[budget_type] = q_usage.get(budget_type, 0) + amount
 
     # ------------------------------------------------------------------
+    # 任务级配置
+    # ------------------------------------------------------------------
+
+    def update_run_limits(self, limits: dict[BudgetType, int]) -> None:
+        """更新运行级上限（用于任务启动时配置 INTAKE_RETRY/PAPER_REVISION）。
+
+        仅对强制项生效；监控项覆盖会被忽略。
+        """
+        for bt, lim in limits.items():
+            if bt in ENFORCED_BUDGETS and lim > 0:
+                record = self._records.get(bt)
+                if record:
+                    record.limit = lim
+
+    # ------------------------------------------------------------------
     # 每问配置
     # ------------------------------------------------------------------
 
@@ -353,10 +373,6 @@ class BudgetManager:
             elif bt == BudgetType.CANDIDATE:
                 suggestions.append(
                     f"候选预算已用 {ratio:.0%}，建议优先简单基线方案"
-                )
-            elif bt == BudgetType.TOKEN:
-                suggestions.append(
-                    f"token 预算已用 {ratio:.0%}（监控项），建议减少非关键 LLM 调用"
                 )
             elif bt == BudgetType.CODE_REPAIR:
                 suggestions.append(

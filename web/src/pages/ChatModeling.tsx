@@ -91,7 +91,7 @@ type ProgressCardProps = {
   text: string
   currentStep: string
   running: boolean
-  budgetReq: { question_id: string; proposed: Record<string, number> } | null
+  budgetReq: { question_id: string; proposed: Record<string, number>; phase: 'initial' | 'question' } | null
   budgetDraft: Record<string, number>
   budgetBusy: boolean
   onBudgetDraftChange: (key: string, value: number) => void
@@ -136,17 +136,25 @@ function ProgressCard({
       </div>
       {budgetReq && (
         <div className="progress-budget">
-          <div className="progress-budget-title">确认{fmtQid(budgetReq.question_id)}预算</div>
-          <p>建模已暂停。可调整上限后确认覆盖，或直接使用默认预算继续。</p>
+          <div className="progress-budget-title">
+            {budgetReq.phase === 'initial'
+              ? '任务预算配置'
+              : `确认${fmtQid(budgetReq.question_id)}预算`}
+          </div>
+          <p>
+            {budgetReq.phase === 'initial'
+              ? '任务即将开始。可调整任务级预算上限后确认，或直接使用默认继续。'
+              : '建模已暂停。可调整上限后确认覆盖，或直接使用默认预算继续。'}
+          </p>
           <div className="budget-fields">
-            {BUDGET_FIELDS.map((field) => (
+            {(budgetReq.phase === 'initial' ? INITIAL_BUDGET_FIELDS : QUESTION_BUDGET_FIELDS).map((field) => (
               <label key={field.key} className="budget-field">
                 <span className="budget-field-label">{field.label}</span>
                 <input
                   type="number"
                   min={1}
                   value={budgetDraft[field.key] ?? 0}
-                  disabled={!field.enforced || budgetBusy}
+                  disabled={budgetBusy}
                   onChange={(event) => onBudgetDraftChange(field.key, Number(event.target.value))}
                 />
               </label>
@@ -166,17 +174,24 @@ function ProgressCard({
   )
 }
 
-/** 预算项配置：仅展示强制项（监控项 time/token 不在弹窗中显示，完成后统计） */
-const BUDGET_FIELDS: { key: string; label: string; enforced: boolean }[] = [
-  { key: 'search', label: '联网检索次数', enforced: true },
-  { key: 'candidate', label: '方法候选数量', enforced: true },
-  { key: 'code_repair', label: '代码修复次数', enforced: true },
-  { key: 'validation', label: '验证迭代次数', enforced: true },
+/** 初始任务级预算字段（任务启动时一次性配置） */
+const INITIAL_BUDGET_FIELDS: { key: string; label: string }[] = [
+  { key: 'intake_retry', label: 'G0 输入质量门重试' },
+  { key: 'paper_revision', label: 'GF 交付质量门修订' },
+]
+
+/** 每问级预算字段（每个子问题求解前配置） */
+const QUESTION_BUDGET_FIELDS: { key: string; label: string }[] = [
+  { key: 'search', label: '联网检索次数' },
+  { key: 'candidate', label: '方法候选数量' },
+  { key: 'code_repair', label: '代码修复次数' },
+  { key: 'validation', label: '验证迭代次数' },
 ]
 
 type BudgetReq = {
   question_id: string
   proposed: Record<string, number>
+  phase: 'initial' | 'question'
 }
 
 type Props = {
@@ -307,17 +322,19 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
   function handleProgressEvent(ev: any) {
     if (ev.type === 'budget_request') {
       const proposed: Record<string, number> = ev.proposed || {}
-      setBudgetReq({ question_id: ev.question_id || '', proposed })
+      const phase: 'initial' | 'question' = ev.phase === 'initial' ? 'initial' : 'question'
+      setBudgetReq({ question_id: ev.question_id || '', proposed, phase })
       setBudgetDraft({ ...proposed })
     } else if (ev.type === 'budget_confirmed') {
       setBudgetReq(null)
       const action = ev.action
+      const phaseLabel = ev.phase === 'initial' ? '任务预算' : `预算配置 · ${fmtQid(ev.question_id || '')}`
       if (action === 'override') {
-        appendProgress(`预算配置 · ${fmtQid(ev.question_id || '')}已按输入覆盖`)
+        appendProgress(`${phaseLabel}已按输入覆盖`)
       } else if (action === 'default') {
-        appendProgress(`预算配置 · ${fmtQid(ev.question_id || '')}沿用默认`)
+        appendProgress(`${phaseLabel}沿用默认`)
       } else {
-        appendProgress(`预算配置 · ${fmtQid(ev.question_id || '')}确认已取消`)
+        appendProgress(`${phaseLabel}确认已取消`)
       }
     } else if (ev.type === 'budget_summary') {
       statsRef.current = {
@@ -415,6 +432,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           pendingBudget = {
             question_id: ev.question_id || '',
             proposed: ev.proposed || {},
+            phase: ev.phase === 'initial' ? 'initial' : 'question',
           }
         } else if (ev.type === 'budget_confirmed') {
           pendingBudget = null
@@ -474,52 +492,64 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       ensureProgressMessage()
       setCurrentStep('数据摄入')
     }
-    const url = after > 0
-      ? `/api/runs/${id}/progress/stream?after=${after}`
-      : `/api/runs/${id}/progress/stream`
-    const es = new EventSource(url)
-    esRef.current = es
 
+    // 跟踪已接收事件数，用于断线重连时携带 after 参数避免重复
+    let eventsReceived = after
     let reconnectCount = 0
 
-    es.onopen = () => {
-      reconnectCount = 0
-    }
+    const connect = () => {
+      const url = eventsReceived > 0
+        ? `/api/runs/${id}/progress/stream?after=${eventsReceived}`
+        : `/api/runs/${id}/progress/stream`
+      const es = new EventSource(url)
+      esRef.current = es
 
-    es.onmessage = (e) => {
-      let data: any
-      try {
-        data = JSON.parse(e.data)
-      } catch {
-        return
+      es.onopen = () => {
+        reconnectCount = 0
       }
-      if (data.type === 'event') {
-        const event = data.event || {}
-        if (event.type === 'node_start' || event.type === 'node') {
-          queueProgressEvent(event)
-        } else {
-          handleProgressEvent(event)
+
+      es.onmessage = (e) => {
+        let data: any
+        try {
+          data = JSON.parse(e.data)
+        } catch {
+          return
         }
-      } else if (data.type === 'done') {
-        es.close()
-        finishAfterProgressEvents(id, data.status, data.error)
-      } else if (data.type === 'error') {
-        push('assistant', `❌ ${data.message || '进度流出错'}`, 'error')
+        if (data.type === 'event') {
+          eventsReceived++
+          const event = data.event || {}
+          if (event.type === 'node_start' || event.type === 'node') {
+            queueProgressEvent(event)
+          } else {
+            handleProgressEvent(event)
+          }
+        } else if (data.type === 'done') {
+          es.close()
+          finishAfterProgressEvents(id, data.status, data.error)
+        } else if (data.type === 'error') {
+          push('assistant', `❌ ${data.message || '进度流出错'}`, 'error')
+        }
+        // 'subscribed' / 注释心跳无需处理
       }
-      // 'subscribed' / 注释心跳无需处理
+
+      es.onerror = () => {
+        // 关闭当前连接，手动重连以携带 after 参数避免事件重复
+        es.close()
+        reconnectCount++
+        if (reconnectCount === 3) {
+          push('assistant', '⚠️ 进度流连接不稳定，正在自动重连…', 'warn')
+        }
+        if (reconnectCount > 10) {
+          push('assistant', '❌ 进度流连接失败，请检查后端服务是否正常运行。', 'error')
+          return
+        }
+        // 指数退避重连（1s → 1.5s → 2.25s … 上限 10s）
+        const delay = Math.min(1000 * Math.pow(1.5, reconnectCount - 1), 10000)
+        window.setTimeout(() => connect(), delay)
+      }
     }
 
-    es.onerror = () => {
-      // EventSource 会自动重连，但若多次失败则提示用户
-      reconnectCount++
-      if (reconnectCount === 3) {
-        push('assistant', '⚠️ 进度流连接不稳定，正在自动重连…', 'warn')
-      }
-      if (reconnectCount > 10) {
-        es.close()
-        push('assistant', '❌ 进度流连接失败，请检查后端服务是否正常运行。', 'error')
-      }
-    }
+    connect()
   }
 
   /** 任务完成后：拉取产物并在聊天中展示（仅 paper.md/docx、图片、解题代码） */
@@ -622,9 +652,10 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     setBudgetBusy(true)
     const limits: Record<string, number> = {}
     if (!useDefaults) {
-      for (const k of ['search', 'candidate', 'code_repair', 'validation']) {
-        const v = Number(budgetDraft[k])
-        if (Number.isFinite(v) && v > 0) limits[k] = Math.floor(v)
+      const fields = budgetReq.phase === 'initial' ? INITIAL_BUDGET_FIELDS : QUESTION_BUDGET_FIELDS
+      for (const field of fields) {
+        const v = Number(budgetDraft[field.key])
+        if (Number.isFinite(v) && v > 0) limits[field.key] = Math.floor(v)
       }
     }
     try {

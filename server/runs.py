@@ -433,7 +433,9 @@ async def execute_run(
         proposed: dict = {}
         if bm is not None:
             try:
-                proposed = {bt.value: r.limit for bt, r in bm.all_records().items()}
+                proposed = {bt.value: r.limit for bt, r in bm.all_records().items()
+                           if bt in (BudgetType.SEARCH, BudgetType.CANDIDATE,
+                                     BudgetType.CODE_REPAIR, BudgetType.VALIDATION_ITERATION)}
             except Exception:  # noqa: BLE001
                 proposed = {}
         ev = request_budget_confirmation(run_id, qid, proposed)
@@ -441,6 +443,7 @@ async def execute_run(
             run_id,
             {
                 "type": "budget_request",
+                "phase": "question",
                 "node": "configure_question_budget",
                 "question_id": qid,
                 "proposed": proposed,
@@ -455,6 +458,7 @@ async def execute_run(
                     run_id,
                     {
                         "type": "budget_confirmed",
+                        "phase": "question",
                         "question_id": qid,
                         "action": "cancelled",
                         "timestamp": time.time(),
@@ -468,6 +472,7 @@ async def execute_run(
                 run_id,
                 {
                     "type": "budget_confirmed",
+                    "phase": "question",
                     "question_id": qid,
                     "action": "default",
                     "timestamp": time.time(),
@@ -478,6 +483,7 @@ async def execute_run(
             run_id,
             {
                 "type": "budget_confirmed",
+                "phase": "question",
                 "question_id": qid,
                 "action": "override",
                 "limits": decision,
@@ -489,7 +495,77 @@ async def execute_run(
         except Exception:  # noqa: BLE001
             return None
 
+    def _request_initial_budget() -> dict | None:
+        """任务启动前请求用户配置任务级预算（INTAKE_RETRY / PAPER_REVISION）。
+
+        在后台线程中阻塞等待用户确认。返回 {BudgetType: int} 或 None（沿用默认）。
+        """
+        from scr.runtime.budget import DEFAULT_BUDGETS
+        proposed = {
+            BudgetType.INTAKE_RETRY.value: DEFAULT_BUDGETS[BudgetType.INTAKE_RETRY],
+            BudgetType.PAPER_REVISION.value: DEFAULT_BUDGETS[BudgetType.PAPER_REVISION],
+        }
+        ev = request_budget_confirmation(run_id, "", proposed)
+        append_progress(
+            run_id,
+            {
+                "type": "budget_request",
+                "phase": "initial",
+                "node": "initial_budget",
+                "question_id": "",
+                "proposed": proposed,
+                "timestamp": time.time(),
+            },
+        )
+        while not ev.wait(timeout=1.0):
+            if _cancel_flags.get(run_id, False):
+                clear_budget_pending(run_id)
+                append_progress(
+                    run_id,
+                    {
+                        "type": "budget_confirmed",
+                        "phase": "initial",
+                        "action": "cancelled",
+                        "timestamp": time.time(),
+                    },
+                )
+                return None
+        decision = take_budget_decision(run_id)
+        clear_budget_pending(run_id)
+        if not decision:
+            append_progress(
+                run_id,
+                {
+                    "type": "budget_confirmed",
+                    "phase": "initial",
+                    "action": "default",
+                    "timestamp": time.time(),
+                },
+            )
+            return None
+        append_progress(
+            run_id,
+            {
+                "type": "budget_confirmed",
+                "phase": "initial",
+                "action": "override",
+                "limits": decision,
+                "timestamp": time.time(),
+            },
+        )
+        try:
+            return {BudgetType(k): int(v) for k, v in decision.items()}
+        except Exception:  # noqa: BLE001
+            return None
+
     try:
+        # 任务启动前：请求用户配置任务级预算（INTAKE_RETRY / PAPER_REVISION）
+        from scr.runtime.budget import BudgetManager
+        bm = BudgetManager()
+        initial_limits = await asyncio.to_thread(_request_initial_budget)
+        if initial_limits:
+            bm.update_run_limits(initial_limits)
+
         final_state = await asyncio.to_thread(
             run_graph,
             problem_text=problem_text,
@@ -500,6 +576,7 @@ async def execute_run(
             progress_callback=_callback,
             console=False,
             cancel_check=_cancel_check,
+            budget_manager=bm,
             budget_config_callback=_budget_callback,
         )
         # 任务完成后推送预算统计（time/token），前端在聊天中展示

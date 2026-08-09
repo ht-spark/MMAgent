@@ -47,7 +47,7 @@ class CodeExecutionError(Exception):
 def execute_model_code(
     code: str,
     data_csv_path: str | Path | None = None,
-    timeout: int = 30,
+    timeout: int = 1800,
     figure_output_dir: str | Path | None = None,
     figure_prefix: str = "",
     require_figures: bool = False,

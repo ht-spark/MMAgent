@@ -76,11 +76,11 @@ class CreateRunResponse(BaseModel):
 
 
 class BudgetConfirmBody(BaseModel):
-    """用户在弹窗中确认某小问预算的请求体。"""
+    """用户在弹窗中确认预算的请求体（初始任务级或每问级）。"""
 
-    question_id: str | None = Field(None, description="对应的小问 id（仅校验用）")
+    question_id: str | None = Field(None, description="对应的小问 id（初始预算为空）")
     use_defaults: bool = Field(False, description="True=沿用默认预算，不覆盖")
     limits: dict[str, int] | None = Field(
         None,
-        description='预算覆盖，键为预算类型字符串(search/candidate/code_repair/validation)，值为上限',
+        description='预算覆盖，键为预算类型字符串(search/candidate/code_repair/validation/intake_retry/paper_revision)，值为上限',
     )

@@ -213,7 +213,7 @@
 .page-fill form.form-card .submit-btn { margin-top: auto; }
 
 .chat-page {
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   padding: 8px 24px 12px;
 }
@@ -997,7 +997,7 @@
    这里只补齐整页布局、聊天框、文件 chip 与消息类型配色。
    ============================================================ */
 .chatapp {
-  width: min(1320px, 100%);
+  width: 100%;
   height: calc(100vh - 20px);
   display: flex;
   flex-direction: column;

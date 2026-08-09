@@ -27,10 +27,10 @@ CODE_BASED_TASKS = {
     "composite",
 }
 
-#: 模型设计调用超时（秒）——"思考"阶段，给足时间（6 分钟）
-MODEL_DESIGN_TIMEOUT = 360
-#: 代码生成调用超时（秒）——"写代码"阶段，给足时间（6 分钟）
-CODE_GENERATION_TIMEOUT = 360
+#: 模型设计调用超时（秒）——"思考"阶段，给足时间（10 分钟）
+MODEL_DESIGN_TIMEOUT = 600
+#: 代码生成调用超时（秒）——"写代码"阶段，给足时间（10 分钟）
+CODE_GENERATION_TIMEOUT = 600
 #: 等待进度打印间隔（秒）
 _PROGRESS_INTERVAL = 60
 
