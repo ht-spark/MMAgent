@@ -356,7 +356,7 @@ def _check_task_deliverables(result: QuestionResult) -> list[str]:
         if not has_predictions or not has_error_metric:
             failures.append("prediction_outputs_missing")
     elif task == "optimization":
-        has_solution = any(k in results for k in ("optimal_solution", "best_solution", "decision_solution"))
+        has_solution = any(k in results for k in ("optimal_solution", "decision_solution"))
         has_objective = any(k in results for k in ("optimal_objective", "objective_value")) or "objective_value" in metrics
         if not has_solution or not has_objective:
             failures.append("optimization_solution_missing")

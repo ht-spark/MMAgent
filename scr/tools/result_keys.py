@@ -1,9 +1,9 @@
 """结果键名归一化工具。
 
-统一三套键名契约，避免"LLM 严格按提示词输出的合格结果被硬编码校验误杀"：
+统一两套键名契约，避免"LLM 严格按提示词输出的合格结果被硬编码校验误杀"：
   - LLM 提示词契约（prompts/code_based_modeling.md）：`solution` / `objective` / `r2` ...
-  - 预设方法契约（model_builder 确定性计算）：`optimal_solution` / `optimal_objective` / `r_squared` ...
-  - 校验/门禁契约（model_builder._validate_task_results、gq_question、result_validator）
+  - 校验/门禁契约（model_builder._validate_task_results、gq_question、result_validator）：
+    `optimal_solution` / `optimal_objective` / `r_squared` ...
 
 校验前调用 normalize 补齐同义键，使任意合法写法都能命中检查。
 """
@@ -14,7 +14,7 @@ from typing import Any
 #: 同义键组：同组内的键视为等价，normalize 时互相补齐。
 #: 注意：evaluation 的 weights/scores/ranking 是"任一输出形态"，语义不同，不归组。
 _ALIAS_GROUPS: list[frozenset[str]] = [
-    frozenset({"optimal_solution", "solution", "best_solution", "decision_solution"}),
+    frozenset({"optimal_solution", "solution", "decision_solution"}),
     frozenset({"optimal_objective", "objective", "objective_value"}),
     frozenset({"r_squared", "r2"}),
 ]
