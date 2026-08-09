@@ -1189,14 +1189,286 @@ def pandoc_available() -> bool:
     return find_pandoc() is not None
 
 
+def _post_process_pandoc_docx(docx_path: str | Path) -> None:
+    """后处理 Pandoc 生成的 DOCX，应用三线表和中文论文格式。
+
+    Pandoc 生成的 DOCX 公式为原生 OMML（可编辑），但表格无三线表样式、
+    字体为西文默认、缺少页码和中文排版规范。此函数在 Pandoc 转换后
+    对 DOCX 进行格式修正。
+
+    Args:
+        docx_path: Pandoc 生成的 DOCX 文件路径。
+    """
+    doc = Document(str(docx_path))
+
+    # -- 1. 文档默认样式 --
+    _apply_document_styles(doc)
+
+    # -- 2. 页面边距 --
+    for section in doc.sections:
+        section.top_margin = Cm(2.54)
+        section.bottom_margin = Cm(2.54)
+        section.left_margin = Cm(3.17)
+        section.right_margin = Cm(3.17)
+
+    # -- 3. 表格三线表格式 --
+    for table in doc.tables:
+        _apply_three_line_table_format(table)
+
+    # -- 4. 页码 --
+    _add_page_numbers_to_doc(doc)
+
+    doc.save(str(docx_path))
+    print(f"[md2docx] 后处理完成（三线表+样式）: {docx_path}", flush=True)
+
+
+def _apply_document_styles(doc: Document) -> None:
+    """设置文档默认样式和标题样式。"""
+    # Normal 样式：宋体 12pt，1.5 倍行距
+    style = doc.styles["Normal"]
+    font = style.font
+    font.name = "Times New Roman"
+    font.size = Pt(12)
+    style.element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+    pf = style.paragraph_format
+    pf.space_after = Pt(6)
+    pf.line_spacing = 1.5
+
+    # 标题样式：黑体
+    heading_configs = {
+        "Heading 1": (16, True),
+        "Heading 2": (14, True),
+        "Heading 3": (13, True),
+        "Heading 4": (12, True),
+    }
+    for style_name, (font_size, bold) in heading_configs.items():
+        try:
+            hs = doc.styles[style_name]
+        except KeyError:
+            continue
+        hs.font.name = "Times New Roman"
+        hs.font.size = Pt(font_size)
+        hs.font.bold = bold
+        hs.font.color.rgb = RGBColor(0, 0, 0)
+        rPr = hs.element.get_or_add_rPr()
+        rFonts = rPr.get_or_add_rFonts()
+        rFonts.set(qn("w:eastAsia"), "黑体")
+        hs.paragraph_format.space_before = Pt(12)
+        hs.paragraph_format.space_after = Pt(6)
+
+
+def _apply_three_line_table_format(table) -> None:
+    """对单个表格应用三线表格式。
+
+    - 顶部 1.5pt 粗线
+    - 底部 1.5pt 粗线
+    - 表头行底部 0.75pt 细线
+    - 其余无边框
+    - 列宽按内容自适应
+    - 单元格宋体 10.5pt 居中，表头加粗
+    """
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    if tblPr is None:
+        tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+        tbl.insert(0, tblPr)
+
+    # 移除已有边框和样式
+    for child_name in ("w:tblBorders", "w:tblStyle"):
+        existing = tblPr.find(qn(child_name))
+        if existing is not None:
+            tblPr.remove(existing)
+
+    # 设置三线表边框
+    borders_xml = (
+        f'<w:tblBorders {nsdecls("w")}>'
+        '<w:top w:val="single" w:sz="12" w:space="0" w:color="000000"/>'
+        '<w:bottom w:val="single" w:sz="12" w:space="0" w:color="000000"/>'
+        '<w:left w:val="nil"/>'
+        '<w:right w:val="nil"/>'
+        '<w:insideH w:val="nil"/>'
+        '<w:insideV w:val="nil"/>'
+        '</w:tblBorders>'
+    )
+    tblPr.append(parse_xml(borders_xml))
+
+    # 设置表格宽度为页面可用宽度
+    tblW = tblPr.find(qn("w:tblW"))
+    if tblW is None:
+        tblW = parse_xml(f'<w:tblW {nsdecls("w")}/>')
+        tblPr.append(tblW)
+    tblW.set(qn("w:w"), "8785")  # 约 15.5cm (页面宽度减去边距)
+    tblW.set(qn("w:type"), "dxa")
+
+    # 设置固定布局（使列宽设置生效）
+    existing_layout = tblPr.find(qn("w:tblLayout"))
+    if existing_layout is not None:
+        tblPr.remove(existing_layout)
+    tblLayout = parse_xml(
+        f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'
+    )
+    tblPr.append(tblLayout)
+
+    # 计算列宽（按内容长度比例分配）
+    n_cols = len(table.columns)
+    n_rows = len(table.rows)
+    if n_cols == 0 or n_rows == 0:
+        return
+
+    col_max_len = [0] * n_cols
+    for row in table.rows:
+        for j, cell in enumerate(row.cells):
+            text_len = max(len(line) for line in cell.text.split("\n")) if cell.text else 1
+            # 中文字符算2个宽度
+            weighted_len = sum(2 if ord(c) > 127 else 1 for c in cell.text)
+            col_max_len[j] = max(col_max_len[j], weighted_len, text_len * 2)
+
+    total_len = sum(col_max_len) or 1
+    total_width_dxa = 8785  # 总宽度 (dxa)
+    col_widths = []
+    for j in range(n_cols):
+        ratio = col_max_len[j] / total_len
+        width = max(1200, min(4000, int(total_width_dxa * ratio)))
+        col_widths.append(width)
+
+    # 微调使总宽度匹配
+    diff = total_width_dxa - sum(col_widths)
+    if diff != 0:
+        col_widths[-1] += diff
+
+    # 更新 tblGrid 中的 gridCol 元素（决定实际列宽）
+    tblGrid = tbl.find(qn("w:tblGrid"))
+    if tblGrid is not None:
+        gridCols = tblGrid.findall(qn("w:gridCol"))
+        for j, gridCol in enumerate(gridCols):
+            if j < len(col_widths):
+                gridCol.set(qn("w:w"), str(col_widths[j]))
+
+    # 设置列宽和单元格格式
+    for i, row in enumerate(table.rows):
+        # 设置行高
+        tr = row._tr
+        trPr = tr.get_or_add_trPr()
+        trHeight = parse_xml(
+            f'<w:trHeight {nsdecls("w")} w:val="340" w:hRule="atLeast"/>'
+        )
+        trPr.append(trHeight)
+
+        for j, cell in enumerate(row.cells):
+            # 设置列宽（同时更新 tcW）
+            if j < len(col_widths):
+                tc = cell._tc
+                tcPr2 = tc.get_or_add_tcPr()
+                existing_tcW = tcPr2.find(qn("w:tcW"))
+                if existing_tcW is not None:
+                    tcPr2.remove(existing_tcW)
+                tcW_xml = parse_xml(
+                    f'<w:tcW {nsdecls("w")} w:w="{col_widths[j]}" w:type="dxa"/>'
+                )
+                tcPr2.insert(0, tcW_xml)
+
+            # 设置单元格内边距
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            # 移除已有边距设置
+            existing_mar = tcPr.find(qn("w:tcMar"))
+            if existing_mar is not None:
+                tcPr.remove(existing_mar)
+            tcMar = parse_xml(
+                f'<w:tcMar {nsdecls("w")}>'
+                '<w:top w:w="50" w:type="dxa"/>'
+                '<w:bottom w:w="50" w:type="dxa"/>'
+                '<w:left w:w="100" w:type="dxa"/>'
+                '<w:right w:w="100" w:type="dxa"/>'
+                '</w:tcMar>'
+            )
+            tcPr.append(tcMar)
+
+            # 设置单元格段落格式
+            for para in cell.paragraphs:
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                para.paragraph_format.first_line_indent = Cm(0)
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = Pt(0)
+
+                # 设置 run 字体
+                for run in para.runs:
+                    run.font.name = "Times New Roman"
+                    run.font.size = Pt(10.5)
+                    run.font.element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+                    # 表头行加粗
+                    if i == 0:
+                        run.bold = True
+
+            # 表头行底部边框（第二行开始才需要）
+            if i == 0 and n_rows > 1:
+                existing_borders = tcPr.find(qn("w:tcBorders"))
+                if existing_borders is not None:
+                    tcPr.remove(existing_borders)
+                tcBorders = parse_xml(
+                    f'<w:tcBorders {nsdecls("w")}>'
+                    '<w:bottom w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+                    '</w:tcBorders>'
+                )
+                tcPr.append(tcBorders)
+
+
+def _add_page_numbers_to_doc(doc: Document) -> None:
+    """为文档添加页码（页脚居中）。"""
+    for section in doc.sections:
+        footer = section.footer
+        footer_para = (
+            footer.paragraphs[0]
+            if footer.paragraphs
+            else footer.add_paragraph()
+        )
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # 清除已有内容
+        for run in footer_para.runs:
+            run.text = ""
+
+        # 添加页码字段
+        run1 = footer_para.add_run()
+        fldChar1 = parse_xml(
+            f'<w:fldChar {nsdecls("w")} w:fldCharType="begin"/>'
+        )
+        run1._r.append(fldChar1)
+
+        run2 = footer_para.add_run()
+        instrText = parse_xml(
+            f'<w:instrText {nsdecls("w")} xml:space="preserve"> PAGE </w:instrText>'
+        )
+        run2._r.append(instrText)
+
+        run3 = footer_para.add_run()
+        fldChar2 = parse_xml(
+            f'<w:fldChar {nsdecls("w")} w:fldCharType="end"/>'
+        )
+        run3._r.append(fldChar2)
+
+
 def pandoc_to_docx(
     md_path: str | Path,
     output_path: str | Path,
     resource_path: str | Path | None = None,
     reference_doc: str | Path | None = None,
     extra_args: list[str] | None = None,
+    post_process: bool = True,
 ) -> str:
-    """调用 Pandoc 将 Markdown 转为 DOCX（含可编辑 Word 公式）。"""
+    """调用 Pandoc 将 Markdown 转为 DOCX（含可编辑 Word 公式）。
+
+    Args:
+        md_path: Markdown 文件路径。
+        output_path: 输出 DOCX 文件路径。
+        resource_path: 资源（图片）基准目录。
+        reference_doc: 参考文档（用于样式模板）。
+        extra_args: 附加 Pandoc 命令行参数。
+        post_process: 是否在后处理中应用三线表和中文论文格式。
+
+    Returns:
+        输出 DOCX 文件路径。
+    """
     pandoc = find_pandoc()
     if pandoc is None:
         raise FileNotFoundError("系统未检测到 Pandoc")
@@ -1225,6 +1497,14 @@ def pandoc_to_docx(
         raise subprocess.CalledProcessError(
             proc.returncode, cmd, output=proc.stdout, stderr=proc.stderr[-2000:]
         )
+
+    # 后处理：应用三线表和中文论文格式
+    if post_process:
+        try:
+            _post_process_pandoc_docx(output_path)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[md2docx] 后处理失败（不影响公式）: {exc}", flush=True)
+
     return str(output_path)
 
 
@@ -1250,6 +1530,58 @@ def markdown_to_docx(
     builder.build(blocks, title=title)
     builder.save()
     return output_path
+
+
+def _preprocess_markdown_math(md_text: str) -> str:
+    """预处理 Markdown 中的数学公式格式，提高 Pandoc 渲染成功率。
+
+    修复以下问题：
+      1. 行内公式 ``$ formula $`` → ``$formula$``
+         Pandoc 的 tex_math_dollars 扩展要求 ``$`` 紧贴非空格字符，
+         否则不识别为数学公式。生成的 Markdown 中行内公式常有额外空格。
+      2. 段落内嵌入的 ``$$ ... $$`` 独立成行
+         确保 Pandoc 将其正确识别为 display math 块。
+
+    Args:
+        md_text: 原始 Markdown 文本。
+
+    Returns:
+        预处理后的 Markdown 文本。
+    """
+    # 1. 修复行内公式：$ formula $ → $formula$
+    #    (?<!\$) 避免 $$ 的第二个 $ 被匹配
+    #    (?!\$)  避免 $$ 的第一个 $ 被匹配
+    md_text = re.sub(
+        r'(?<!\$)\$\s+([^\$\n]+?)\s+\$(?!\$)',
+        r'$\1$',
+        md_text,
+    )
+
+    # 2. 将行内嵌入的 $$ ... $$ 独立成行
+    #    匹配 "文字$$formula$$文字" → "文字\n$$formula$$\n文字"
+    #    只处理 $$ 前后有非换行字符的情况
+    md_text = re.sub(
+        r'(?<=\S)\$\$([^\$\n]+)\$\$',
+        r'\n$$\1$$\n',
+        md_text,
+    )
+    md_text = re.sub(
+        r'\$\$([^\$\n]+)\$\$(?=\S)',
+        r'$$\1$$\n',
+        md_text,
+    )
+
+    # 3. 替换 \tag{N} → \qquad (N)
+    #    Pandoc 的 tex_math_dollars 不支持 \tag{} 命令，
+    #    会导致包含 \tag{} 的公式无法渲染。
+    #    替换为 \qquad (N) 可在公式内显示编号。
+    md_text = re.sub(
+        r'\\tag\{([^}]+)\}',
+        r'\\qquad (\1)',
+        md_text,
+    )
+
+    return md_text
 
 
 def convert_paper_md_to_docx(
@@ -1279,7 +1611,18 @@ def convert_paper_md_to_docx(
     if pandoc_available():
         try:
             print("[md2docx] 检测到 Pandoc，使用 Pandoc 转换 DOCX...", flush=True)
-            result = pandoc_to_docx(md_path, output_path, resource_path=md_path.parent)
+            # 预处理 Markdown：修复行内公式格式
+            md_text = md_path.read_text(encoding="utf-8")
+            md_text = _preprocess_markdown_math(md_text)
+            # 写入临时文件（同目录，确保图片路径可解析）
+            temp_md = md_path.parent / f".{md_path.stem}_pandoc_tmp.md"
+            temp_md.write_text(md_text, encoding="utf-8")
+            try:
+                result = pandoc_to_docx(
+                    temp_md, output_path, resource_path=md_path.parent
+                )
+            finally:
+                temp_md.unlink(missing_ok=True)
             print(f"[md2docx] Pandoc 转换完成: {result}", flush=True)
             return result
         except Exception as exc:  # noqa: BLE001
