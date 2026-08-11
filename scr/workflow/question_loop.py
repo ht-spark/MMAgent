@@ -1,4 +1,5 @@
-"""协调子问题选择、上下文装配和结果归档的工作流节点。
+"""
+协调子问题选择、上下文装配和结果归档的工作流节点。
 
 职责：
   1. select_question — 根据依赖关系选择当前可执行的小问
@@ -15,8 +16,6 @@
   - 局部回退：重做 Q2 不影响已验证的 Q1
 """
 from __future__ import annotations
-
-from typing import Any
 
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import DataProfile, ProjectContext, QuestionInfo
@@ -129,8 +128,6 @@ def route_after_select(state: dict) -> str:
 def assemble_context(state: dict) -> dict:
     """LangGraph 节点：装配 CurrentQuestionContext。
 
-    对应 architecture.md §5.1 上下文装配。
-
     装配内容：
       - 当前小问原文与目标
       - 相关的全局背景与约束
@@ -138,7 +135,7 @@ def assemble_context(state: dict) -> dict:
       - 前置小问的 reusable_summary（选择性继承）
       - 当前项目的时间、算力与工具预算
 
-    选择性继承规则（architecture.md §5.1）：
+    选择性继承规则：
       - 前问结论是本问的输入或约束 → 直接继承
       - 前问方法可作为基线 → 继承方法与局限
       - 前问数据处理能复用 → 继承处理后的数据及其口径
@@ -219,8 +216,6 @@ def archive_result(state: dict) -> dict:
     将 current_result 写入 question_results 字典。
     验证通过的写入 validated，被阻塞的写入 blocked。
     归档后清理当前小问的可写状态（局部回退的基础）。
-
-    对应 architecture.md §5.6 局部回退和 plan.md Phase 2.6。
 
     Args:
         state: 项目状态。
@@ -312,8 +307,6 @@ def _selective_inherit(
     question_results: dict[str, QuestionResult],
 ) -> list[dict]:
     """选择性继承前问的可复用摘要。
-
-    对应 architecture.md §5.1 选择性继承规则。
 
     只传递 reusable_summary，不传递：
       - 完整的推理历史

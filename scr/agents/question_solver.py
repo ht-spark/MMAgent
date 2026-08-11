@@ -8,7 +8,7 @@ import json
 import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ..runtime.instrumented_llm import InstrumentedLLM
 from ..runtime.logging import get_run_logger, log_step
