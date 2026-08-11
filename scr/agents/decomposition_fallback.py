@@ -133,6 +133,7 @@ def fallback_subproblems_from_analysis(analysis: ProblemAnalysis) -> list[SubPro
                 expected_outputs=_infer_expected_outputs(task, index, analysis),
                 dependencies=dependencies,
                 parallelizable=not dependencies,
+                is_fallback=True,
             )
         )
 

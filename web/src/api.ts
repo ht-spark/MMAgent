@@ -137,3 +137,25 @@ export async function confirmBudget(
   }
   return res.json()
 }
+
+/** G0 硬失败澄清：选择终止或上传补充材料继续建模。 */
+export async function submitClarification(
+  runId: string,
+  action: 'terminate' | 'continue',
+  dataFiles?: File[],
+): Promise<{ ok: boolean }> {
+  const fd = new FormData()
+  fd.append('action', action)
+  if (dataFiles) {
+    dataFiles.forEach((f) => fd.append('data_files', f))
+  }
+  const res = await fetch(`/api/runs/${runId}/clarification`, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}))
+    throw new Error((e as any).detail || `澄清提交失败 (${res.status})`)
+  }
+  return res.json()
+}

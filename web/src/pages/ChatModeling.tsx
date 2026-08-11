@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { confirmBudget, createRun, checkBackendOnline, getRun, getPaper, getFigures, renameRun } from '../api'
+import { confirmBudget, createRun, checkBackendOnline, getRun, getPaper, getFigures, renameRun, submitClarification } from '../api'
 import { loadConfigs, loadActiveId, ApiConfig } from '../apiConfigs'
 
 type MsgKind = 'info' | 'progress' | 'error' | 'success' | 'warn' | 'result'
@@ -40,6 +40,7 @@ const NODE_CN: Record<string, string> = {
   intake: '数据摄入',
   context: '任务理解',
   g0_retry: '任务理解重试',
+  g0_clarification: '等待人工澄清',
   select_question: '选择子任务',
   assemble_context: '装配上下文',
   configure_question_budget: '预算配置',
@@ -96,6 +97,11 @@ type ProgressCardProps = {
   budgetBusy: boolean
   onBudgetDraftChange: (key: string, value: number) => void
   onBudgetSubmit: (useDefaults: boolean) => void
+  clarificationReq: ClarificationReq | null
+  clarificationFiles: File[]
+  clarificationBusy: boolean
+  onClarificationFilesChange: (files: File[]) => void
+  onClarificationSubmit: (action: 'terminate' | 'continue') => void
 }
 
 function ProgressCard({
@@ -107,6 +113,11 @@ function ProgressCard({
   budgetBusy,
   onBudgetDraftChange,
   onBudgetSubmit,
+  clarificationReq,
+  clarificationFiles,
+  clarificationBusy,
+  onClarificationFilesChange,
+  onClarificationSubmit,
 }: ProgressCardProps) {
   const completedSteps = text.split('\n').filter(Boolean)
 
@@ -170,6 +181,67 @@ function ProgressCard({
           </div>
         </div>
       )}
+      {clarificationReq && (
+        <div className="progress-clarification">
+          <div className="progress-clarification-title">输入材料无法支撑建模</div>
+          <p className="progress-clarification-desc">
+            G0 输入质量门检测到硬失败，当前材料不足以开始可靠建模。请选择终止任务，或上传补充材料后继续。
+          </p>
+          {clarificationReq.failed_checks.length > 0 && (
+            <div className="progress-clarification-checks">
+              {clarificationReq.failed_checks.map((c, i) => (
+                <span key={i} className="clarification-check-tag">{c}</span>
+              ))}
+            </div>
+          )}
+          <div className="progress-clarification-upload">
+            <label className={`attach-btn ${clarificationBusy ? 'disabled' : ''}`}>
+              📎 上传补充材料
+              <input
+                type="file"
+                multiple
+                hidden
+                disabled={clarificationBusy}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  if (files.length) onClarificationFilesChange([...clarificationFiles, ...files])
+                  e.target.value = ''
+                }}
+              />
+            </label>
+            {clarificationFiles.length > 0 && (
+              <div className="clarification-file-list">
+                {clarificationFiles.map((f, i) => (
+                  <span key={`${f.name}-${i}`} className="file-chip">
+                    📎 {f.name}
+                    <button
+                      aria-label="移除"
+                      onClick={() => onClarificationFilesChange(clarificationFiles.filter((_, j) => j !== i))}
+                      disabled={clarificationBusy}
+                    >×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="progress-clarification-actions">
+            <button
+              className="btn-danger"
+              onClick={() => onClarificationSubmit('terminate')}
+              disabled={clarificationBusy}
+            >
+              材料不足，立即终止
+            </button>
+            <button
+              className="btn-primary"
+              onClick={() => onClarificationSubmit('continue')}
+              disabled={clarificationBusy || clarificationFiles.length === 0}
+            >
+              {clarificationBusy ? '提交中…' : '上传补充材料，继续建模'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -192,6 +264,10 @@ type BudgetReq = {
   question_id: string
   proposed: Record<string, number>
   phase: 'initial' | 'question'
+}
+
+type ClarificationReq = {
+  failed_checks: string[]
 }
 
 type Props = {
@@ -217,6 +293,9 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
   const [budgetReq, setBudgetReq] = useState<BudgetReq | null>(null)
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number>>({})
   const [budgetBusy, setBudgetBusy] = useState(false)
+  const [clarificationReq, setClarificationReq] = useState<ClarificationReq | null>(null)
+  const [clarificationFiles, setClarificationFiles] = useState<File[]>([])
+  const [clarificationBusy, setClarificationBusy] = useState(false)
   /** 当前正在执行的步骤描述（用于动画展示） */
   const [currentStep, setCurrentStep] = useState('')
   /** 预览模态框状态 */
@@ -341,6 +420,19 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
         time: ev.time_total || 0,
         token: ev.token_total || 0,
       }
+    } else if (ev.type === 'clarification_request') {
+      setClarificationReq({ failed_checks: ev.failed_checks || [] })
+      setClarificationFiles([])
+    } else if (ev.type === 'clarification_resolved') {
+      setClarificationReq(null)
+      setClarificationFiles([])
+      if (ev.action === 'terminate') {
+        appendProgress('用户选择终止建模（材料不足）')
+      } else if (ev.action === 'continue') {
+        appendProgress('用户上传补充材料，继续建模')
+      } else {
+        appendProgress('人工澄清已取消')
+      }
     } else if (ev.type === 'node_start') {
       // 节点开始事件：只更新动画步骤描述，不追加进度行
       // 如果还没有进度消息，先创建一个空消息让动画立即可见
@@ -422,6 +514,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       const lines: string[] = []
       let lastNode = ''
       let pendingBudget: BudgetReq | null = null
+      let pendingClarification: ClarificationReq | null = null
       for (const ev of events) {
         if (ev.type === 'budget_summary') {
           statsRef.current = {
@@ -436,6 +529,10 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           }
         } else if (ev.type === 'budget_confirmed') {
           pendingBudget = null
+        } else if (ev.type === 'clarification_request') {
+          pendingClarification = { failed_checks: ev.failed_checks || [] }
+        } else if (ev.type === 'clarification_resolved') {
+          pendingClarification = null
         } else if (ev.type === 'node_start') {
           // 节点开始事件：只更新最后节点名，不追加进度行
           lastNode = ev.node || 'step'
@@ -454,6 +551,9 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       if (pendingBudget && (status === 'queued' || status === 'running')) {
         setBudgetReq(pendingBudget)
         setBudgetDraft({ ...pendingBudget.proposed })
+      }
+      if (pendingClarification && (status === 'queued' || status === 'running')) {
+        setClarificationReq(pendingClarification)
       }
 
       // 根据任务状态决定后续行为
@@ -672,6 +772,24 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     }
   }
 
+  async function handleClarification(action: 'terminate' | 'continue') {
+    if (!runId || !clarificationReq || clarificationBusy) return
+    if (action === 'continue' && clarificationFiles.length === 0) {
+      push('assistant', '请先上传补充材料后再继续建模。', 'warn')
+      return
+    }
+    setClarificationBusy(true)
+    try {
+      await submitClarification(runId, action, action === 'continue' ? clarificationFiles : undefined)
+      setClarificationReq(null) // 服务端随后会推 clarification_resolved 事件补充消息
+      setClarificationFiles([])
+    } catch (err) {
+      push('assistant', `澄清提交失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setClarificationBusy(false)
+    }
+  }
+
   async function saveTaskName() {
     const name = taskNameDraft.trim()
     if (!runId) {
@@ -764,6 +882,11 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
                     setBudgetDraft((draft) => ({ ...draft, [key]: value }))
                   }
                   onBudgetSubmit={submitBudget}
+                  clarificationReq={clarificationReq}
+                  clarificationFiles={clarificationFiles}
+                  clarificationBusy={clarificationBusy}
+                  onClarificationFilesChange={setClarificationFiles}
+                  onClarificationSubmit={handleClarification}
                 />
               ) : (
                 <div className="msg-text">{m.text}</div>

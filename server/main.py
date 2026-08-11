@@ -23,10 +23,12 @@ from server.runs import (
     delete_run,
     execute_run,
     get_pending_budget,
+    get_pending_clarification,
     get_run,
     list_runs,
     rename_run,
     submit_budget_decision,
+    submit_clarification_decision,
 )
 from server.schemas import (
     BudgetConfirmBody,
@@ -274,6 +276,43 @@ async def confirm_budget_endpoint(run_id: str, body: BudgetConfirmBody):
     if not ok:
         raise HTTPException(status_code=409, detail="预算请求已被取消或已确认")
     return {"ok": True, "run_id": run_id, "use_defaults": body.use_defaults, "limits": decision}
+
+
+@app.post("/api/runs/{run_id}/clarification")
+async def submit_clarification_endpoint(
+    run_id: str,
+    action: str = Form(..., description="terminate 或 continue"),
+    data_files: list[UploadFile] | None = File(None, description="补充材料(可多个)"),
+):
+    """G0 硬失败时用户选择终止或上传补充材料继续建模。
+
+    - action=terminate：立即终止本次建模任务。
+    - action=continue：上传补充材料后重跑输入摄入。
+    无待确认请求时返回 409。
+    """
+    pending = get_pending_clarification(run_id)
+    if not pending:
+        raise HTTPException(status_code=409, detail="当前没有待确认的澄清请求")
+
+    new_data_paths: list[str] = []
+    if action == "continue" and data_files:
+        input_dir = ARTIFACTS_ROOT / run_id / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
+        for uf in data_files:
+            if uf is None:
+                continue
+            content = await uf.read()
+            if not content:
+                continue
+            dest = input_dir / (uf.filename or f"supplement_{len(new_data_paths)}.bin")
+            dest.write_bytes(content)
+            new_data_paths.append(str(dest))
+
+    decision = {"action": action, "new_data_paths": new_data_paths}
+    ok = submit_clarification_decision(run_id, decision)
+    if not ok:
+        raise HTTPException(status_code=409, detail="澄清请求已被取消或已确认")
+    return {"ok": True, "run_id": run_id, "action": action, "new_files": len(new_data_paths)}
 
 
 @app.get("/api/runs/{run_id}/paper")

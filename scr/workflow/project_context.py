@@ -232,6 +232,7 @@ def _build_project_context(
             required_data=sp.input_requirements,
             depends_on=sp.dependencies,
             status="pending",
+            is_fallback=sp.is_fallback,
         ))
     
     # 依赖关系图

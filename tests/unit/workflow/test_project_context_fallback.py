@@ -26,3 +26,4 @@ def test_fallback_subproblems_keep_dependency_only_when_question_refers_back():
     assert subproblems[1].dependencies == ["q1"]
     assert subproblems[2].dependencies == []
     assert all(sp.expected_outputs for sp in subproblems)
+    assert all(sp.is_fallback for sp in subproblems)

@@ -1,5 +1,5 @@
-"""检查任务输入是否足以开始可靠建模。
-
+"""
+功能：检查任务输入是否足以开始可靠建模。
 通过条件：
   - 任务小问已完整提取
   - 附件均已读取或明确标记为不可读
@@ -13,7 +13,6 @@
   - 不应伪造假设继续求解
 
 预算：通过 BudgetManager 的 INTAKE_RETRY 类型管理重试上限，
-不内置额外常量。
 """
 from __future__ import annotations
 
@@ -93,6 +92,12 @@ def check_g0(state: dict) -> GateResult:
     if project_context and not project_context.problem_text.strip():
         failed_checks.append("problem_text_empty")
 
+    # 检查 6: 检测 fallback 生成的问题（软失败，降级处理）
+    if project_context and project_context.questions:
+        fallback_count = sum(1 for q in project_context.questions if q.is_fallback)
+        if fallback_count > 0:
+            failed_checks.append("decomposition_fallback_used")
+
     # 从 BudgetManager 获取预算信息
     budget_used, budget_remaining, can_retry = _get_budget_info(state)
 
@@ -132,7 +137,7 @@ def check_g0(state: dict) -> GateResult:
             budget_remaining=0,
         )
 
-    # 只有软失败（如 expected_output_empty）：降级通过，记录风险
+    # 只有软失败（如 expected_output_empty / decomposition_fallback_used）：降级通过，记录风险
     print(f"[G0] 预算耗尽，软失败降级通过: {failed_checks}")
     return GateResult(
         gate_id="G0",

@@ -1309,6 +1309,70 @@
 }
 .progress-budget-actions .btn-primary:disabled { opacity: 0.6; cursor: default; }
 
+/* ---------- G0 硬失败澄清弹窗（内嵌进度卡片） ---------- */
+.progress-clarification {
+  margin-top: 12px;
+  padding: 16px;
+  border-top: 1px dashed var(--border-strong);
+  background: var(--bg-soft);
+  border-radius: var(--radius-md);
+}
+.progress-clarification-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--danger);
+}
+.progress-clarification-desc {
+  margin: 6px 0 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.progress-clarification-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.clarification-check-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: monospace;
+  background: rgba(244, 67, 54, 0.1);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+}
+.progress-clarification-upload {
+  margin-bottom: 12px;
+}
+.clarification-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.progress-clarification-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.progress-clarification-actions .btn-primary {
+  padding: 9px 18px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.progress-clarification-actions .btn-primary:disabled { opacity: 0.6; cursor: default; }
+.progress-clarification-actions .btn-danger:disabled { opacity: 0.6; cursor: default; }
+
 /* ------------------------------------------------------------------ */
 /* 聊天内嵌结果展示                                                   */
 /* ------------------------------------------------------------------ */

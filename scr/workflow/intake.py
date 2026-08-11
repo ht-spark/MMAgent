@@ -1,4 +1,5 @@
-"""读取任务和附件，并生成供后续智能体使用的数据画像。
+"""
+读取任务和附件，并生成供后续智能体使用的数据画像。
 
 职责：
   1. 读取任务文档（Markdown/TXT/PDF/DOCX 文本提取）
@@ -21,7 +22,6 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
 
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.context import (
@@ -33,7 +33,7 @@ from ..schemas.context import (
     TableRelationship,
 )
 from ..schemas.problem import DataField, DataInventory
-from ..tools.file_tools import generate_data_inventories, read_file
+from ..tools.file_tools import generate_data_inventories
 
 
 def run_intake(state: dict) -> dict:

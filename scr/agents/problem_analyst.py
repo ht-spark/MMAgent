@@ -1,12 +1,12 @@
-"""理解题目并建立可执行的子问题计划。
+"""
+理解题目并建立可执行的子问题计划。
 
-从题面提取研究对象、约束、目标和预期输出，将任务拆成带依赖关系的子问题，
-再判断任务类型。该智能体只做语义分析，不产生数值结论。
+从题面提取研究对象、约束、目标和预期输出，将任务拆成带依赖关系的子问题，再判断任务类型。
+该智能体只做语义分析，不产生数值结论。
 """
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from ..schemas.problem import (
     DataInventory,

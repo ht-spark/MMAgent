@@ -256,6 +256,7 @@ class SubProblem(BaseModel):
     expected_outputs: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     parallelizable: bool = True
+    is_fallback: bool = False
 
     @staticmethod
     def _normalize_to_list(value: object) -> list[str]:

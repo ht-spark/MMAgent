@@ -20,10 +20,11 @@ class QuestionInfo(BaseModel):
     required_data: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
     status: Literal["pending", "solving", "validated", "blocked"] = "pending"
+    is_fallback: bool = False
 
 
 class ProjectContext(BaseModel):
-    """项目全局上下文（architecture.md §3.1）。
+    """项目全局上下文。
     
     在读题阶段生成，后续只允许补充澄清，不应被单题求解器随意改写。
     """

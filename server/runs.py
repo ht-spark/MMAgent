@@ -90,6 +90,61 @@ def clear_budget_pending(run_id: str) -> None:
         _budget_decisions.pop(run_id, None)
 
 
+# ---------------------------------------------------------------------------
+# 人工介入（G0 硬失败澄清）：run 跑到 g0_clarification 节点时暂停，
+# 等待前端弹窗选择"终止"或"上传补充材料继续"后再继续。仅进程内存。
+# ---------------------------------------------------------------------------
+_clarification_lock = threading.Lock()
+# run_id -> {"event": Event, "failed_checks": list[str]}
+_pending_clarification: dict[str, dict] = {}
+# run_id -> {"action": "terminate"|"continue", "new_data_paths": list[str]}
+_clarification_decisions: dict[str, dict] = {}
+
+
+def request_clarification(
+    run_id: str, failed_checks: list[str]
+) -> threading.Event:
+    """注册一个待确认的 G0 澄清请求，返回用于阻塞等待的 Event。"""
+    ev = threading.Event()
+    with _clarification_lock:
+        _pending_clarification[run_id] = {
+            "event": ev,
+            "failed_checks": failed_checks,
+        }
+        _clarification_decisions.pop(run_id, None)
+    return ev
+
+
+def get_pending_clarification(run_id: str) -> dict | None:
+    """查询某个 run 当前是否有待确认的 G0 澄清请求。"""
+    with _clarification_lock:
+        p = _pending_clarification.get(run_id)
+        return dict(p) if p else None
+
+
+def submit_clarification_decision(run_id: str, decision: dict) -> bool:
+    """前端提交澄清决定；写入并唤醒阻塞中的回调。无 pending 返回 False。"""
+    with _clarification_lock:
+        p = _pending_clarification.get(run_id)
+        if not p:
+            return False
+        _clarification_decisions[run_id] = decision
+        p["event"].set()
+    return True
+
+
+def take_clarification_decision(run_id: str) -> dict | None:
+    """回调取出决定（并移除）。"""
+    with _clarification_lock:
+        return _clarification_decisions.pop(run_id, None)
+
+
+def clear_clarification_pending(run_id: str) -> None:
+    with _clarification_lock:
+        _pending_clarification.pop(run_id, None)
+        _clarification_decisions.pop(run_id, None)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -558,6 +613,49 @@ async def execute_run(
         except Exception:  # noqa: BLE001
             return None
 
+    def _clarification_callback(state: dict) -> dict | None:
+        """G0 硬失败时暂停等用户选择终止或补充材料继续。
+
+        返回 {"action": "terminate"} 或 {"action": "continue", "new_data_paths": [...]}。
+        本函数在后台线程（asyncio.to_thread）中执行，可安全阻塞。
+        """
+        failed_checks = state.get("_g0_failed_checks", [])
+        run_id_val = state.get("run_id", "") or run_id
+        ev = request_clarification(run_id_val, failed_checks)
+        append_progress(
+            run_id_val,
+            {
+                "type": "clarification_request",
+                "failed_checks": failed_checks,
+                "timestamp": time.time(),
+            },
+        )
+        # 阻塞等待用户决定；每秒检查一次取消意图
+        while not ev.wait(timeout=1.0):
+            if _cancel_flags.get(run_id_val, False):
+                clear_clarification_pending(run_id_val)
+                append_progress(
+                    run_id_val,
+                    {
+                        "type": "clarification_resolved",
+                        "action": "cancelled",
+                        "timestamp": time.time(),
+                    },
+                )
+                return {"action": "terminate"}
+        decision = take_clarification_decision(run_id_val)
+        clear_clarification_pending(run_id_val)
+        action = decision.get("action", "terminate") if decision else "terminate"
+        append_progress(
+            run_id_val,
+            {
+                "type": "clarification_resolved",
+                "action": action,
+                "timestamp": time.time(),
+            },
+        )
+        return decision or {"action": "terminate"}
+
     try:
         # 任务启动前：请求用户配置任务级预算（INTAKE_RETRY / PAPER_REVISION）
         from scr.runtime.budget import BudgetManager
@@ -578,6 +676,7 @@ async def execute_run(
             cancel_check=_cancel_check,
             budget_manager=bm,
             budget_config_callback=_budget_callback,
+            clarification_callback=_clarification_callback,
         )
         # 任务完成后推送预算统计（time/token），前端在聊天中展示
         bm = final_state.get("budget_manager")

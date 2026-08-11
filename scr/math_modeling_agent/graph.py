@@ -252,6 +252,42 @@ def _g0_retry_node(state: ProjectState) -> dict:
     return {"_g0_retry_count": retry_count + 1}
 
 
+@_logged_node("g0_clarification")
+def _g0_clarification_node(state: ProjectState) -> dict:
+    """G0 硬失败澄清节点：暂停等待用户选择终止或上传补充材料。"""
+    cb = state.get("clarification_callback")
+    if cb is None:
+        # 无回调（CLI 模式）：直接终止
+        print("[G0] 硬失败，无澄清回调，终止建模")
+        return {"workflow_status": "failed", "_g0_clarification_action": "terminate"}
+
+    # 获取 G0 失败项
+    from ..gates.g0_intake import check_g0
+
+    g0_result = check_g0(state)
+    failed_checks = g0_result.failed_checks
+
+    print(f"[G0] 硬失败，等待用户澄清: {failed_checks}")
+    decision = cb({**state, "_g0_failed_checks": failed_checks})
+
+    action = decision.get("action", "terminate") if decision else "terminate"
+    if action == "terminate":
+        print("[G0] 用户选择终止建模")
+        return {"workflow_status": "failed", "_g0_clarification_action": "terminate"}
+
+    # continue: 合并新数据路径
+    new_paths = decision.get("new_data_paths", [])
+    if new_paths:
+        existing = list(state.get("data_paths", []))
+        existing.extend(new_paths)
+        print(f"[G0] 用户上传 {len(new_paths)} 个补充材料，重跑摄入")
+        return {
+            "data_paths": existing,
+            "_g0_clarification_action": "continue",
+        }
+    return {"_g0_clarification_action": "continue"}
+
+
 @_logged_node("select_question")
 def _select_question_node(state: ProjectState) -> dict:
     """select_question 节点：选择下一个可执行的小问。"""
@@ -421,7 +457,6 @@ def _gf_revise_node(state: ProjectState) -> dict:
 # 主图构建
 # ---------------------------------------------------------------------------
 
-
 def build_graph(checkpoint: bool = True):
     """
     构建 LangGraph 主图。
@@ -437,6 +472,7 @@ def build_graph(checkpoint: bool = True):
     builder.add_node("intake", _intake_node)
     builder.add_node("context", _context_node)
     builder.add_node("g0_retry", _g0_retry_node)
+    builder.add_node("g0_clarification", _g0_clarification_node)
 
     # Phase 2-5 节点
     builder.add_node("select_question", _select_question_node)
@@ -458,15 +494,22 @@ def build_graph(checkpoint: bool = True):
     builder.add_edge(START, "intake")
     builder.add_edge("intake", "context")
 
-    # G0 条件边：context → pass: select_question / retry: g0_retry / human: END
+    # G0 条件边：context → pass: select_question / retry: g0_retry / human: g0_clarification
     builder.add_conditional_edges(
         "context",
         route_g0,
-        {"pass": "select_question", "retry": "g0_retry", "human": END},
+        {"pass": "select_question", "retry": "g0_retry", "human": "g0_clarification"},
     )
 
     # 重试后回到 intake
     builder.add_edge("g0_retry", "intake")
+
+    # G0 澄清：terminate → END / continue → intake（重跑摄入含补充材料）
+    builder.add_conditional_edges(
+        "g0_clarification",
+        lambda state: "terminate" if state.get("_g0_clarification_action") == "terminate" else "continue",
+        {"terminate": END, "continue": "intake"},
+    )
 
     # Phase 2-5 边：逐问闭环
     # select_question → has_next: assemble_context / done: global_review
@@ -529,6 +572,7 @@ def run_graph(
     cancel_check: Callable[[], bool] | None = None,
     budget_manager: BudgetManager | None = None,
     budget_config_callback: Callable[[dict], dict | None] | None = None,
+    clarification_callback: Callable[[dict], dict | None] | None = None,
 ) -> dict:
     """用 LangGraph 运行完整工作流。
 
@@ -555,6 +599,7 @@ def run_graph(
         log_level: 运行日志级别（写入 run.log，默认 INFO）。
         budget_manager: 预算管理器（None 时自动创建）。
         budget_config_callback: 用户预算覆盖回调（None 表示不暂停）。
+        clarification_callback: G0 硬失败澄清回调（None 时直接终止）。
 
     Returns:
         最终 State。
@@ -602,6 +647,7 @@ def run_graph(
         search_provider=search_provider,
         budget_manager=budget_manager,
         budget_config_callback=budget_config_callback,
+        clarification_callback=clarification_callback,
     )
 
     # 流式执行：每完成一个节点即实时输出其状态更新，便于实时查看进度

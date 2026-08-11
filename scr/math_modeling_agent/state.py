@@ -43,6 +43,7 @@ class ProjectState(TypedDict, total=False):
     search_provider: Any
     budget_manager: BudgetManager | None  # 预算管理器（强制项按小问重置 + 监控项全程累计）
     budget_config_callback: Any            # 可选回调：在指定小问让用户临时覆盖预算
+    clarification_callback: Any            # 可选回调：G0 硬失败时暂停等用户选择终止或补充材料
     data_paths: list[str]  # 原始数据文件路径列表
 
     # --- 全局只读上下文（Phase 1 生成）---
@@ -73,6 +74,7 @@ class ProjectState(TypedDict, total=False):
 
     # --- 内部跟踪（图路由用，非持久化）---
     _g0_retry_count: int       # G0 质量门重试计数
+    _g0_clarification_action: str  # G0 澄清动作 (terminate/continue)
     _solve_retry_count: int    # 当前小问求解重试计数
     _gq_action: str            # GQ 质量门最近一次动作 (pass/retry/blocked)
     _gf_retry_count: int       # GF 交付质量门修订计数
@@ -87,6 +89,7 @@ def create_initial_state(
     search_provider: Any = None,
     budget_manager: BudgetManager | None = None,
     budget_config_callback: Any = None,
+    clarification_callback: Any = None,
 ) -> ProjectState:
     """创建初始项目状态。
 
@@ -100,6 +103,8 @@ def create_initial_state(
         budget_manager: 预算管理器（可选；未传则在 run_graph 自动实例化）。
         budget_config_callback: 可选回调；签名
             ``(state) -> dict[BudgetType, int] | None``，返回 None 表示沿用默认。
+        clarification_callback: 可选回调；签名
+            ``(state) -> dict | None``，G0 硬失败时暂停等待用户选择终止或补充材料。
 
     Returns:
         初始化的 ProjectState 字典。
@@ -111,6 +116,7 @@ def create_initial_state(
         search_provider=search_provider,
         budget_manager=budget_manager,
         budget_config_callback=budget_config_callback,
+        clarification_callback=clarification_callback,
         data_paths=data_paths or [],
         project_context=ProjectContext(
             run_id=run_id,
@@ -126,6 +132,7 @@ def create_initial_state(
         errors=[],
         checkpoints=[],
         _g0_retry_count=0,
+        _g0_clarification_action="",
         _solve_retry_count=0,
         _gq_action="",
         _gf_retry_count=0,
