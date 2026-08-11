@@ -1,7 +1,7 @@
-"""为子问题寻找、筛选并确定可执行建模方法。
+"""为子任务寻找、筛选并确定可执行建模方法。
 
-结合问题澄清、数据画像、联网资料和 LLM 推理生成候选方案；再以数据
-约束和可实现性筛选，输出可追溯的方法决策、假设和备选理由。
+结合问题澄清、数据画像、联网资料和 LLM 推理生成候选方案；再以数据约束和可实现性筛选，
+输出可追溯的方法决策、假设和备选理由。
 """
 from __future__ import annotations
 
@@ -33,15 +33,21 @@ class _MethodDecision(BaseModel):
 
 
 class MethodExplorer:
-    """方法探索与决策 Agent。
+    """方法探索与决策Agent。
+
+    候选生成策略（双路径）：
+      - 当 TavilySearch 可用时：搜索路径（LLM 从搜索结果提取）+ LLM 思考路径
+        （LLM 直接根据问题信息生成）共同形成候选，每条路径生成 CANDIDATE 预算
+        限额数量的方法，总计 2× 候选。
+      - 当 TavilySearch 不可用时：仅 LLM 思考路径生成 CANDIDATE 预算限额数量的方法。
 
     Args:
-        llm: 可选的 LLM 客户端。无则使用启发式规则。
+        llm: 可选的 LLM 客户端。
         search_tool: 可选的联网搜索工具。无则从环境变量自动创建。
                      若无 Tavily_API_KEY 则搜索功能降级为空。
         budget_manager: 可选的预算管理器。提供时会：
             - 每次 Tavily 检索前消耗 SEARCH（超额则跳过该次查询）；
-            - 生成候选后按 CANDIDATE 限额截断并记账。
+            - 候选生成后按实际数量消耗 CANDIDATE（双路径时允许 2× 超额）。
             为 None 时不消耗、不限制（保持旧行为）。
     """
 
@@ -69,31 +75,79 @@ class MethodExplorer:
         interpretation: ProblemInterpretation,
         data_profile: DataProfile | None = None,
     ) -> list[dict]:
-        """基于问题澄清生成候选方法。
+        """基于问题澄清生成候选方法（双路径：搜索 + LLM 思考）。
 
-        完全由联网搜索+LLM思考驱动，不依赖预设方法目录。
+        候选生成策略：
+          - TavilySearch 可用时：搜索路径 + LLM 思考路径各生成 candidate_limit
+            个候选，合计 2× candidate_limit。
+          - TavilySearch 不可用时：仅 LLM 思考路径生成 candidate_limit 个候选。
 
         步骤：
-          1. 联网搜索获取方法候选（LLM提取或启发式提取）
-          2. 硬过滤：淘汰不满足数据要求的方法
-          3. 为每个候选添加评分信息
+          1. 获取候选数量限额（CANDIDATE 预算）
+          2. 双路径/单路径生成候选方法
+          3. 消耗 CANDIDATE 预算（双路径允许 2× 超额）
+          4. 硬过滤：淘汰不满足数据要求的方法
+          5. 为每个候选添加评分信息
 
         Args:
-            context: 当前小问上下文。
-            interpretation: 问题澄清结果。
+            context: 当前任务上下文。
+            interpretation: 任务澄清结果。
             data_profile: 数据画像（用于硬过滤）。
 
         Returns:
             候选方法列表，每个方法包含字段 + score + eliminated + reason。
         """
-        # 联网搜索+LLM生成候选方法
-        candidates = self._search_external_methods(context, interpretation)
+        qid = context.question_id
+        candidate_limit = self._get_candidate_limit(qid)
+        search_available = bool(self._search_tool and self._search_tool.available)
+
+        # ------------------------------------------------------------------
+        # 候选生成（双路径 / 单路径）
+        # ------------------------------------------------------------------
+        if search_available:
+            # 双路径：搜索提取 + LLM 思考
+            search_candidates = self._search_external_methods(
+                context, interpretation, candidate_limit
+            )
+            think_candidates = self._llm_think_methods(
+                context, interpretation, candidate_limit
+            )
+            candidates = search_candidates + think_candidates
+            print(
+                f"[explorer] 双路径生成: 搜索 {len(search_candidates)} "
+                f"+ LLM思考 {len(think_candidates)} = {len(candidates)} 个候选"
+            )
+        else:
+            # 单路径：仅 LLM 思考
+            candidates = self._llm_think_methods(
+                context, interpretation, candidate_limit
+            )
+            print(f"[explorer] LLM思考生成: {len(candidates)} 个候选")
+
+        # 消耗 CANDIDATE 预算（双路径允许 2× 超额， consume 返回 False 时忽略）
+        if self._budget_manager is not None and candidates:
+            try:
+                from ..runtime.budget import BudgetType
+                consumed = 0
+                for _ in candidates:
+                    if self._budget_manager.consume(
+                        BudgetType.CANDIDATE, amount=1, question_id=qid
+                    ):
+                        consumed += 1
+                print(
+                    f"[explorer] CANDIDATE 记账: {consumed}/{len(candidates)} 个 "
+                    f"（双路径设计，允许 2× 超额）"
+                )
+            except Exception as e:
+                print(f"[explorer] CANDIDATE 预算记账跳过: {e}")
 
         if not candidates:
-            # 降级：当无网络或LLM不可用时，提供一个通用候选
+            # 降级：当无网络且 LLM 不可用时，提供一个通用候选
             candidates = [_fallback_candidate(interpretation)]
 
-        # 硬过滤
+        # ------------------------------------------------------------------
+        # 硬过滤 + 评分
+        # ------------------------------------------------------------------
         data_info = _extract_data_info(data_profile, context)
         filtered = []
         eliminated = []
@@ -125,12 +179,36 @@ class MethodExplorer:
         # 合并结果（保留被淘汰的记录用于决策追溯）
         all_candidates = filtered + [c for c in eliminated if c not in filtered]
 
-        print(f"[explorer] 小问 {context.question_id}: "
+        print(f"[explorer] 小问 {qid}: "
               f"候选 {len(candidates)} → 通过 {len(filtered)} → 淘汰 {len(eliminated)}")
         if filtered:
             print(f"  → 推荐: {filtered[0]['name']} (score={filtered[0].get('heuristic_score', 0):.3f})")
 
         return all_candidates
+
+    def _get_candidate_limit(self, question_id: str) -> int:
+        """获取当前小问的候选方法数量上限（每条路径的目标生成数量）。
+
+        从 CANDIDATE 预算中读取有效限额（含用户覆盖）。
+        无预算管理器时返回默认值 4。
+
+        Returns:
+            每条路径应生成的候选方法数量。
+        """
+        if self._budget_manager is None:
+            return 4
+        try:
+            from ..runtime.budget import BudgetType
+            remaining = self._budget_manager.remaining(
+                BudgetType.CANDIDATE, question_id=question_id
+            )
+            if remaining > 0:
+                return remaining
+            # 预算已用完（理论上不应发生，explore 在小问开始时调用）
+            record = self._budget_manager.get_record(BudgetType.CANDIDATE)
+            return record.limit if record else 4
+        except Exception:
+            return 4
 
     # ------------------------------------------------------------------
     # decide — 方法决策
@@ -389,14 +467,22 @@ class MethodExplorer:
         self,
         context: CurrentQuestionContext,
         interpretation: ProblemInterpretation,
+        candidate_limit: int = 4,
     ) -> list[dict]:
-        """联网搜索+LLM生成方法候选。
+        """联网搜索 + LLM 从搜索结果中提取方法候选（搜索路径）。
 
         流程：
           1. 检查搜索工具是否可用
-          2. 构造搜索查询并执行搜索
+          2. 消耗 SEARCH 预算并执行搜索
           3. 从搜索结果中提取方法候选（LLM 优先，启发式回退）
           4. 转换为候选方法字典格式
+
+        注意：CANDIDATE 预算消耗由 ``explore()`` 统一管理，此方法不再记账。
+
+        Args:
+            context: 当前任务上下文。
+            interpretation: 任务澄清结果。
+            candidate_limit: 本路径目标生成数量（传入 LLM prompt）。
 
         Returns:
             方法候选列表。
@@ -437,7 +523,7 @@ class MethodExplorer:
         if self._llm is not None:
             # LLM 提取（更精确）
             web_candidates = self._llm_extract_methods(
-                search_results, math_task, problem_desc
+                search_results, math_task, problem_desc, candidate_limit
             )
         else:
             # 启发式提取（无需 LLM）
@@ -449,33 +535,11 @@ class MethodExplorer:
             return []
 
         # 转换为候选方法字典格式
-        method_candidates = self._convert_web_candidates(web_candidates)
+        method_candidates = self._convert_web_candidates(
+            web_candidates, source="web_search"
+        )
 
-        # 预算：按 CANDIDATE 限额截断（已超额则不消费）
-        if self._budget_manager is not None and method_candidates:
-            try:
-                from ..runtime.budget import BudgetType
-                remaining = self._budget_manager.remaining(
-                    BudgetType.CANDIDATE, question_id=qid
-                )
-                if remaining <= 0:
-                    print(f"[explorer] 预算：CANDIDATE 已用完，返回空候选（{qid}）")
-                    return []
-                if len(method_candidates) > remaining:
-                    method_candidates = method_candidates[:remaining]
-                # 每个最终候选消耗 1 次 CANDIDATE
-                for _ in method_candidates:
-                    self._budget_manager.consume(
-                        BudgetType.CANDIDATE, amount=1, question_id=qid
-                    )
-                print(
-                    f"[explorer] CANDIDATE 记账：{len(method_candidates)} 个 "
-                    f"（剩余 {self._budget_manager.remaining(BudgetType.CANDIDATE, question_id=qid)}）"
-                )
-            except Exception as e:
-                print(f"[explorer] 预算记账跳过: {e}")
-
-        print(f"[explorer] 联网搜索生成: {len(method_candidates)} 个方法候选")
+        print(f"[explorer] 搜索路径生成: {len(method_candidates)} 个方法候选")
 
         return method_candidates
 
@@ -484,6 +548,7 @@ class MethodExplorer:
         search_results: list[dict],
         math_task: str,
         problem_description: str,
+        candidate_limit: int = 4,
     ) -> list[WebMethodCandidate]:
         """使用 LLM 从搜索结果中提取结构化方法候选。
 
@@ -491,6 +556,7 @@ class MethodExplorer:
             search_results: Tavily 搜索结果列表。
             math_task: 数学任务类型。
             problem_description: 问题描述。
+            candidate_limit: 目标生成数量（传入 prompt）。
 
         Returns:
             WebMethodCandidate 列表。LLM 失败时回退到启发式提取。
@@ -506,6 +572,7 @@ class MethodExplorer:
                 math_task=math_task,
                 problem_description=problem_description[:500],
                 search_results=formatted_results,
+                candidate_limit=str(candidate_limit),
             )
         except FileNotFoundError:
             # prompt 模板不存在，回退到启发式
@@ -513,33 +580,112 @@ class MethodExplorer:
                 search_results, math_task
             )
 
-        # 调用 LLM — 方案 1：尝试 structured output（默认方式，使用 json_schema）
-        # 若已缓存"不支持 json_schema"标志，则跳过
+        # 调用 LLM 提取（三级回退）
+        candidates = self._call_llm_for_candidates(prompt)
+        if candidates:
+            print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
+            return candidates
+
+        # 全部 LLM 方式失败，回退到启发式
+        print("[explorer] LLM 全部提取方式失败，回退到启发式")
+        return self._search_tool.extract_method_candidates(
+            search_results, math_task
+        )
+
+    def _llm_think_methods(
+        self,
+        context: CurrentQuestionContext,
+        interpretation: ProblemInterpretation,
+        candidate_limit: int = 4,
+    ) -> list[dict]:
+        """LLM 直接根据问题信息生成方法候选（思考路径，不依赖搜索结果）。
+
+        与搜索路径互补：当 TavilySearch 可用时，两路径共同形成 2× 候选；
+        当 TavilySearch 不可用时，此路径独立生成 candidate_limit 个候选。
+
+        Args:
+            context: 当前任务上下文。
+            interpretation: 任务澄清结果。
+            candidate_limit: 本路径目标生成数量（传入 LLM prompt）。
+
+        Returns:
+            方法候选列表（字典格式），LLM 不可用时返回空列表。
+        """
+        if self._llm is None:
+            return []
+
+        math_task = interpretation.math_task
+        problem_desc = (
+            interpretation.math_task_description
+            or context.objective
+            or context.question_text
+        )
+        data_quality_summary = context.data_quality_summary or "无数据质量信息"
+
+        # 加载并渲染 prompt
+        try:
+            template = self._load_prompt("method_think")
+            prompt = self._render_prompt(
+                template,
+                math_task=math_task,
+                problem_description=problem_desc[:500],
+                data_quality_summary=data_quality_summary,
+                candidate_limit=str(candidate_limit),
+            )
+        except FileNotFoundError:
+            print("[explorer] method_think.md 不存在，跳过 LLM 思考路径")
+            return []
+
+        # 调用 LLM 生成（三级回退）
+        web_candidates = self._call_llm_for_candidates(prompt)
+        if not web_candidates:
+            print("[explorer] LLM 思考路径未生成候选")
+            return []
+
+        # 转换为候选方法字典格式
+        method_candidates = self._convert_web_candidates(
+            web_candidates, source="llm_think"
+        )
+
+        print(f"[explorer] LLM思考路径生成: {len(method_candidates)} 个方法候选")
+        return method_candidates
+
+    def _call_llm_for_candidates(self, prompt: str) -> list[WebMethodCandidate]:
+        """调用 LLM 获取方法候选列表（三级回退：json_schema → json_mode → JSON 文本）。
+
+        搜索路径和思考路径共享此方法，确保 LLM 调用行为一致。
+
+        Args:
+            prompt: 已渲染的完整 prompt。
+
+        Returns:
+            WebMethodCandidate 列表。全部失败时返回空列表。
+        """
+        # 方案 1：structured output（json_schema）
         if not self._json_schema_unsupported:
             try:
                 structured_llm = self._llm.with_structured_output(WebMethodCandidateList)
                 result = structured_llm.invoke(prompt)
-                candidates = result.candidates
-                print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
-                return candidates
+                if result is None:
+                    raise RuntimeError("LLM structured call returned None")
+                return result.candidates
             except Exception as e:
                 err_msg = str(e)
                 if "response_format" in err_msg or "BadRequestError" in str(type(e).__name__):
-                    # 记住此 LLM 不支持 json_schema，后续直接走 json_mode
                     self._json_schema_unsupported = True
                     print(f"[explorer] LLM 不支持 json_schema，切换到 json_mode: {e}")
                 else:
-                    raise  # 非结构化输出相关错误，直接抛出
+                    raise
 
-        # 方案 2：尝试 json_mode（兼容 DeepSeek 等仅支持 json_object 的模型）
+        # 方案 2：json_mode
         try:
             structured_llm = self._llm.with_structured_output(
                 WebMethodCandidateList, method="json_mode"
             )
             result = structured_llm.invoke(prompt)
-            candidates = result.candidates
-            print(f"[explorer] LLM json_mode 提取: {len(candidates)} 个方法候选")
-            return candidates
+            if result is None:
+                raise RuntimeError("LLM json_mode call returned None")
+            return result.candidates
         except Exception as e:
             print(f"[explorer] LLM json_mode 提取失败，尝试 JSON 文本提取: {e}")
 
@@ -549,10 +695,8 @@ class MethodExplorer:
             print(f"[explorer] LLM JSON 提取: {len(candidates)} 个方法候选")
             return candidates
 
-        print("[explorer] LLM 全部提取方式失败，回退到启发式")
-        return self._search_tool.extract_method_candidates(
-            search_results, math_task
-        )
+        print("[explorer] LLM 全部提取方式失败")
+        return []
 
     def _llm_extract_methods_as_json(self, prompt: str) -> list[WebMethodCandidate]:
         """Retry method extraction without provider-native response_format.
@@ -616,11 +760,16 @@ class MethodExplorer:
     @staticmethod
     def _convert_web_candidates(
         web_candidates: list[WebMethodCandidate],
+        source: str = "web_search",
     ) -> list[dict]:
         """将 WebMethodCandidate 转换为候选方法字典格式。
 
         外部方法候选的 data_requirements 设为宽松（不设硬性要求），
         以避免被硬过滤淘汰。通过 source 字段标记来源。
+
+        Args:
+            web_candidates: LLM 生成的 WebMethodCandidate 列表。
+            source: 候选来源标记（"web_search" / "llm_think"）。
         """
         method_candidates: list[dict] = []
         for wc in web_candidates:
@@ -644,7 +793,7 @@ class MethodExplorer:
                 "validation_requirements": wc.validation_requirements,
                 "canonical_method": "",
                 "canonical_family": wc.family,
-                "source": "web_search",
+                "source": source,
                 "source_url": wc.source_url,
                 "source_title": wc.source_title,
                 "relevance_score": wc.relevance_score,
@@ -873,42 +1022,109 @@ def _check_eligibility(
     return ""
 
 
+#: 按任务类型的动态评分权重（各维度权重之和为 1.0）
+_TASK_WEIGHTS: dict[str, dict[str, float]] = {
+    # 1. 综合评价 / 排序 — AHP、TOPSIS、熵权法、PCA、模糊综合评价等
+    "evaluation": {
+        "data_fit": 0.20, "implementation": 0.10, "interpretability": 0.25,
+        "robustness": 0.10, "suitability": 0.20, "text_match": 0.15,
+    },
+    # 2. 预测 / 回归 — ARIMA、XGBoost、LSTM、Transformer 等
+    "prediction": {
+        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.10,
+        "robustness": 0.15, "suitability": 0.20, "text_match": 0.15,
+    },
+    # 3. 分类 / 识别 — Logistic Regression、SVM、RF、XGBoost、CNN 等
+    "classification": {
+        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.10,
+        "robustness": 0.15, "suitability": 0.20, "text_match": 0.15,
+    },
+    # 4. 聚类 / 模式发现 — K-Means、DBSCAN、GMM、层次聚类等
+    "clustering": {
+        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.15,
+        "robustness": 0.15, "suitability": 0.20, "text_match": 0.10,
+    },
+    # 5. 优化 / 决策 — LP、MILP、NLP、动态规划、GA、PSO 等
+    "optimization": {
+        "data_fit": 0.10, "implementation": 0.20, "interpretability": 0.10,
+        "robustness": 0.15, "suitability": 0.30, "text_match": 0.15,
+    },
+    # 6. 调度 / 路径 / 资源配置 — TSP、VRP、网络流、排队、整数规划等
+    "scheduling_routing": {
+        "data_fit": 0.10, "implementation": 0.20, "interpretability": 0.05,
+        "robustness": 0.15, "suitability": 0.35, "text_match": 0.15,
+    },
+    # 7. 关联 / 影响因素 / 因果分析 — 回归、SEM、Granger、因果森林等
+    "causal_analysis": {
+        "data_fit": 0.20, "implementation": 0.10, "interpretability": 0.25,
+        "robustness": 0.15, "suitability": 0.20, "text_match": 0.10,
+    },
+    # 8. 动态系统 / 时间演化 — 状态空间、Markov、ODE/PDE、Neural ODE 等
+    "dynamic_system": {
+        "data_fit": 0.20, "implementation": 0.15, "interpretability": 0.15,
+        "robustness": 0.15, "suitability": 0.25, "text_match": 0.10,
+    },
+    # 9. 仿真 / 机制建模 — Monte Carlo、系统动力学、元胞自动机、ABM 等
+    "simulation": {
+        "data_fit": 0.10, "implementation": 0.15, "interpretability": 0.15,
+        "robustness": 0.20, "suitability": 0.25, "text_match": 0.15,
+    },
+    # 10. 异常检测 / 状态诊断 — Isolation Forest、OC-SVM、AutoEncoder 等
+    "anomaly_detection": {
+        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.10,
+        "robustness": 0.20, "suitability": 0.20, "text_match": 0.10,
+    },
+    # 随机优化 — 可作为 optimization 的子任务
+    "stochastic_optimization": {
+        "data_fit": 0.15, "implementation": 0.20, "interpretability": 0.05,
+        "robustness": 0.20, "suitability": 0.30, "text_match": 0.10,
+    },
+}
+
+#: 未知任务类型的默认权重
+_DEFAULT_WEIGHTS: dict[str, float] = {
+    "data_fit": 0.20, "implementation": 0.15, "interpretability": 0.15,
+    "robustness": 0.15, "suitability": 0.20, "text_match": 0.15,
+}
+
+
 def _heuristic_score(
     method: dict,
     data_info: dict,
     interpretation: ProblemInterpretation,
 ) -> float:
-    """启发式评分（0-1）。
+    """启发式评分（0-1），按任务类型动态调权。
 
-    评分维度：
-      - data_fit (0.25): 数据是否满足方法要求（满足程度）
-      - implementation (0.20): 实现难度（越简单越高）
-      - interpretability (0.15): 可解释性（简单方法更高）
-      - robustness (0.10): 鲁棒性（有无淘汰条件）
-      - suitability (0.10): 与任务类型的匹配度
-      - text_match (0.20): 任务文本与方法的匹配度
+    评分维度（权重随 math_task 变化，见 _TASK_WEIGHTS）：
+      - data_fit: 数据是否满足方法要求（满足程度）
+      - implementation: 实现难度（越简单越高）
+      - interpretability: 可解释性（简单方法更高）
+      - robustness: 鲁棒性（有无淘汰条件）
+      - suitability: 与任务类型的匹配度
+      - text_match: 任务文本与方法的匹配度
 
     Returns:
       0-1 之间的分数。
     """
+    w = _TASK_WEIGHTS.get(interpretation.math_task, _DEFAULT_WEIGHTS)
     score = 0.0
 
     # data_fit: 数据满足程度
     req = method.get("data_requirements", {})
     min_samples = req.get("min_samples", 0)
     if min_samples == 0:
-        score += 0.25 * 1.0  # 无数据要求，满分
+        score += w["data_fit"] * 1.0  # 无数据要求，满分
     elif data_info["sample_size"] >= min_samples * 3:
-        score += 0.25 * 1.0  # 充足
+        score += w["data_fit"] * 1.0  # 充足
     elif data_info["sample_size"] >= min_samples:
-        score += 0.25 * 0.7  # 刚好满足
+        score += w["data_fit"] * 0.7  # 刚好满足
     else:
-        score += 0.25 * 0.3  # 不足但未淘汰
+        score += w["data_fit"] * 0.3  # 不足但未淘汰
 
     # implementation: 实现难度
     difficulty = method.get("implementation_difficulty", "medium")
     diff_score = {"low": 1.0, "medium": 0.6, "high": 0.3}.get(difficulty, 0.5)
-    score += 0.20 * diff_score
+    score += w["implementation"] * diff_score
 
     # interpretability: 可解释性（简单方法更高）
     family = method.get("family", "")
@@ -917,28 +1133,32 @@ def _heuristic_score(
         "数学规划", "灰色系统理论", "树模型",
     ]
     if family in interpretable_families:
-        score += 0.15 * 0.9
+        score += w["interpretability"] * 0.9
     elif family in ["机器学习", "启发式算法"]:
-        score += 0.15 * 0.5
+        score += w["interpretability"] * 0.5
     else:
-        score += 0.15 * 0.6
+        score += w["interpretability"] * 0.6
 
     # robustness: 淘汰条件越少越鲁棒
     elimination_count = len(method.get("elimination_conditions", []))
     rob_score = max(0.3, 1.0 - 0.2 * elimination_count)
-    score += 0.10 * rob_score
+    score += w["robustness"] * rob_score
 
     # suitability: 与任务类型匹配（已在目录中按类型组织，所以匹配度高）
-    score += 0.10 * 0.9
+    score += w["suitability"] * 0.9
 
     # text_match: 任务文本与方法的匹配度
-    score += 0.20 * _text_match_score(method, interpretation)
+    score += w["text_match"] * _text_match_score(method, interpretation)
 
-    # 外部方法（网络搜索）的微调：根据搜索相关性调整
-    # 相关性高的外部方法可以接近内置方法，相关性低的则适当降分
+    # 外部方法的微调：根据来源和相关性调整
+    # 搜索路径方法：相关性高的可接近内置方法，相关性低的适当降分
+    # LLM思考路径方法：基于问题直接生成，基准系数略高于搜索
     if method.get("source") == "web_search":
         relevance = method.get("relevance_score", 0.5)
         score *= (0.75 + 0.25 * relevance)  # 0.75-1.0 的系数
+    elif method.get("source") == "llm_think":
+        relevance = method.get("relevance_score", 0.5)
+        score *= (0.80 + 0.20 * relevance)  # 0.80-1.0 的系数
 
     return round(score, 4)
 

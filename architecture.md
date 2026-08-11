@@ -1,7 +1,7 @@
 # MMAgent系统架构
 
 > **目标：** 构建一个**面向实际任务的通用数学建模智能体。** 只要用户提供任务文档和附件数据，系统就能理解任务、选择方法、完成建模和计算、验证结果，并交付建模报告。
->**适用场景不限：** 学术研究、工程分析、课程作业、竞赛任务均可。
+> **适用场景不限：** 学术研究、工程分析、课程作业、竞赛任务均可。
 > **核心范式：** 先建立全局上下文，再按子任务顺序完成"理解 - 选法 - 计算 - 验证 - 沉淀"闭环，最后统一审查与写作。
 
 ---
@@ -32,6 +32,7 @@
 
 
 
+
 ## 3. 项目结构
 
 ```text
@@ -55,35 +56,35 @@ MMAgent/
 ├── examples/                   # 样例任务与附件
 └── artifacts/                  # 每次运行的产物，按 run_id 隔离
 ```
+
 #### （1）workflow/
-      intake.py→ 调用tools,完成数据摄入，生成全局数据画像
-      project_context.py → 调用problem_analyst.py，提取背景、目标、约束、任务、预期输出和歧义点等全局题目信息
-      question_loop.py → 子任务求解状态管理，选择子任务，装配任务上下文，同时归档子任务结果
-#### (2) agents/
-    agents/problem_analyst.py → 任务澄清、方法探索、方法决策
-    agents/method_explorer.py → 搜索候选方法、比较效果
-    agents/model_builder.py → 选择最优模型、参数优化
-    agents/question_solver.py → 求解子任务、验证结果
-    agents/result_validator.py → 验证数值结果、格式与内容
-    agents/paper_writer.py → 生成报告、格式化内容
-    agents/reviewer.py → 审查报告、修改错误
----
 
-## 4. 核心状态
+    intake.py→ 调用tools,完成数据摄入，生成全局数据画像
+    project_context.py → 调用problem_analyst.py，提取背景、目标、约束、任务、预期输出和歧义点等全局题目信息
+    question_loop.py → 子任务求解状态管理，选择子任务，装配任务上下文，同时归档子任务结果
 
-状态采用"全局只读上下文 + 当前子任务可写状态 + 已完成结果库"的三区分法，后续子任务能获得必要信息，又不会被历史细节淹没。
+####  (2) agents/
 
-| 分区               | 内容                                                                                        | 读写规则                       |
-| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------ |
-| 全局只读上下文     | `ProjectContext`（背景/目标/约束/子任务/依赖/任务-数据映射）、`DataProfile`（数据画像） | 摄入阶段生成后只读             |
-| 当前子任务可写状态 | `CurrentQuestionContext`（本子任务输入包）、`QuestionResult`（本子任务结果包）          | 求解时写入，验证后归档         |
-| 已完成结果库       | `question_results`（各子任务验证后的结果包）                                              | 后续子任务和报告的唯一可信输入 |
+`base.py`----Agent 基类：prompt 加载、渲染、三级回退结构化输出
 
-辅助库：`EvidenceCatalog`（检索证据与引用）、`ArtifactRegistry`（产物登记）、`DecisionLog`（决策理由）、`RunLedger`（步骤耗时与错误）。
+`problem_analyst.py`----understand→decompose→classify ，提取背景/约束/目标、拆子问题DAG、判断题型
 
-状态原则：**LLM 只写结构化推理、方案和解释；数据表、代码运行输出和图片仅以文件路径或产物 ID 引用。**
+`decomposition_fallback.py`----子任务拆解的兜底与清洗，启发式提取问题、推断依赖、规范化 ID
 
----
+`method_explorer.py`----联网搜索+LLM 生成候选方法→硬过滤淘汰→启发式评分→LLM 综合决策选最优
+
+| 脚本                          | 核心功能                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| `base.py`                   | Agent 基类：prompt 加载、渲染、三级回退结构化输出                                   |
+| `decomposition_fallback.py` | 子问题拆解的兜底与清洗：启发式提取问题、推断依赖、规范化 ID                         |
+| `problem_analyst.py`        | understand→decompose→classify 三步：提取背景/约束/目标、拆子问题 DAG、判题型      |
+| `method_explorer.py`        | 联网搜索+LLM 生成候选方法→硬过滤淘汰→启发式评分→LLM 综合决策选最优               |
+| `code_modeler.py`           | 分两段调 LLM：先生成数学模型 JSON，再生成求解代码（各 10 分钟超时）                 |
+| `model_builder.py`          | 编排模型表述→数据准备→代码执行/预设计算→可视化图表/表格，含 CODE_REPAIR 预算重试 |
+| `question_solver.py`        | 单问端到端编排：问题澄清→方法探索→建模计算→自评反思→生成可复用摘要              |
+| `result_validator.py`       | 确定性题型验证：约束可行性、R²/残差、权重扰动稳定性、量纲检查等                    |
+| `paper_writer.py`           | 从 QuestionResult 生成竞赛报告：摘要、问题重述、模型构建、结果分析、结论            |
+| `reviewer.py`               | 评委视角确定性审查：覆盖性、一致性、可追溯性、验证充分性、格式合规                  |
 
 ## 5. 各环节职责
 
