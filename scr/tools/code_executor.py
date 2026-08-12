@@ -32,6 +32,57 @@ from pathlib import Path
 #: 结果输出标记：``__MODEL_RESULT__<json>``
 RESULT_MARKER = "__MODEL_RESULT__"
 
+_MATPLOTLIB_BOOTSTRAP = r'''
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    from pathlib import Path as _MMAFontPath
+    from matplotlib import font_manager as _mma_font_manager
+    from matplotlib.figure import Figure as _MMAFigure
+
+    _MMA_CHINESE_FONTS = [
+        "Microsoft YaHei",
+        "SimHei",
+        "Noto Sans CJK SC",
+        "Noto Sans SC",
+        "WenQuanYi Micro Hei",
+        "Arial Unicode MS",
+    ]
+    for _mma_font_path in (
+        r"C:\Windows\Fonts\msyh.ttc",
+        r"C:\Windows\Fonts\msyhbd.ttc",
+        r"C:\Windows\Fonts\simhei.ttf",
+        r"C:\Windows\Fonts\simsun.ttc",
+        r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
+    ):
+        if _MMAFontPath(_mma_font_path).exists():
+            try:
+                _mma_font_manager.fontManager.addfont(_mma_font_path)
+            except Exception:
+                pass
+
+    def _mma_apply_font_config():
+        current = list(matplotlib.rcParams.get("font.sans-serif", []))
+        merged = []
+        for _name in [*_MMA_CHINESE_FONTS, *current, "DejaVu Sans"]:
+            if _name not in merged:
+                merged.append(_name)
+        matplotlib.rcParams["font.family"] = "sans-serif"
+        matplotlib.rcParams["font.sans-serif"] = merged
+        matplotlib.rcParams["axes.unicode_minus"] = False
+
+    _mma_apply_font_config()
+    _mma_original_figure_savefig = _MMAFigure.savefig
+
+    def _mma_savefig_with_fonts(self, *args, **kwargs):
+        _mma_apply_font_config()
+        return _mma_original_figure_savefig(self, *args, **kwargs)
+
+    _MMAFigure.savefig = _mma_savefig_with_fonts
+except Exception:
+    pass
+'''
+
 #: 常见敏感环境变量名（执行时从子进程环境中清除）
 _SENSITIVE_ENV_KEYS = (
     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
@@ -77,7 +128,7 @@ def execute_model_code(
         tmp_script = Path(tmp_dir) / "model.py"
         tmp_figure_dir = Path(tmp_dir) / "figures"
         tmp_figure_dir.mkdir()
-        tmp_script.write_text(code, encoding="utf-8")
+        tmp_script.write_text(_prepare_code_for_execution(code), encoding="utf-8")
         env = _build_child_env(data_csv_path, tmp_figure_dir)
 
         try:
@@ -124,6 +175,11 @@ def _validate_code(code: str) -> str:
             "请以 print('__MODEL_RESULT__' + json.dumps(result)) 结束"
         )
     return textwrap.dedent(code)
+
+
+def _prepare_code_for_execution(code: str) -> str:
+    """Prepend plotting defaults to generated code before isolated execution."""
+    return _MATPLOTLIB_BOOTSTRAP + "\n" + code
 
 
 def _build_child_env(

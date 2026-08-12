@@ -196,12 +196,17 @@ def _make_progress_event(node_name: str, update: dict) -> dict:
         update = {}
     results = update.get("question_results")
     results_count = len(results) if isinstance(results, dict) else None
+    project_context = update.get("project_context")
+    question_count = None
+    if project_context is not None and getattr(project_context, "questions", None):
+        question_count = len(project_context.questions)
     return {
         "type": "node",
         "node": node_name,
         "run_id": update.get("run_id"),
         "workflow_status": update.get("workflow_status"),
         "current_question_id": update.get("current_question_id"),
+        "question_count": question_count,
         "gq_action": update.get("_gq_action"),
         "results_count": results_count,
         "timestamp": time.time(),

@@ -27,9 +27,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from .matplotlib_config import configure_matplotlib_fonts
+
 # 中文字体设置
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "WenQuanYi Micro Hei", "DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
+configure_matplotlib_fonts()
 plt.rcParams["figure.dpi"] = 200
 plt.rcParams["savefig.dpi"] = 200
 plt.rcParams["savefig.bbox"] = "tight"

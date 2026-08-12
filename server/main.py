@@ -318,7 +318,12 @@ async def submit_clarification_endpoint(
 @app.get("/api/runs/{run_id}/paper")
 async def get_paper_endpoint(run_id: str):
     """报告 Markdown 文本。"""
-    path = resolve_artifact(run_id, "paper.md")
+    try:
+        path = resolve_artifact(run_id, "paper.md")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return PlainTextResponse(path.read_text(encoding="utf-8"))
 
 

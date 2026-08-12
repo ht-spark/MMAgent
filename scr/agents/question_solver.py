@@ -132,6 +132,8 @@ class QuestionSolver(BaseAgent):
         method_candidates, decision_record = self._explorer.explore_and_decide(
             context, interpretation, data_profile
         )
+        decision_record = dict(decision_record)
+        decision_record["method_candidates"] = method_candidates
         selected_method = decision_record.get("selected_method", "未知方法")
         log_step(
             logger,

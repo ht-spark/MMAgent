@@ -257,44 +257,54 @@ def format_data_summary_table(
     computation: dict[str, Any],
     qid: str,
 ) -> str:
-    """格式化数据摘要统计表。"""
+    """格式化数据摘要统计表。
+
+    ``data_summary`` / ``simulation`` 的结果键可能是 dict（键→统计值）、
+    list（蒙特卡洛样本序列）或标量，统一防御处理：
+      - dict：逐键渲染，嵌套 dict 拍平成 ``key.sub_key``；
+      - list：输出描述统计（样本数/均值/中位数/标准差/最值），
+        避免对样本序列调用 ``.items()`` 导致
+        ``'list' object has no attribute 'items'`` 崩溃；
+      - 标量：单行渲染。
+    """
     results = computation.get("results", {})
 
-    if "data_summary" in results:
-        ds = results["data_summary"]
-        lines: list[str] = []
-        lines.append("| 统计量 | 值 |")
-        lines.append("|--------|------|")
+    key = "data_summary" if "data_summary" in results else (
+        "simulation" if "simulation" in results else None
+    )
+    if key is None:
+        return f"（问题 {qid} 无数据摘要）"
 
-        for key, value in ds.items():
-            if isinstance(value, list):
-                lines.append(f"| {key} | {_fmt_num(value)} |")
-            elif isinstance(value, dict):
-                for sub_key, sub_val in value.items():
-                    lines.append(f"| {key}.{sub_key} | {_fmt_num(sub_val)} |")
+    raw = results[key]
+    lines: list[str] = []
+    lines.append("| 统计量 | 值 |")
+    lines.append("|--------|------|")
+
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(v, dict):
+                for sub_k, sub_v in v.items():
+                    lines.append(f"| {k}.{sub_k} | {_fmt_num(sub_v)} |")
             else:
-                lines.append(f"| {key} | {_fmt_num(value)} |")
+                lines.append(f"| {k} | {_fmt_num(v)} |")
+    elif isinstance(raw, list):
+        arr = np.asarray(
+            [x for x in raw if isinstance(x, (int, float))],
+            dtype=float,
+        )
+        if arr.size:
+            lines.append(f"| 样本数 | {arr.size} |")
+            lines.append(f"| 均值 | {_fmt_num(float(np.mean(arr)))} |")
+            lines.append(f"| 中位数 | {_fmt_num(float(np.median(arr)))} |")
+            lines.append(f"| 标准差 | {_fmt_num(float(np.std(arr)))} |")
+            lines.append(f"| 最小值 | {_fmt_num(float(np.min(arr)))} |")
+            lines.append(f"| 最大值 | {_fmt_num(float(np.max(arr)))} |")
+        else:
+            lines.append(f"| {key} | {len(raw)} 个非数值样本 |")
+    else:
+        lines.append(f"| {key} | {_fmt_num(raw)} |")
 
-        return "\n".join(lines)
-
-    if "simulation" in results:
-        sim = results["simulation"]
-        lines: list[str] = []
-        lines.append("| 统计量 | 值 |")
-        lines.append("|--------|------|")
-
-        for key, value in sim.items():
-            if isinstance(value, list):
-                lines.append(f"| {key} | {_fmt_num(value)} |")
-            elif isinstance(value, dict):
-                for sub_key, sub_val in value.items():
-                    lines.append(f"| {key}.{sub_key} | {_fmt_num(sub_val)} |")
-            else:
-                lines.append(f"| {key} | {_fmt_num(value)} |")
-
-        return "\n".join(lines)
-
-    return f"（问题 {qid} 无数据摘要）"
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

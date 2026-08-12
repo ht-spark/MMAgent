@@ -43,6 +43,110 @@ def _as_mapping(value: Any, field_name: str) -> dict[str, Any]:
     return {}
 
 
+def _to_scalar_number(value: Any) -> float | None:
+    """Best-effort conversion for report metrics that should be scalar."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        if hasattr(value, "shape") and hasattr(value, "size"):
+            if int(value.size) != 1:
+                return None
+            return float(value.item())
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_numeric(value: Any, digits: int = 4) -> str:
+    """Format scalar numbers and compact vector-like values for paper text."""
+    scalar = _to_scalar_number(value)
+    if scalar is not None:
+        return f"{scalar:.{digits}f}"
+    if hasattr(value, "tolist"):
+        try:
+            value = value.tolist()
+        except Exception:  # noqa: BLE001
+            return str(value)
+    if isinstance(value, (list, tuple)):
+        shown = [_fmt_numeric(item, digits) for item in list(value)[:6]]
+        if len(value) > 6:
+            shown.append("...")
+        return "[" + ", ".join(shown) + "]"
+    return str(value)
+
+
+def _sequence_summary(value: Any, digits: int = 4) -> str:
+    """Summarize long vector-like values for LLM report writing."""
+    if hasattr(value, "tolist"):
+        try:
+            value = value.tolist()
+        except Exception:  # noqa: BLE001
+            return str(value)
+    if not isinstance(value, (list, tuple)):
+        return _fmt_numeric(value, digits)
+    seq = list(value)
+    if not seq:
+        return "空序列"
+    if seq and isinstance(seq[0], (list, tuple, dict)):
+        return f"{len(seq)}项嵌套数据，首项={_fmt_numeric(seq[0], digits)}"
+    numeric = [_to_scalar_number(item) for item in seq]
+    nums = [n for n in numeric if n is not None]
+    if len(nums) == len(seq):
+        return (
+            f"{len(seq)}项，首值={_fmt_numeric(seq[0], digits)}，"
+            f"末值={_fmt_numeric(seq[-1], digits)}，"
+            f"最小={_fmt_numeric(min(nums), digits)}，最大={_fmt_numeric(max(nums), digits)}"
+        )
+    shown = [_fmt_numeric(item, digits) for item in seq[:4]]
+    if len(seq) > 4:
+        shown.append("...")
+    return f"{len(seq)}项，样例=[" + ", ".join(shown) + "]"
+
+
+def _summarize_for_llm(value: Any, depth: int = 0) -> Any:
+    """Build compact, faithful result material for LLM report prose."""
+    if depth >= 3:
+        return _sequence_summary(value) if isinstance(value, (list, tuple)) else _fmt_numeric(value)
+    if hasattr(value, "tolist"):
+        try:
+            value = value.tolist()
+        except Exception:  # noqa: BLE001
+            return str(value)
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in list(value.items())[:20]:
+            out[str(key)] = _summarize_for_llm(item, depth + 1)
+        if len(value) > 20:
+            out["_omitted"] = f"{len(value) - 20}项未展开"
+        return out
+    if isinstance(value, (list, tuple)):
+        if len(value) <= 6:
+            return [_summarize_for_llm(item, depth + 1) for item in value]
+        return _sequence_summary(value)
+    return _fmt_numeric(value)
+
+
+def _build_llm_result_material(
+    results: dict[str, Any],
+    metrics: dict[str, Any],
+    tables: list[str],
+    figures: list[str],
+) -> str:
+    """Create compact result material that lets LLM select and polish evidence."""
+    material = {
+        "results_summary": _summarize_for_llm(results),
+        "metrics_summary": _summarize_for_llm(metrics),
+        "tables": "\n\n".join(tables)[:1500],
+        "figures": [os.path.basename(fig) for fig in figures[:8]],
+    }
+    return json.dumps(material, ensure_ascii=False, default=str, indent=2)[:4000]
+
+
 def _normalize_question_result(
     question_id: str,
     result: QuestionResult,
@@ -394,7 +498,7 @@ def _academic_result_analysis(
     if task in ("optimization", "stochastic_optimization"):
         if obj is not None:
             parts.append(
-                f"求解结果表明，在给定约束条件下，模型获得的最优目标值为{obj:.4f}。"
+                f"求解结果表明，在给定约束条件下，模型获得的最优目标值为{_fmt_numeric(obj)}。"
                 f"该结果反映了在当前参数设置下，决策方案所能达到的最优水平。"
             )
             # 分析最优解结构
@@ -423,26 +527,27 @@ def _academic_result_analysis(
         mean_val = metrics.get("mean")
         std_val = metrics.get("std")
         if mean_val is not None:
-            parts.append(f"模拟结果的均值为{mean_val:.4f}，反映方案的平均表现水平。")
+            parts.append(f"模拟结果的均值为{_fmt_numeric(mean_val)}，反映方案的平均表现水平。")
         if std_val is not None:
-            parts.append(f"标准差为{std_val:.4f}，衡量结果的波动程度，标准差越小表明方案稳健性越好。")
+            parts.append(f"标准差为{_fmt_numeric(std_val)}，衡量结果的波动程度，标准差越小表明方案稳健性越好。")
         ci_lower = metrics.get("ci_lower")
         ci_upper = metrics.get("ci_upper")
         if ci_lower is not None and ci_upper is not None:
-            parts.append(f"95%置信区间为[{ci_lower:.4f}, {ci_upper:.4f}]。")
+            parts.append(f"95%置信区间为[{_fmt_numeric(ci_lower)}, {_fmt_numeric(ci_upper)}]。")
 
     elif task == "prediction":
         r2 = metrics.get("r_squared")
         rmse = metrics.get("rmse")
-        if r2 is not None:
-            if r2 >= 0.7:
-                parts.append(f"决定系数R²={r2:.4f}，表明模型拟合程度较好，自变量能解释因变量变异的{r2*100:.1f}%。")
-            elif r2 >= 0.5:
-                parts.append(f"决定系数R²={r2:.4f}，模型具有中等拟合优度。")
+        r2_num = _to_scalar_number(r2)
+        if r2_num is not None:
+            if r2_num >= 0.7:
+                parts.append(f"决定系数R²={_fmt_numeric(r2_num)}，表明模型拟合程度较好，自变量能解释因变量变异的{r2_num*100:.1f}%。")
+            elif r2_num >= 0.5:
+                parts.append(f"决定系数R²={_fmt_numeric(r2_num)}，模型具有中等拟合优度。")
             else:
-                parts.append(f"决定系数R²={r2:.4f}，拟合优度偏低，可能需要引入更多特征或采用非线性模型。")
+                parts.append(f"决定系数R²={_fmt_numeric(r2_num)}，拟合优度偏低，可能需要引入更多特征或采用非线性模型。")
         if rmse is not None:
-            parts.append(f"均方根误差RMSE={rmse:.4f}，反映预测值与实际值的平均偏差水平。")
+            parts.append(f"均方根误差RMSE={_fmt_numeric(rmse)}，反映预测值与实际值的平均偏差水平。")
 
     elif task == "evaluation":
         parts.append("综合评价结果见上述表格，各方案的排名基于客观权重计算得出。")
@@ -532,7 +637,7 @@ def _academic_conclusion(
         if obj is not None:
             parts.append(
                 f"综上所述，本文针对问题{qid}构建了基于{method}的优化模型，"
-                f"在满足全部约束条件的前提下求得最优目标值为{obj:.4f}。"
+                f"在满足全部约束条件的前提下求得最优目标值为{_fmt_numeric(obj)}。"
                 f"该结果不仅给出了当前参数设置下的最优决策方案，"
                 f"更通过约束的对偶价格和影子价格揭示了各资源要素的边际价值，"
                 f"为决策者在资源调配和方案调整中提供了量化参考。"
@@ -558,9 +663,9 @@ def _academic_conclusion(
         if n_sim is not None:
             sim_detail += f"通过{int(n_sim)}次随机仿真"
         if mean_val is not None:
-            sim_detail += f"，获得目标期望值{mean_val:.4f}"
+            sim_detail += f"，获得目标期望值{_fmt_numeric(mean_val)}"
         if std_val is not None:
-            sim_detail += f"（标准差{std_val:.4f}）"
+            sim_detail += f"（标准差{_fmt_numeric(std_val)}）"
         parts.append(
             f"综上所述，本文针对问题{qid}采用{method}进行了不确定性分析{sim_detail}。"
             f"仿真结果不仅给出了目标的点估计，更刻画了其完整的概率分布形态，"
@@ -572,9 +677,9 @@ def _academic_conclusion(
         rmse = metrics.get("rmse")
         metric_detail = ""
         if r2 is not None:
-            metric_detail += f"决定系数R²={r2:.4f}"
+            metric_detail += f"决定系数R²={_fmt_numeric(r2)}"
         if rmse is not None:
-            metric_detail += f"，均方根误差RMSE={rmse:.4f}" if metric_detail else f"均方根误差RMSE={rmse:.4f}"
+            metric_detail += f"，均方根误差RMSE={_fmt_numeric(rmse)}" if metric_detail else f"均方根误差RMSE={_fmt_numeric(rmse)}"
         if metric_detail:
             parts.append(
                 f"综上所述，本文针对问题{qid}建立了基于{method}的预测模型（{metric_detail}）。"
@@ -2052,6 +2157,12 @@ class PaperWriter:
 
         # 结果分析段落（学术风格）
         # LLM 起草结果解释段落（失败回退模板 _academic_result_analysis）
+        llm_result_material = _build_llm_result_material(
+            results,
+            metrics,
+            q_tables,
+            self._all_figures.get(qid, []),
+        )
         result_analysis = self._llm_write_prompt(
             "paper_result_section",
             question_text=(
@@ -2060,8 +2171,8 @@ class PaperWriter:
             ),
             method=method,
             status=status,
-            results=json.dumps(results, ensure_ascii=False, default=str)[:1500],
-            metrics=json.dumps(metrics, ensure_ascii=False, default=str)[:800],
+            results=llm_result_material,
+            metrics="已并入上方结果写作材料摘要",
             tables="\n\n".join(q_tables)[:1500],
             template_guide=self._template_guide,
         )
@@ -2290,7 +2401,7 @@ class PaperWriter:
             obj = results.get("optimal_objective")
             result_desc = ""
             if obj is not None:
-                result_desc = f"，最优目标值 {obj:.4f}"
+                result_desc = f"，最优目标值 {_fmt_numeric(obj)}"
             else:
                 key_result = findings.get("key_result", "")
                 if key_result:
@@ -2626,9 +2737,11 @@ class PaperWriter:
         if isinstance(v, bool):
             return "是" if v else "否"
         if isinstance(v, float):
-            return f"{v:.4f}"
+            return _fmt_numeric(v)
         if isinstance(v, int):
             return str(v)
+        if hasattr(v, "tolist"):
+            return _fmt_numeric(v)
         if isinstance(v, list):
             items = [PaperWriter._fmt_value(item) for item in v[:10]]
             if len(v) > 10:

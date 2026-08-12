@@ -34,8 +34,10 @@ class MockLLM:
     def __init__(self, responses: list[str]) -> None:
         self._responses = list(responses)
         self.calls = 0
+        self.prompts: list[str] = []
 
     def invoke(self, prompt: str) -> _Msg:
+        self.prompts.append(prompt)
         idx = min(self.calls, len(self._responses) - 1)
         self.calls += 1
         return _Msg(self._responses[idx])
@@ -214,3 +216,40 @@ class TestModelBuilderCodeBased:
         comp = self._build(None, dp)
         assert comp["status"] == "success"
         assert comp["method_key"] != "code_based"
+
+    def test_model_design_receives_problem_context_and_search_reference(self):
+        llm = MockLLM([_model_design(), GOOD_CODE])
+        builder = ModelBuilder(llm=llm)
+        context = CurrentQuestionContext(
+            question_id="q1",
+            question_text="计算烟幕对导弹视线的有效遮蔽时长",
+            objective="建立运动学几何模型并求遮蔽时间",
+            global_background="导弹、无人机、干扰弹和烟幕云团在三维空间中运动",
+            global_constraints=["烟幕球半径10m", "起爆后20s有效", "忽略空气阻力"],
+        )
+        interpretation = ProblemInterpretation(
+            question_id="q1",
+            math_task="simulation",
+            math_task_description="确定性运动学几何问题",
+            constraints=["导弹到目标线段与烟幕球相交"],
+            necessary_assumptions=["无人机和导弹匀速直线运动"],
+            result_form="有效遮蔽时间区间和总时长",
+        )
+        decision = {
+            "selected_method": "蒙特卡洛",
+            "selection_reason": "仅作为数值求解参考，仍需先构造几何判定模型",
+            "method_candidates": [
+                {
+                    "name": "空间视线-球体相交判定",
+                    "source": "web_search",
+                    "description": "用线段到球心距离和投影位置判断遮蔽",
+                }
+            ],
+        }
+
+        builder.build(context, interpretation, decision, data_profile=None)
+
+        prompt = llm.prompts[0]
+        assert "烟幕球半径10m" in prompt
+        assert "空间视线-球体相交判定" in prompt
+        assert "参考方法不是模型本身" in prompt

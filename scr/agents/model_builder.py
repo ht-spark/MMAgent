@@ -113,11 +113,14 @@ class ModelBuilder:
         data_preparation = self._prepare_data(
             selected_method, data_profile, context
         )
+        modeling_context = self._build_modeling_context(
+            context, interpretation, decision_record
+        )
 
         # 步骤 3: 执行计算
         computation = self._execute(
             selected_method, math_task, data_preparation, formulation, context,
-            method_key, output_dir, feedback,
+            method_key, output_dir, feedback, modeling_context=modeling_context,
         )
 
         # 步骤 4: 生成输出
@@ -138,6 +141,71 @@ class ModelBuilder:
             "figures": figures,
             "tables": tables,
         }
+
+    @staticmethod
+    def _build_modeling_context(
+        context: CurrentQuestionContext,
+        interpretation: ProblemInterpretation,
+        decision_record: dict,
+    ) -> str:
+        """汇总 LLM 建模所需的问题上下文和方法参考材料。"""
+        candidate_refs: list[dict[str, Any]] = []
+        for item in decision_record.get("method_candidates", [])[:8]:
+            if not isinstance(item, dict):
+                continue
+            candidate_refs.append({
+                "name": item.get("name", ""),
+                "source": item.get("source", ""),
+                "family": item.get("family") or item.get("canonical_family", ""),
+                "description": item.get("description", ""),
+                "assumptions": item.get("assumptions", []),
+                "required_data": item.get("required_data", []),
+                "required_outputs": item.get("required_outputs", []),
+                "validation_requirements": item.get("validation_requirements", []),
+                "source_title": item.get("source_title", ""),
+                "source_url": item.get("source_url", ""),
+            })
+
+        payload = {
+            "question_id": context.question_id,
+            "question_text": context.question_text[:2000],
+            "objective": context.objective,
+            "global_background": context.global_background[:1800],
+            "global_constraints": context.global_constraints,
+            "required_data": context.required_data,
+            "data_quality_summary": context.data_quality_summary,
+            "inherited_summaries": context.inherited_summaries[:3],
+            "problem_interpretation": {
+                "math_task_description": interpretation.math_task_description,
+                "decision_variables": interpretation.decision_variables,
+                "objective_function": interpretation.objective_function,
+                "constraints": interpretation.constraints,
+                "evaluation_metrics": interpretation.evaluation_metrics,
+                "result_form": interpretation.result_form,
+                "available_data": interpretation.available_data,
+                "missing_data": interpretation.missing_data,
+                "necessary_assumptions": interpretation.necessary_assumptions,
+                "acceptable_simplifications": interpretation.acceptable_simplifications,
+                "relation_to_previous": interpretation.relation_to_previous,
+                "relation_description": interpretation.relation_description,
+            },
+            "method_reference": {
+                "selected_method": decision_record.get("selected_method", ""),
+                "selection_reason": (
+                    decision_record.get("selection_reason")
+                    or decision_record.get("reason")
+                    or decision_record.get("rationale", "")
+                ),
+                "selected_details": decision_record.get("selected_details", {}),
+                "required_outputs": decision_record.get("required_outputs", []),
+                "validation_requirements": decision_record.get("validation_requirements", []),
+                "candidates": candidate_refs,
+            },
+        }
+        text = json.dumps(payload, ensure_ascii=False, default=str, indent=2)
+        if len(text) > 6000:
+            return text[:6000] + "\n...（建模上下文已截断）"
+        return text
 
     # ------------------------------------------------------------------
     # 模型表述构建
@@ -680,6 +748,7 @@ class ModelBuilder:
         method_key: str = "",
         output_dir: str | Path | None = None,
         feedback: str = "",
+        modeling_context: str = "",
     ) -> dict:
         """执行模型计算。
 
@@ -714,6 +783,7 @@ class ModelBuilder:
                 code_computation = self._execute_code_based(
                     method_name, math_task, data_prep, formulation, context, output_dir,
                     feedback=feedback,
+                    modeling_context=modeling_context,
                 )
                 if code_computation.get("status") == "success":
                     return code_computation
@@ -802,6 +872,7 @@ class ModelBuilder:
         context: CurrentQuestionContext,
         output_dir: str | Path | None = None,
         feedback: str = "",
+        modeling_context: str = "",
     ) -> dict:
         """任务驱动建模：分段调用 LLM（模型设计→代码生成），沙箱执行并校验。
 
@@ -878,6 +949,7 @@ class ModelBuilder:
                         math_task=math_task,
                         method_hint=method_name,
                         data_summary=data_summary,
+                        modeling_context=modeling_context,
                         feedback=feedback,
                     )
                 except LLMTimeoutError as e:

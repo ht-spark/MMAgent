@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { confirmBudget, createRun, checkBackendOnline, getRun, getPaper, getFigures, renameRun, submitClarification } from '../api'
 import { loadConfigs, loadActiveId, ApiConfig } from '../apiConfigs'
+import { NODE_CN, fmtQid, formatCurrentStep, formatProgressLine, nextProgressQuestionId } from '../progressFormat'
 
 type MsgKind = 'info' | 'progress' | 'error' | 'success' | 'warn' | 'result'
 
@@ -34,59 +35,6 @@ type ChatMsg = {
 }
 
 type Phase = 'compose' | 'running' | 'done'
-
-/** 节点名中文映射 */
-const NODE_CN: Record<string, string> = {
-  intake: '数据摄入',
-  context: '任务理解',
-  g0_retry: '任务理解重试',
-  g0_clarification: '等待人工澄清',
-  select_question: '选择子任务',
-  assemble_context: '装配上下文',
-  configure_question_budget: '预算配置',
-  solve_question: '子任务求解',
-  validate_result: '结果验证',
-  gq_check: '质量检查',
-  archive_result: '归档结果',
-  global_review: '全局审查',
-  write_paper: '报告写作',
-  review_paper: '报告审查',
-  deliver: '最终交付',
-  gf_revise: '报告修订',
-}
-
-/** 工作流状态中文映射 */
-const STATUS_CN: Record<string, string> = {
-  initializing: '初始化中',
-  intake_ready: '数据摄入完成',
-  context_ready: '任务理解完成',
-  solving: '求解中',
-  all_questions_done: '所有子任务完成',
-  delivered: '已交付',
-  failed: '失败',
-}
-
-/** GQ 动作中文映射 */
-const ACTION_CN: Record<string, string> = {
-  pass: '通过',
-  retry: '重试',
-  blocked: '阻塞',
-}
-
-/** 将 q1/q2 等子问题 ID 转为"第1个子任务"格式 */
-function fmtQid(qid: string): string {
-  const m = qid.match(/q(\d+)/i)
-  return m ? `第${m[1]}个子任务` : qid
-}
-
-/** 翻译节点名 + 工作流状态为中文进度行 */
-function fmtProgress(node: string, wf: string, gqAction?: string): string {
-  const nodeCn = NODE_CN[node] || node
-  const parts: string[] = [nodeCn]
-  if (wf) parts.push(STATUS_CN[wf] || wf)
-  if (gqAction) parts.push(`（${ACTION_CN[gqAction] || gqAction}）`)
-  return parts.join(' · ')
-}
 
 type ProgressCardProps = {
   text: string
@@ -313,6 +261,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
   const progressMsgIdRef = useRef<number | null>(null)
   const progressQueueRef = useRef<any[]>([])
   const progressTimerRef = useRef<number | null>(null)
+  const currentQuestionIdRef = useRef('')
 
   function push(role: 'user' | 'assistant', text: string, kind: MsgKind = 'info', result?: ResultData) {
     setMessages((m) => [...m, { id: nextId(), role, text, kind, ts: Date.now(), result }])
@@ -399,6 +348,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
 
   /** 处理单个进度事件，返回是否为普通节点事件（非预算类） */
   function handleProgressEvent(ev: any) {
+    const qidBefore = currentQuestionIdRef.current
     if (ev.type === 'budget_request') {
       const proposed: Record<string, number> = ev.proposed || {}
       const phase: 'initial' | 'question' = ev.phase === 'initial' ? 'initial' : 'question'
@@ -406,15 +356,8 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       setBudgetDraft({ ...proposed })
     } else if (ev.type === 'budget_confirmed') {
       setBudgetReq(null)
-      const action = ev.action
-      const phaseLabel = ev.phase === 'initial' ? '任务预算' : `预算配置 · ${fmtQid(ev.question_id || '')}`
-      if (action === 'override') {
-        appendProgress(`${phaseLabel}已按输入覆盖`)
-      } else if (action === 'default') {
-        appendProgress(`${phaseLabel}沿用默认`)
-      } else {
-        appendProgress(`${phaseLabel}确认已取消`)
-      }
+      const line = formatProgressLine(ev, qidBefore)
+      if (line) appendProgress(line)
     } else if (ev.type === 'budget_summary') {
       statsRef.current = {
         time: ev.time_total || 0,
@@ -436,22 +379,19 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     } else if (ev.type === 'node_start') {
       // 节点开始事件：只更新动画步骤描述，不追加进度行
       // 如果还没有进度消息，先创建一个空消息让动画立即可见
-      const node = ev.node || 'step'
-      setCurrentStep(NODE_CN[node] || node)
+      setCurrentStep(formatCurrentStep(ev, qidBefore))
       if (progressMsgIdRef.current === null) {
         ensureProgressMessage()
       }
     } else {
       if (ev.type !== 'node') return
       // 普通节点进度（节点完成）：追加到合并进度消息
-      const node = ev.node || 'step'
-      const wf = ev.workflow_status || ''
-      const gqAction = ev.gq_action || ''
-      const qid = ev.current_question_id || ''
-      const qidSuffix = qid ? ` [${fmtQid(qid)}]` : ''
-      const line = fmtProgress(node, wf, gqAction) + qidSuffix
-      appendProgress(line)
+      const line = formatProgressLine(ev, qidBefore)
+      currentQuestionIdRef.current = nextProgressQuestionId(ev, qidBefore)
+      if (line) appendProgress(line)
+      return
     }
+    currentQuestionIdRef.current = nextProgressQuestionId(ev, qidBefore)
   }
 
   /** 按顺序播放收到的节点事件，避免快步骤在同一帧内跳过。 */
@@ -513,6 +453,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
       // 将历史事件渲染为进度消息
       const lines: string[] = []
       let lastNode = ''
+      let lastQuestionId = ''
       let pendingBudget: BudgetReq | null = null
       let pendingClarification: ClarificationReq | null = null
       for (const ev of events) {
@@ -529,25 +470,27 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           }
         } else if (ev.type === 'budget_confirmed') {
           pendingBudget = null
+          const line = formatProgressLine(ev, lastQuestionId)
+          if (line) lines.push(line)
         } else if (ev.type === 'clarification_request') {
           pendingClarification = { failed_checks: ev.failed_checks || [] }
         } else if (ev.type === 'clarification_resolved') {
           pendingClarification = null
+          const line = formatProgressLine(ev, lastQuestionId)
+          if (line) lines.push(line)
         } else if (ev.type === 'node_start') {
           // 节点开始事件：只更新最后节点名，不追加进度行
           lastNode = ev.node || 'step'
         } else {
-          const node = ev.node || 'step'
-          const wf = ev.workflow_status || ''
-          const gqAction = ev.gq_action || ''
-          const qid = ev.current_question_id || ''
-          const qidSuffix = qid ? ` [${fmtQid(qid)}]` : ''
-          lines.push(fmtProgress(node, wf, gqAction) + qidSuffix)
-          lastNode = node
+          const line = formatProgressLine(ev, lastQuestionId)
+          if (line) lines.push(line)
+          lastNode = ev.node || lastNode
         }
+        lastQuestionId = nextProgressQuestionId(ev, lastQuestionId)
       }
+      currentQuestionIdRef.current = lastQuestionId
       setProgressText(lines)
-      setCurrentStep(NODE_CN[lastNode] || lastNode)
+      setCurrentStep(lastNode ? formatCurrentStep({ node: lastNode }, lastQuestionId) : '')
       if (pendingBudget && (status === 'queued' || status === 'running')) {
         setBudgetReq(pendingBudget)
         setBudgetDraft({ ...pendingBudget.proposed })
@@ -583,6 +526,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     // 仅当从头订阅时重置合并消息；恢复模式（after>0）保留已有进度消息
     if (after === 0) {
       progressMsgIdRef.current = null
+      currentQuestionIdRef.current = ''
       progressQueueRef.current = []
       if (progressTimerRef.current !== null) {
         window.clearTimeout(progressTimerRef.current)

@@ -86,20 +86,22 @@ class MethodExplorer:
           1. 获取候选数量限额（CANDIDATE 预算）
           2. 双路径/单路径生成候选方法
           3. 消耗 CANDIDATE 预算（双路径允许 2× 超额）
-          4. 硬过滤：淘汰不满足数据要求的方法
-          5. 为每个候选添加评分信息
 
         Args:
             context: 当前任务上下文。
             interpretation: 任务澄清结果。
-            data_profile: 数据画像（用于硬过滤）。
+            data_profile: 数据画像（保留签名兼容，候选筛选交由 LLM 决策）。
 
         Returns:
-            候选方法列表，每个方法包含字段 + score + eliminated + reason。
+            候选方法列表。
         """
         qid = context.question_id
         candidate_limit = self._get_candidate_limit(qid)
-        search_available = bool(self._search_tool and self._search_tool.available)
+        search_available = bool(
+            self._llm is not None
+            and self._search_tool
+            and self._search_tool.available
+        )
 
         # ------------------------------------------------------------------
         # 候选生成（双路径 / 单路径）
@@ -141,50 +143,13 @@ class MethodExplorer:
             except Exception as e:
                 print(f"[explorer] CANDIDATE 预算记账跳过: {e}")
 
-        if not candidates:
-            # 降级：当无网络且 LLM 不可用时，提供一个通用候选
-            candidates = [_fallback_candidate(interpretation)]
+        for candidate in candidates:
+            candidate["eliminated"] = False
+            candidate["elimination_reason"] = ""
 
-        # ------------------------------------------------------------------
-        # 硬过滤 + 评分
-        # ------------------------------------------------------------------
-        data_info = _extract_data_info(data_profile, context)
-        filtered = []
-        eliminated = []
+        print(f"[explorer] 小问 {qid}: 候选 {len(candidates)} 个，等待 LLM 最终决策")
 
-        for c in candidates:
-            reason = _check_eligibility(c, data_info, interpretation)
-            if reason:
-                c["eliminated"] = True
-                c["elimination_reason"] = reason
-                eliminated.append(c)
-            else:
-                c["eliminated"] = False
-                c["elimination_reason"] = ""
-                # 启发式评分
-                c["heuristic_score"] = _heuristic_score(c, data_info, interpretation)
-                filtered.append(c)
-
-        # 如果全部被淘汰，保留得分最高的淘汰候选（降级处理）
-        if not filtered and eliminated:
-            best_eliminated = max(eliminated, key=lambda x: x.get("heuristic_score", 0))
-            best_eliminated["eliminated"] = False
-            best_eliminated["elimination_reason"] = ""
-            best_eliminated["degraded"] = True
-            filtered.append(best_eliminated)
-
-        # 按启发式分数排序
-        filtered.sort(key=lambda x: x.get("heuristic_score", 0), reverse=True)
-
-        # 合并结果（保留被淘汰的记录用于决策追溯）
-        all_candidates = filtered + [c for c in eliminated if c not in filtered]
-
-        print(f"[explorer] 小问 {qid}: "
-              f"候选 {len(candidates)} → 通过 {len(filtered)} → 淘汰 {len(eliminated)}")
-        if filtered:
-            print(f"  → 推荐: {filtered[0]['name']} (score={filtered[0].get('heuristic_score', 0):.3f})")
-
-        return all_candidates
+        return candidates
 
     def _get_candidate_limit(self, question_id: str) -> int:
         """获取当前小问的候选方法数量上限（每条路径的目标生成数量）。
@@ -237,42 +202,46 @@ class MethodExplorer:
               - assumptions: 选中方法的核心假设
               - validation_method: 推荐的验证方法
         """
-        # 获取未淘汰的候选
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-
-        if not viable:
-            # 降级：选择第一个候选
-            viable = candidates[:1] if candidates else []
-            if viable:
-                viable[0]["degraded"] = True
-
-        if not viable:
+        if not candidates:
             return {
                 "selected_method": "无可用方法",
                 "selected_family": "",
-                "selected_reason": "所有候选方法均被淘汰且无降级候选",
+                "selected_reason": "LLM 未生成候选方法",
                 "alternatives": [],
                 "eliminated": [],
                 "assumptions": [],
                 "validation_method": "",
+                "decision_source": "none",
             }
 
-        # LLM 综合决策（失败时回退启发式评分取最高分）
-        llm_pick = self._decide_with_llm(viable, context, interpretation)
-        if llm_pick is not None:
-            selected = llm_pick["selected"]
-            selected_reason = llm_pick["selected_reason"]
-            assumptions = llm_pick["assumptions"]
-            decision_source = "llm"
-        else:
-            # 启发式回退：选择得分最高的
-            selected = viable[0]
-            selected_reason = _build_selection_reason(selected, interpretation, context)
-            assumptions = _format_assumptions(selected, context, interpretation)
-            decision_source = "heuristic"
+        llm_pick = self._decide_with_llm(candidates, context, interpretation)
+        if llm_pick is None:
+            return {
+                "selected_method": "无可用方法",
+                "selected_family": "",
+                "selected_reason": "LLM 方法决策不可用或失败，未启用非 LLM 回退策略",
+                "alternatives": [
+                    {
+                        "name": c.get("name", ""),
+                        "family": c.get("family", ""),
+                        "reason": "候选方法，等待 LLM 决策",
+                    }
+                    for c in candidates[:3]
+                ],
+                "eliminated": [],
+                "assumptions": [],
+                "validation_method": "",
+                "decision_source": "llm_unavailable",
+            }
 
-        alternatives = viable[1:4]  # 最多 3 个备选
-        eliminated = [c for c in candidates if c.get("eliminated", False)]
+        selected = llm_pick["selected"]
+        selected_reason = llm_pick["selected_reason"]
+        assumptions = llm_pick["assumptions"]
+        decision_source = "llm"
+
+        alternatives = [
+            c for c in candidates if c.get("name") != selected.get("name")
+        ][:3]
 
         # 构建决策记录
         decision = {
@@ -287,18 +256,11 @@ class MethodExplorer:
                 {
                     "name": a["name"],
                     "family": a.get("family", ""),
-                    "score": a.get("heuristic_score", 0),
-                    "reason": f"备选方案，得分 {a.get('heuristic_score', 0):.3f}",
+                    "reason": "备选方案，未被最终 LLM 决策选中",
                 }
                 for a in alternatives
             ],
-            "eliminated": [
-                {
-                    "name": e["name"],
-                    "reason": e.get("elimination_reason", ""),
-                }
-                for e in eliminated
-            ],
+            "eliminated": [],
             "assumptions": assumptions,
             "validation_method": selected.get("validation_method", ""),
             "implementation_difficulty": selected.get("implementation_difficulty", "medium"),
@@ -307,7 +269,7 @@ class MethodExplorer:
         }
 
         print(f"[explorer] 决策: {selected['name']} "
-              f"(备选 {len(alternatives)}, 淘汰 {len(eliminated)}, source={decision_source})")
+              f"(备选 {len(alternatives)}, source={decision_source})")
 
         return decision
 
@@ -325,7 +287,7 @@ class MethodExplorer:
 
         Returns:
             含 selected/selected_reason/assumptions 的字典；
-            无 LLM 或调用失败时返回 None（调用方回退启发式）。
+            无 LLM 或调用失败时返回 None。
         """
         if self._llm is None or not viable:
             return None
@@ -340,7 +302,9 @@ class MethodExplorer:
                         "cons": (c.get("cons") or [])[:3],
                         "implementation_difficulty": c.get("implementation_difficulty", ""),
                         "canonical_method": c.get("canonical_method", ""),
-                        "heuristic_score": c.get("heuristic_score", 0),
+                        "source": c.get("source", ""),
+                        "source_title": c.get("source_title", ""),
+                        "source_url": c.get("source_url", ""),
                     }
                     for c in viable
                 ],
@@ -361,11 +325,11 @@ class MethodExplorer:
             )
             decision_data = self._call_structured_generic(_MethodDecision, prompt)
         except Exception as e:
-            print(f"[explorer] LLM 方法决策失败，回退启发式: {e}")
+            print(f"[explorer] LLM 方法决策失败: {e}")
             return None
 
         if not decision_data.selected_method:
-            return None  # LLM 认为无合适候选，回退启发式
+            return None
 
         # 找到 LLM 选中的候选
         selected = next(
@@ -375,7 +339,7 @@ class MethodExplorer:
         if selected is None:
             print(
                 f"[explorer] LLM 选择了不在候选列表中的方法 "
-                f"'{decision_data.selected_method}'，回退启发式"
+                f"'{decision_data.selected_method}'"
             )
             return None
 
@@ -472,9 +436,9 @@ class MethodExplorer:
         """联网搜索 + LLM 从搜索结果中提取方法候选（搜索路径）。
 
         流程：
-          1. 检查搜索工具是否可用
+          1. 检查搜索工具和 LLM 是否可用
           2. 消耗 SEARCH 预算并执行搜索
-          3. 从搜索结果中提取方法候选（LLM 优先，启发式回退）
+          3. 由 LLM 从搜索结果中整理候选方法
           4. 转换为候选方法字典格式
 
         注意：CANDIDATE 预算消耗由 ``explore()`` 统一管理，此方法不再记账。
@@ -487,6 +451,9 @@ class MethodExplorer:
         Returns:
             方法候选列表。
         """
+        if self._llm is None:
+            return []
+
         if not self._search_tool or not self._search_tool.available:
             return []
 
@@ -519,17 +486,9 @@ class MethodExplorer:
         if not search_results:
             return []
 
-        # 提取方法候选
-        if self._llm is not None:
-            # LLM 提取（更精确）
-            web_candidates = self._llm_extract_methods(
-                search_results, math_task, problem_desc, candidate_limit
-            )
-        else:
-            # 启发式提取（无需 LLM）
-            web_candidates = self._search_tool.extract_method_candidates(
-                search_results, math_task
-            )
+        web_candidates = self._llm_extract_methods(
+            search_results, math_task, problem_desc, candidate_limit
+        )
 
         if not web_candidates:
             return []
@@ -559,7 +518,7 @@ class MethodExplorer:
             candidate_limit: 目标生成数量（传入 prompt）。
 
         Returns:
-            WebMethodCandidate 列表。LLM 失败时回退到启发式提取。
+            WebMethodCandidate 列表。LLM 失败时返回空列表。
         """
         # 格式化搜索结果
         formatted_results = self._format_search_results(search_results)
@@ -575,10 +534,8 @@ class MethodExplorer:
                 candidate_limit=str(candidate_limit),
             )
         except FileNotFoundError:
-            # prompt 模板不存在，回退到启发式
-            return self._search_tool.extract_method_candidates(
-                search_results, math_task
-            )
+            print("[explorer] method_search.md 不存在，跳过搜索整理路径")
+            return []
 
         # 调用 LLM 提取（三级回退）
         candidates = self._call_llm_for_candidates(prompt)
@@ -586,11 +543,8 @@ class MethodExplorer:
             print(f"[explorer] LLM 提取: {len(candidates)} 个方法候选")
             return candidates
 
-        # 全部 LLM 方式失败，回退到启发式
-        print("[explorer] LLM 全部提取方式失败，回退到启发式")
-        return self._search_tool.extract_method_candidates(
-            search_results, math_task
-        )
+        print("[explorer] LLM 全部提取方式失败")
+        return []
 
     def _llm_think_methods(
         self,
@@ -764,8 +718,7 @@ class MethodExplorer:
     ) -> list[dict]:
         """将 WebMethodCandidate 转换为候选方法字典格式。
 
-        外部方法候选的 data_requirements 设为宽松（不设硬性要求），
-        以避免被硬过滤淘汰。通过 source 字段标记来源。
+        通过 source 字段标记来源，保留 LLM 决策需要的上下文。
 
         Args:
             web_candidates: LLM 生成的 WebMethodCandidate 列表。
@@ -873,456 +826,3 @@ def _prop_to_example(prop: dict, defs: dict) -> Any:
     else:
         enum = prop.get("enum")
         return enum[0] if enum else "示例文本"
-
-
-# ---------------------------------------------------------------------------
-# 辅助函数
-# ---------------------------------------------------------------------------
-
-
-def _fallback_candidate(interpretation: ProblemInterpretation) -> dict:
-    """当联网搜索和LLM均不可用时，根据任务类型提供一个通用候选。
-
-    这是一个最小化的降级方案，确保工作流不会因无候选而中断。
-    """
-    math_task = interpretation.math_task
-    task_defaults: dict[str, dict] = {
-        "evaluation": {
-            "name": "综合评价方法",
-            "family": "多属性决策",
-            "description": "基于多指标的综合评价方法，可根据数据特点选择熵权法或TOPSIS",
-            "required_outputs": ["indicator_weights", "scores_or_ranking"],
-            "validation_requirements": ["weight_sensitivity", "ranking_stability"],
-            "assumptions": ["指标间相互独立或相关性可接受", "数据标准化后具有可比性"],
-        },
-        "prediction": {
-            "name": "回归预测模型",
-            "family": "线性模型",
-            "description": "基于历史数据的回归预测方法",
-            "required_outputs": ["predictions", "error_metrics"],
-            "validation_requirements": ["residual_analysis", "error_metrics"],
-            "assumptions": ["历史数据能反映未来趋势", "变量间存在线性或可线性化的关系"],
-        },
-        "optimization": {
-            "name": "数学规划",
-            "family": "数学规划",
-            "description": "基于目标和约束的数学优化方法",
-            "required_outputs": ["decision_solution", "objective_value", "constraint_check"],
-            "validation_requirements": ["objective_recompute", "constraint_feasibility"],
-            "assumptions": ["目标函数和约束条件可线性化", "决策变量为连续或整数"],
-        },
-        "stochastic_optimization": {
-            "name": "随机优化",
-            "family": "随机优化",
-            "description": "考虑不确定性的优化方法",
-            "required_outputs": ["scenario_solutions", "expected_objective", "risk_metrics"],
-            "validation_requirements": ["scenario_sensitivity", "baseline_comparison"],
-            "assumptions": ["不确定参数的分布已知或可估计", "场景集合具有代表性"],
-        },
-        "simulation": {
-            "name": "蒙特卡洛模拟",
-            "family": "仿真模型",
-            "description": "基于随机采样的仿真模拟方法",
-            "required_outputs": ["simulation_summary", "confidence_interval"],
-            "validation_requirements": ["seed_reproducibility", "sample_size_sensitivity"],
-            "assumptions": ["随机变量的分布已知或可拟合", "采样次数足够保证收敛"],
-        },
-    }
-    defaults = task_defaults.get(
-        math_task,
-        task_defaults["optimization"],  # 通用回退
-    )
-    # canonical_method：与 model_builder._execute 的分发条件对齐，
-    # 确保兜底方法也能命中对应的确定性计算实现（而非 generic_stats）。
-    _CANONICAL_BY_TASK = {
-        "evaluation": "topsis",
-        "prediction": "linear_regression",
-        "optimization": "linear_programming",
-        "stochastic_optimization": "stochastic_programming",
-        "simulation": "monte_carlo_simulation",
-    }
-    return {
-        "name": defaults["name"],
-        "family": defaults["family"],
-        "description": defaults["description"],
-        "required_data": ["待确认"],
-        "assumptions": defaults.get("assumptions", []),
-        "pros": [],
-        "cons": [],
-        "elimination_conditions": [],
-        "implementation_difficulty": "medium",
-        "data_requirements": {
-            "min_samples": 0,
-            "min_features": 0,
-            "needs_time": False,
-        },
-        "validation_method": "交叉验证、敏感性分析",
-        "required_outputs": defaults["required_outputs"],
-        "validation_requirements": defaults["validation_requirements"],
-        "canonical_method": _CANONICAL_BY_TASK.get(math_task, ""),
-        "canonical_family": defaults["family"],
-        "source": "fallback",
-        "source_url": "",
-        "source_title": "",
-        "relevance_score": 0.3,
-    }
-
-
-def _extract_data_info(
-    data_profile: DataProfile | None,
-    context: CurrentQuestionContext,
-) -> dict:
-    """从数据画像和上下文中提取用于硬过滤的数据信息。
-
-    Returns:
-        包含 sample_size, feature_count, has_time_column 的字典。
-    """
-    info = {
-        "sample_size": 0,
-        "feature_count": 0,
-        "has_time_column": False,
-        "data_quality_summary": context.data_quality_summary or "",
-    }
-
-    if data_profile is not None:
-        info["sample_size"] = data_profile.max_sample_size
-        info["feature_count"] = len(data_profile.fields)
-        info["has_time_column"] = data_profile.has_time_column
-
-    return info
-
-
-def _check_eligibility(
-    method: dict,
-    data_info: dict,
-    interpretation: ProblemInterpretation,
-) -> str:
-    """检查方法是否满足数据要求（硬过滤）。
-
-    Returns:
-        空字符串表示通过，非空字符串为淘汰原因。
-    """
-    req = method.get("data_requirements", {})
-
-    # 检查最小样本量
-    min_samples = req.get("min_samples", 0)
-    if min_samples > 0 and data_info["sample_size"] < min_samples:
-        return f"样本量不足: 需要≥{min_samples}, 实际={data_info['sample_size']}"
-
-    # 检查最小特征数
-    min_features = req.get("min_features", 0)
-    if min_features > 0 and data_info["feature_count"] < min_features:
-        return f"特征数不足: 需要≥{min_features}, 实际={data_info['feature_count']}"
-
-    # 检查时间列要求
-    needs_time = req.get("needs_time", False)
-    if needs_time and not data_info["has_time_column"]:
-        return "需要时间列但数据中无时间维度"
-
-    return ""
-
-
-#: 按任务类型的动态评分权重（各维度权重之和为 1.0）
-_TASK_WEIGHTS: dict[str, dict[str, float]] = {
-    # 1. 综合评价 / 排序 — AHP、TOPSIS、熵权法、PCA、模糊综合评价等
-    "evaluation": {
-        "data_fit": 0.20, "implementation": 0.10, "interpretability": 0.25,
-        "robustness": 0.10, "suitability": 0.20, "text_match": 0.15,
-    },
-    # 2. 预测 / 回归 — ARIMA、XGBoost、LSTM、Transformer 等
-    "prediction": {
-        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.10,
-        "robustness": 0.15, "suitability": 0.20, "text_match": 0.15,
-    },
-    # 3. 分类 / 识别 — Logistic Regression、SVM、RF、XGBoost、CNN 等
-    "classification": {
-        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.10,
-        "robustness": 0.15, "suitability": 0.20, "text_match": 0.15,
-    },
-    # 4. 聚类 / 模式发现 — K-Means、DBSCAN、GMM、层次聚类等
-    "clustering": {
-        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.15,
-        "robustness": 0.15, "suitability": 0.20, "text_match": 0.10,
-    },
-    # 5. 优化 / 决策 — LP、MILP、NLP、动态规划、GA、PSO 等
-    "optimization": {
-        "data_fit": 0.10, "implementation": 0.20, "interpretability": 0.10,
-        "robustness": 0.15, "suitability": 0.30, "text_match": 0.15,
-    },
-    # 6. 调度 / 路径 / 资源配置 — TSP、VRP、网络流、排队、整数规划等
-    "scheduling_routing": {
-        "data_fit": 0.10, "implementation": 0.20, "interpretability": 0.05,
-        "robustness": 0.15, "suitability": 0.35, "text_match": 0.15,
-    },
-    # 7. 关联 / 影响因素 / 因果分析 — 回归、SEM、Granger、因果森林等
-    "causal_analysis": {
-        "data_fit": 0.20, "implementation": 0.10, "interpretability": 0.25,
-        "robustness": 0.15, "suitability": 0.20, "text_match": 0.10,
-    },
-    # 8. 动态系统 / 时间演化 — 状态空间、Markov、ODE/PDE、Neural ODE 等
-    "dynamic_system": {
-        "data_fit": 0.20, "implementation": 0.15, "interpretability": 0.15,
-        "robustness": 0.15, "suitability": 0.25, "text_match": 0.10,
-    },
-    # 9. 仿真 / 机制建模 — Monte Carlo、系统动力学、元胞自动机、ABM 等
-    "simulation": {
-        "data_fit": 0.10, "implementation": 0.15, "interpretability": 0.15,
-        "robustness": 0.20, "suitability": 0.25, "text_match": 0.15,
-    },
-    # 10. 异常检测 / 状态诊断 — Isolation Forest、OC-SVM、AutoEncoder 等
-    "anomaly_detection": {
-        "data_fit": 0.30, "implementation": 0.10, "interpretability": 0.10,
-        "robustness": 0.20, "suitability": 0.20, "text_match": 0.10,
-    },
-    # 随机优化 — 可作为 optimization 的子任务
-    "stochastic_optimization": {
-        "data_fit": 0.15, "implementation": 0.20, "interpretability": 0.05,
-        "robustness": 0.20, "suitability": 0.30, "text_match": 0.10,
-    },
-}
-
-#: 未知任务类型的默认权重
-_DEFAULT_WEIGHTS: dict[str, float] = {
-    "data_fit": 0.20, "implementation": 0.15, "interpretability": 0.15,
-    "robustness": 0.15, "suitability": 0.20, "text_match": 0.15,
-}
-
-
-def _heuristic_score(
-    method: dict,
-    data_info: dict,
-    interpretation: ProblemInterpretation,
-) -> float:
-    """启发式评分（0-1），按任务类型动态调权。
-
-    评分维度（权重随 math_task 变化，见 _TASK_WEIGHTS）：
-      - data_fit: 数据是否满足方法要求（满足程度）
-      - implementation: 实现难度（越简单越高）
-      - interpretability: 可解释性（简单方法更高）
-      - robustness: 鲁棒性（有无淘汰条件）
-      - suitability: 与任务类型的匹配度
-      - text_match: 任务文本与方法的匹配度
-
-    Returns:
-      0-1 之间的分数。
-    """
-    w = _TASK_WEIGHTS.get(interpretation.math_task, _DEFAULT_WEIGHTS)
-    score = 0.0
-
-    # data_fit: 数据满足程度
-    req = method.get("data_requirements", {})
-    min_samples = req.get("min_samples", 0)
-    if min_samples == 0:
-        score += w["data_fit"] * 1.0  # 无数据要求，满分
-    elif data_info["sample_size"] >= min_samples * 3:
-        score += w["data_fit"] * 1.0  # 充足
-    elif data_info["sample_size"] >= min_samples:
-        score += w["data_fit"] * 0.7  # 刚好满足
-    else:
-        score += w["data_fit"] * 0.3  # 不足但未淘汰
-
-    # implementation: 实现难度
-    difficulty = method.get("implementation_difficulty", "medium")
-    diff_score = {"low": 1.0, "medium": 0.6, "high": 0.3}.get(difficulty, 0.5)
-    score += w["implementation"] * diff_score
-
-    # interpretability: 可解释性（简单方法更高）
-    family = method.get("family", "")
-    interpretable_families = [
-        "客观赋权法", "主观赋权法", "多属性决策", "线性模型",
-        "数学规划", "灰色系统理论", "树模型",
-    ]
-    if family in interpretable_families:
-        score += w["interpretability"] * 0.9
-    elif family in ["机器学习", "启发式算法"]:
-        score += w["interpretability"] * 0.5
-    else:
-        score += w["interpretability"] * 0.6
-
-    # robustness: 淘汰条件越少越鲁棒
-    elimination_count = len(method.get("elimination_conditions", []))
-    rob_score = max(0.3, 1.0 - 0.2 * elimination_count)
-    score += w["robustness"] * rob_score
-
-    # suitability: 与任务类型匹配（已在目录中按类型组织，所以匹配度高）
-    score += w["suitability"] * 0.9
-
-    # text_match: 任务文本与方法的匹配度
-    score += w["text_match"] * _text_match_score(method, interpretation)
-
-    # 外部方法的微调：根据来源和相关性调整
-    # 搜索路径方法：相关性高的可接近内置方法，相关性低的适当降分
-    # LLM思考路径方法：基于问题直接生成，基准系数略高于搜索
-    if method.get("source") == "web_search":
-        relevance = method.get("relevance_score", 0.5)
-        score *= (0.75 + 0.25 * relevance)  # 0.75-1.0 的系数
-    elif method.get("source") == "llm_think":
-        relevance = method.get("relevance_score", 0.5)
-        score *= (0.80 + 0.20 * relevance)  # 0.80-1.0 的系数
-
-    return round(score, 4)
-
-
-def _text_match_score(
-    method: dict,
-    interpretation: ProblemInterpretation,
-) -> float:
-    """计算任务文本与方法的匹配度（0-1）。
-
-    根据任务文本中的关键词与方法描述的匹配程度评分。
-    匹配度高的方法获得更高分数，从而实现方法推荐的差异化。
-    """
-    # 从 math_task_description 中提取文本
-    text = (interpretation.math_task_description or "").lower()
-    method_name = method.get("name", "").lower()
-    method_desc = method.get("description", "").lower()
-    method_family = method.get("family", "").lower()
-
-    score = 0.5  # 基础分
-
-    # 不确定性相关 → 随机/鲁棒优化方法加分
-    uncertainty_keywords = ["不确定性", "随机", "鲁棒", "概率", "波动", "风险", "不确定"]
-    has_uncertainty = any(kw in text for kw in uncertainty_keywords)
-    if has_uncertainty:
-        if any(kw in method_name for kw in ["随机", "鲁棒", "蒙特卡洛", "机会约束"]):
-            score = 1.0
-        elif any(kw in method_family for kw in ["随机", "鲁棒"]):
-            score = 0.9
-        elif "确定性" in method_name:
-            score = 0.3  # 确定性方法在不确定性场景下降分
-        else:
-            score = 0.4
-
-    # 整数/离散相关 → 整数规划加分
-    integer_keywords = ["整数", "离散", "0-1", "二元", "integer", "discrete"]
-    has_integer = any(kw in text for kw in integer_keywords)
-    if has_integer:
-        if "整数" in method_name:
-            score = max(score, 0.9)
-        elif "遗传" in method_name or "粒子群" in method_name:
-            score = max(score, 0.7)
-        elif "线性规划" in method_name and "整数" not in method_name:
-            score = min(score, 0.4)  # 纯连续LP在整数场景下降分
-
-    # 非线性相关 → 启发式算法加分
-    nonlinear_keywords = ["非线性", "nonlinear", "复杂约束"]
-    has_nonlinear = any(kw in text for kw in nonlinear_keywords)
-    if has_nonlinear:
-        if method.get("family") == "启发式算法":
-            score = max(score, 0.85)
-        elif "线性规划" in method_name:
-            score = min(score, 0.3)
-
-    # 时间序列/趋势相关 → 时间序列方法加分
-    time_keywords = ["时间序列", "趋势", "forecast", "预测"]
-    has_time = any(kw in text for kw in time_keywords)
-    if has_time:
-        if "arima" in method_name or "时间序列" in method_name:
-            score = max(score, 0.9)
-        elif "灰色" in method_name or "gm" in method_name:
-            score = max(score, 0.8)
-        elif "线性回归" in method_name:
-            score = max(score, 0.6)
-
-    # 多指标评价相关 → 评价方法加分
-    eval_keywords = ["评价", "排序", "评估", "rank", "evaluate"]
-    has_eval = any(kw in text for kw in eval_keywords)
-    if has_eval:
-        if any(kw in method_name for kw in ["熵权", "topsis", "ahp", "层次"]):
-            score = max(score, 0.9)
-        elif "灰色关联" in method_name:
-            score = max(score, 0.75)
-
-    return score
-
-
-def _format_assumptions(
-    method: dict,
-    context: CurrentQuestionContext,
-    interpretation: ProblemInterpretation,
-) -> list[dict]:
-    """格式化选中方法的假设列表。
-
-    Returns:
-        假设列表，每个假设包含 description, type, verifiable 字段。
-    """
-    assumptions: list[dict] = []
-
-    # 方法自带假设
-    for a in method.get("assumptions", []):
-        assumptions.append({
-            "description": a,
-            "type": "method_inherent",
-            "verifiable": True,
-        })
-
-    # 基于数据质量的假设
-    if context.data_quality_summary:
-        if "小样本" in context.data_quality_summary or "样本量" in context.data_quality_summary:
-            assumptions.append({
-                "description": "样本量有限，结果可能存在统计偏差",
-                "type": "data_limitation",
-                "verifiable": True,
-            })
-        if "无时间" in context.data_quality_summary:
-            assumptions.append({
-                "description": "无时间维度数据，不可使用时间序列方法",
-                "type": "data_limitation",
-                "verifiable": True,
-            })
-
-    # 基于前问继承的假设
-    if context.inherited_summaries:
-        for s in context.inherited_summaries:
-            if s.get("status") == "validated":
-                prev_limitations = s.get("limitations", [])
-                for lim in prev_limitations[:1]:  # 只取第一条
-                    assumptions.append({
-                        "description": f"继承前问假设: {lim}",
-                        "type": "inherited",
-                        "verifiable": False,
-                    })
-
-    return assumptions
-
-
-def _build_selection_reason(
-    selected: dict,
-    interpretation: ProblemInterpretation,
-    context: CurrentQuestionContext,
-) -> str:
-    """构建方法选择理由。"""
-    reasons: list[str] = []
-
-    # 任务匹配
-    reasons.append(
-        f"任务类型 {interpretation.math_task} 与方法 {selected['name']} "
-        f"({selected.get('family', '')}) 匹配"
-    )
-
-    # 数据匹配
-    req = selected.get("data_requirements", {})
-    if req.get("min_samples", 0) == 0:
-        reasons.append("无特殊数据要求")
-    else:
-        reasons.append(f"满足数据要求（最小样本量 {req.get('min_samples', 0)}）")
-
-    # 实现难度
-    difficulty = selected.get("implementation_difficulty", "medium")
-    if difficulty == "low":
-        reasons.append("实现难度低，竞赛中可快速落地")
-    elif difficulty == "medium":
-        reasons.append("实现难度适中")
-    else:
-        reasons.append("实现难度较高，需要更多工程投入")
-
-    # 继承关系
-    if context.inherited_summaries:
-        dep_ids = [s.get("question_id", "?") for s in context.inherited_summaries]
-        reasons.append(f"可利用前问 {', '.join(dep_ids)} 的结论作为输入")
-
-    # 降级标记
-    if selected.get("degraded"):
-        reasons.append("⚠ 降级选择：数据不完全满足要求，结果需谨慎解读")
-
-    return "; ".join(reasons)

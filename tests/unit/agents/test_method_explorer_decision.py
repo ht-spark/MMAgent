@@ -1,8 +1,8 @@
-"""方法决策 LLM 化（P1-B2）单元测试。
+"""方法决策 LLM 化单元测试。
 
 覆盖：
   - 有 LLM 时决策由 LLM 综合权衡生成（含 canonical_method 映射）
-  - 无 LLM / LLM 选择未知方法 / LLM 失败时回退启发式
+  - 无 LLM / LLM 选择未知方法时不再回退启发式
 """
 from __future__ import annotations
 
@@ -64,26 +64,26 @@ def _candidates() -> list[dict]:
             "cons": ["要求线性"],
             "implementation_difficulty": "low",
             "canonical_method": "",
-            "heuristic_score": 0.8,
+            "source": "llm_think",
             "eliminated": False,
         },
         {
             "name": "遗传算法",
             "family": "进化算法",
-            "description": "启发式全局寻优",
+            "description": "全局寻优算法",
             "pros": ["非线性也可用"],
             "cons": ["结果随机"],
             "implementation_difficulty": "high",
             "canonical_method": "",
-            "heuristic_score": 0.6,
+            "source": "web_search",
             "eliminated": False,
         },
     ]
 
 
-def _llm_payload() -> str:
+def _llm_payload(selected_method: str = "线性规划模型") -> str:
     return json.dumps({
-        "selected_method": "线性规划模型",
+        "selected_method": selected_method,
         "canonical_method": "linear_programming",
         "canonical_family": "线性规划",
         "reason": "题意匹配且数据支持，可确定性求解",
@@ -107,34 +107,25 @@ def test_decide_uses_llm_when_available():
     assert decision["selected_reason"].startswith("题意匹配")
     assert decision["assumptions"] == ["目标与约束均为线性"]
     assert decision["required_outputs"] == ["optimal_solution", "optimal_objective"]
+    assert "score" not in decision["alternatives"][0]
 
 
-def test_decide_falls_back_without_llm():
-    """无 LLM 时回退启发式：取启发式评分最高者。"""
+def test_decide_without_llm_does_not_use_heuristic():
+    """无 LLM 时不再用启发式选择候选。"""
     explorer = MethodExplorer(llm=None, search_tool=None)
     decision = explorer.decide(_candidates(), _context(), _interpretation())
 
-    assert decision["decision_source"] == "heuristic"
-    assert decision["selected_method"] == "线性规划模型"  # 分数 0.8 最高
-    assert decision["canonical_method"] == ""
+    assert decision["decision_source"] == "llm_unavailable"
+    assert decision["selected_method"] == "无可用方法"
+    assert "未启用非 LLM 回退策略" in decision["selected_reason"]
 
 
-def test_decide_falls_back_when_llm_picks_unknown_method():
-    """LLM 选择不在候选列表中的方法时回退启发式。"""
-    payload = json.dumps({
-        "selected_method": "不存在的方法",
-        "canonical_method": "",
-        "canonical_family": "",
-        "reason": "测试",
-        "validation_method": "",
-        "assumptions": [],
-        "required_outputs": [],
-        "validation_requirements": [],
-    })
+def test_decide_unknown_llm_pick_does_not_use_heuristic():
+    """LLM 选择不在候选列表中时不再回退启发式。"""
     explorer = MethodExplorer(
-        llm=MockStructuredLLM(payload), search_tool=None
+        llm=MockStructuredLLM(_llm_payload("不存在的方法")), search_tool=None
     )
     decision = explorer.decide(_candidates(), _context(), _interpretation())
 
-    assert decision["decision_source"] == "heuristic"
-    assert decision["selected_method"] == "线性规划模型"
+    assert decision["decision_source"] == "llm_unavailable"
+    assert decision["selected_method"] == "无可用方法"

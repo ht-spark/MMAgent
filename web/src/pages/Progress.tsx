@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cancelRun, getRun } from '../api'
+import { formatProgressLine, nextProgressQuestionId } from '../progressFormat'
 
 type Props = { runId: string; onDone?: () => void }
 
@@ -55,6 +56,15 @@ export default function Progress({ runId, onDone }: Props) {
   if (!run) return <div className="form-card">加载中…</div>
 
   const events: any[] = run.progress || []
+  const progressLines: { line: string; timestamp?: number }[] = []
+  let currentQuestionId = ''
+  for (const ev of events) {
+    const line = formatProgressLine(ev, currentQuestionId)
+    if (line) {
+      progressLines.push({ line, timestamp: ev.timestamp })
+    }
+    currentQuestionId = nextProgressQuestionId(ev, currentQuestionId)
+  }
   const active = run.status === 'running' || run.status === 'queued'
   const terminal = ['succeeded', 'failed', 'cancelled'].includes(run.status)
 
@@ -69,16 +79,12 @@ export default function Progress({ runId, onDone }: Props) {
       </div>
 
       <div className="timeline">
-        {events.length === 0 && <div className="ev muted">等待节点开始…</div>}
-        {events
-          .slice()
-          .reverse()
-          .map((ev, i) => (
+        {progressLines.length === 0 && <div className="ev muted">等待节点开始…</div>}
+        {progressLines.map((item, i) => (
             <div key={i} className="ev">
-              <span className="node">{ev.node}</span>
-              <span className="wf">{ev.workflow_status || ''}</span>
+              <span className="node">{item.line}</span>
               <span className="t">
-                {ev.timestamp ? new Date(ev.timestamp * 1000).toLocaleTimeString() : ''}
+                {item.timestamp ? new Date(item.timestamp * 1000).toLocaleTimeString() : ''}
               </span>
             </div>
           ))}

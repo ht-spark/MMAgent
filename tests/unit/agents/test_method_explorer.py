@@ -1,407 +1,189 @@
-"""Phase 3 方法探索与决策 Agent 测试。
-
-测试覆盖：
-  1. 方法探索：联网搜索+LLM驱动生成候选，降级时提供通用候选
-  2. 硬过滤：数据不满足时淘汰
-  3. 启发式评分：候选排序合理
-  4. 决策记录：包含选中方法、备选、淘汰、假设
-  5. QuestionSolver 集成：method_candidates / decision_record / assumptions 已填充
-  6. 降级处理：全部淘汰时保留最优
-"""
+"""方法探索与决策 Agent 测试。"""
 from __future__ import annotations
 
-import pandas as pd
-import pytest
+import json
 
 from scr.agents.method_explorer import MethodExplorer
 from scr.agents.question_solver import QuestionSolver
-from scr.schemas.context import DataProfile, FieldProfile, TableProfile
 from scr.schemas.question import CurrentQuestionContext, ProblemInterpretation
 
 
-# ---------------------------------------------------------------------------
-# 方法探索器测试
-# ---------------------------------------------------------------------------
+class MockBudgetManager:
+    """固定 CANDIDATE 限额并允许 SEARCH/CANDIDATE 消耗的预算管理器。"""
+
+    def __init__(self, candidate_limit: int = 2) -> None:
+        self.candidate_limit = candidate_limit
+        self.consumed: list[tuple[str, str, int]] = []
+
+    def remaining(self, budget_type, question_id: str) -> int:
+        if getattr(budget_type, "name", "") == "CANDIDATE":
+            return self.candidate_limit
+        return 1
+
+    def consume(self, budget_type, amount: int = 1, question_id: str = "") -> bool:
+        self.consumed.append((getattr(budget_type, "name", str(budget_type)), question_id, amount))
+        return True
 
 
-class TestMethodExplorer:
-    """方法探索器测试。
+class MockSearchTool:
+    available = True
 
-    无 Tavily API key 时，探索器降级为 _fallback_candidate，
-    每种任务类型返回一个通用候选。
-    """
-
-    def _make_context(
-        self,
-        qid: str = "q1",
-        objective: str = "建立评价模型",
-        data_quality: str = "共 5 张表、100 行数据",
-    ) -> CurrentQuestionContext:
-        """创建测试用上下文。"""
-        return CurrentQuestionContext(
-            question_id=qid,
-            question_text=f"问题1 {objective}",
-            objective=objective,
-            data_quality_summary=data_quality,
-        )
-
-    def _make_interpretation(
-        self,
-        math_task: str = "evaluation",
-    ) -> ProblemInterpretation:
-        """创建测试用问题澄清。"""
-        return ProblemInterpretation(
-            question_id="q1",
-            math_task=math_task,
-            math_task_description="测试任务",
-            result_form="结果表",
-        )
-
-    def _make_data_profile(
-        self,
-        n_rows: int = 100,
-        n_fields: int = 5,
-        has_time: bool = False,
-    ) -> DataProfile:
-        """创建测试用数据画像。"""
-        fields = []
-        for i in range(n_fields):
-            fields.append(FieldProfile(
-                source_file="test.csv",
-                field_name=f"col_{i}",
-                dtype="float",
-                missing_rate=0.0,
-                unique_count=n_rows,
-                is_time_column=(has_time and i == 0),
-            ))
-
-        return DataProfile(
-            tables=[TableProfile(
-                source_file="test.csv",
-                n_rows=n_rows,
-                n_cols=n_fields,
-                field_names=[f.field_name for f in fields],
-            )],
-            fields=fields,
-            preliminary_findings=["测试发现"],
-        )
-
-    def test_explore_returns_candidates(self):
-        """explore 返回候选方法列表。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("evaluation")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-
-        assert len(candidates) > 0
-        # 至少有一个未淘汰的候选
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-        assert len(viable) > 0
-
-    def test_explore_no_data_profile(self):
-        """无数据画像时仍能返回候选（不做硬过滤）。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("optimization")
-
-        candidates = explorer.explore(context, interp, data_profile=None)
-
-        # 降级候选无数据要求，应通过硬过滤
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-        assert len(viable) > 0
-
-    def test_explore_degraded_when_all_eliminated(self):
-        """全部淘汰时降级保留最优。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("prediction")
-
-        candidates = explorer.explore(context, interp, data_profile=None)
-
-        # 降级候选无数据要求，应至少有一个通过
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-        assert len(viable) >= 1
-
-    def test_explore_candidate_has_required_outputs(self):
-        """候选方法包含 required_outputs 字段。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("evaluation")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-
-        for c in viable:
-            assert "required_outputs" in c
-            assert isinstance(c["required_outputs"], list)
-
-    def test_explore_candidate_has_validation_requirements(self):
-        """候选方法包含 validation_requirements 字段。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("optimization")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-
-        for c in viable:
-            assert "validation_requirements" in c
-            assert isinstance(c["validation_requirements"], list)
-
-    def test_decide_returns_decision_record(self):
-        """decide 返回完整决策记录。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("evaluation")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        decision = explorer.decide(candidates, context, interp)
-
-        assert "selected_method" in decision
-        assert "selected_family" in decision
-        assert "selected_reason" in decision
-        assert "alternatives" in decision
-        assert "eliminated" in decision
-        assert "assumptions" in decision
-        assert "validation_method" in decision
-        assert decision["selected_method"] != ""
-
-    def test_decide_includes_required_outputs(self):
-        """决策记录包含 required_outputs。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("evaluation")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        decision = explorer.decide(candidates, context, interp)
-
-        assert "required_outputs" in decision
-        assert isinstance(decision["required_outputs"], list)
-
-    def test_decide_includes_validation_requirements(self):
-        """决策记录包含 validation_requirements。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("optimization")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        decision = explorer.decide(candidates, context, interp)
-
-        assert "validation_requirements" in decision
-        assert isinstance(decision["validation_requirements"], list)
-
-    def test_decide_selects_highest_score(self):
-        """decide 选择得分最高的方法。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("evaluation")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        decision = explorer.decide(candidates, context, interp)
-
-        viable = [c for c in candidates if not c.get("eliminated", False)]
-        if viable:
-            best = max(viable, key=lambda x: x.get("heuristic_score", 0))
-            assert decision["selected_method"] == best["name"]
-
-    def test_decide_includes_assumptions(self):
-        """决策记录包含假设列表。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("evaluation")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates = explorer.explore(context, interp, dp)
-        decision = explorer.decide(candidates, context, interp)
-
-        assert len(decision["assumptions"]) > 0
-        for a in decision["assumptions"]:
-            assert "description" in a
-            assert "type" in a
-
-    def test_explore_and_decide_integration(self):
-        """explore_and_decide 串联两步。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        interp = self._make_interpretation("optimization")
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        candidates, decision = explorer.explore_and_decide(context, interp, dp)
-
-        assert len(candidates) > 0
-        assert decision["selected_method"] != ""
-        assert len(decision["alternatives"]) >= 0
-
-    def test_different_tasks_get_different_methods(self):
-        """不同任务类型得到不同的候选方法。"""
-        explorer = MethodExplorer()
-        context = self._make_context()
-        dp = self._make_data_profile(n_rows=100, n_fields=5)
-
-        eval_candidates = explorer.explore(
-            context, self._make_interpretation("evaluation"), dp
-        )
-        opt_candidates = explorer.explore(
-            context, self._make_interpretation("optimization"), dp
-        )
-
-        eval_names = {c["name"] for c in eval_candidates}
-        opt_names = {c["name"] for c in opt_candidates}
-
-        # 两个任务类型的候选不应完全相同
-        assert eval_names != opt_names
-
-    def test_inherited_summaries_add_assumptions(self):
-        """继承前问结论时添加继承假设。"""
-        explorer = MethodExplorer()
-        context = CurrentQuestionContext(
-            question_id="q2",
-            question_text="问题2 预测",
-            objective="预测趋势",
-            inherited_summaries=[{
-                "question_id": "q1",
-                "status": "validated",
-                "verified_conclusions": ["Q1结论1"],
-                "limitations": ["Q1局限1"],
-            }],
-        )
-        interp = self._make_interpretation("prediction")
-        dp = self._make_data_profile(n_rows=100, n_fields=5, has_time=True)
-
-        candidates = explorer.explore(context, interp, dp)
-        decision = explorer.decide(candidates, context, interp)
-
-        # 应包含继承假设
-        inherited_assumptions = [
-            a for a in decision["assumptions"] if a.get("type") == "inherited"
+    def search_methods(self, math_task: str, problem_description: str) -> list[dict]:
+        return [
+            {
+                "title": "Optimization method",
+                "url": "https://example.com/optimization",
+                "content": "Linear programming and robust optimization are common.",
+                "score": 0.9,
+            }
         ]
-        assert len(inherited_assumptions) > 0
+
+    def extract_method_candidates(self, *args, **kwargs):  # pragma: no cover
+        raise AssertionError("不应调用非 LLM 的搜索启发式提取")
 
 
-# ---------------------------------------------------------------------------
-# QuestionSolver 集成测试
-# ---------------------------------------------------------------------------
+class MockExplorerLLM:
+    """按 prompt 类型返回候选列表或最终决策。"""
+
+    def __init__(self, pick: str = "LLM方法1") -> None:
+        self._schema = None
+        self.pick = pick
+
+    def with_structured_output(self, schema, method=None):
+        self._schema = schema
+        return self
+
+    def invoke(self, prompt: str):
+        assert self._schema is not None
+        schema_name = self._schema.__name__
+        if schema_name == "WebMethodCandidateList":
+            prefix = "搜索方法" if "搜索结果" in prompt else "LLM方法"
+            return self._schema.model_validate({
+                "candidates": [
+                    {
+                        "name": f"{prefix}{i}",
+                        "family": "数学规划",
+                        "description": f"{prefix}{i} 描述",
+                        "pros": ["可实现"],
+                        "cons": ["需校验假设"],
+                        "assumptions": ["输入数据可用"],
+                        "required_data": ["题目数据"],
+                        "implementation_difficulty": "medium",
+                        "validation_method": "敏感性分析",
+                        "required_outputs": ["solution"],
+                        "validation_requirements": ["feasibility_check"],
+                        "source_url": "https://example.com" if prefix == "搜索方法" else "",
+                        "source_title": "search" if prefix == "搜索方法" else "",
+                        "relevance_score": 0.8,
+                    }
+                    for i in range(1, 3)
+                ]
+            })
+        return self._schema.model_validate_json(json.dumps({
+            "selected_method": self.pick,
+            "canonical_method": "linear_programming",
+            "canonical_family": "数学规划",
+            "reason": "由 LLM 在候选中综合判断",
+            "validation_method": "约束可行性检验",
+            "assumptions": ["目标与约束可数学表达"],
+            "required_outputs": ["solution"],
+            "validation_requirements": ["feasibility_check"],
+        }))
 
 
-class TestQuestionSolverPhase3:
-    """QuestionSolver Phase 3 集成测试。"""
+def _context() -> CurrentQuestionContext:
+    return CurrentQuestionContext(
+        question_id="q1",
+        question_text="问题1 求最优方案",
+        objective="求最优方案",
+        data_quality_summary="1 张表、100 行数据",
+    )
 
-    def test_solver_fills_method_candidates(self):
-        """求解器填充 method_candidates。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 建立评价模型",
-            objective="建立评价模型",
-        )
-        result = solver.solve(context, data_profile=None)
 
-        assert len(result.method_candidates) > 0
-        # 每个候选都有 name 和 family
-        for c in result.method_candidates:
-            assert "name" in c
-            assert "family" in c
+def _interpretation(math_task: str = "optimization") -> ProblemInterpretation:
+    return ProblemInterpretation(
+        question_id="q1",
+        math_task=math_task,
+        math_task_description="在约束下求收益最大",
+        result_form="最优方案表",
+    )
 
-    def test_solver_fills_decision_record(self):
-        """求解器填充 decision_record。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 优化种植方案",
-            objective="优化种植方案",
-        )
-        result = solver.solve(context, data_profile=None)
 
-        assert result.decision_record != {}
-        assert "selected_method" in result.decision_record
-        assert "selected_reason" in result.decision_record
-        assert "alternatives" in result.decision_record
+def test_explore_without_llm_returns_no_candidates():
+    """无 LLM 时不生成 fallback 候选。"""
+    explorer = MethodExplorer(llm=None, search_tool=None)
 
-    def test_solver_fills_assumptions(self):
-        """求解器填充 assumptions。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 建立评价模型",
-            objective="建立评价模型",
-        )
-        result = solver.solve(context, data_profile=None)
+    candidates = explorer.explore(_context(), _interpretation())
+    decision = explorer.decide(candidates, _context(), _interpretation())
 
-        assert len(result.assumptions) > 0
-        for a in result.assumptions:
-            assert "description" in a
+    assert candidates == []
+    assert decision["decision_source"] == "none"
+    assert decision["selected_method"] == "无可用方法"
 
-    def test_solver_findings_contain_method(self):
-        """findings 包含选中方法信息。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 建立评价模型",
-            objective="建立评价模型",
-        )
-        result = solver.solve(context, data_profile=None)
 
-        assert "selected_method" in result.findings
-        assert "selected_family" in result.findings
-        assert result.findings["selected_method"] != ""
+def test_explore_without_search_uses_llm_think_only():
+    """联网搜索不可用时，只由 LLM 生成预算 N 个候选。"""
+    explorer = MethodExplorer(
+        llm=MockExplorerLLM(),
+        search_tool=None,
+        budget_manager=MockBudgetManager(candidate_limit=2),
+    )
 
-    def test_solver_reusable_summary_contains_method(self):
-        """reusable_summary 包含选中方法信息。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 建立评价模型",
-            objective="建立评价模型",
-        )
-        result = solver.solve(context, data_profile=None)
+    candidates = explorer.explore(_context(), _interpretation())
 
-        assert result.reusable_summary is not None
-        # 可复用摘要中应包含方法信息
-        method_info = [
-            c for c in result.reusable_summary.verified_conclusions
-            if "选用方法" in c
-        ]
-        assert len(method_info) > 0
+    assert len(candidates) == 2
+    assert {c["source"] for c in candidates} == {"llm_think"}
+    assert all("heuristic_score" not in c for c in candidates)
+    assert all(c["eliminated"] is False for c in candidates)
 
-    def test_solver_with_data_profile(self):
-        """有数据画像时求解器正确处理候选。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 预测趋势",
-            objective="预测趋势",
-        )
-        dp = DataProfile(
-            tables=[TableProfile(source_file="t.csv", n_rows=50, n_cols=3)],
-            fields=[
-                FieldProfile(source_file="t.csv", field_name="x", dtype="float", missing_rate=0.0, unique_count=50),
-                FieldProfile(source_file="t.csv", field_name="y", dtype="float", missing_rate=0.0, unique_count=50),
-            ],
-        )
-        result = solver.solve(context, data_profile=dp)
 
-        assert len(result.method_candidates) > 0
-        assert result.decision_record["selected_method"] != ""
+def test_explore_with_search_uses_search_and_llm_branches():
+    """搜索可用时，搜索整理和 LLM 思考各生成 N 个候选。"""
+    budget = MockBudgetManager(candidate_limit=2)
+    explorer = MethodExplorer(
+        llm=MockExplorerLLM(),
+        search_tool=MockSearchTool(),
+        budget_manager=budget,
+    )
 
-    def test_solver_optimization_task(self):
-        """优化任务求解。"""
-        solver = QuestionSolver(llm=None)
-        context = CurrentQuestionContext(
-            question_id="q1",
-            question_text="问题1 给出最优种植方案",
-            objective="给出最优种植方案",
-        )
-        result = solver.solve(context, data_profile=None)
+    candidates = explorer.explore(_context(), _interpretation())
 
-        assert result.problem_interpretation.math_task == "optimization"
-        # 优化类方法应包含规划相关方法
-        method_names = {c["name"] for c in result.method_candidates}
-        assert any("规划" in n or "算法" in n or "优化" in n for n in method_names)
+    assert len(candidates) == 4
+    assert [c["source"] for c in candidates].count("web_search") == 2
+    assert [c["source"] for c in candidates].count("llm_think") == 2
+    assert all("heuristic_score" not in c for c in candidates)
+    assert any(entry[0] == "SEARCH" for entry in budget.consumed)
+
+
+def test_explore_and_decide_uses_llm_final_pick():
+    """最终方法由 LLM 在全部候选中判断。"""
+    explorer = MethodExplorer(
+        llm=MockExplorerLLM(pick="搜索方法1"),
+        search_tool=MockSearchTool(),
+        budget_manager=MockBudgetManager(candidate_limit=2),
+    )
+
+    candidates, decision = explorer.explore_and_decide(_context(), _interpretation())
+
+    assert len(candidates) == 4
+    assert decision["decision_source"] == "llm"
+    assert decision["selected_method"] == "搜索方法1"
+    assert decision["canonical_method"] == "linear_programming"
+    assert decision["eliminated"] == []
+
+
+def test_question_solver_without_llm_does_not_fabricate_method():
+    """QuestionSolver 无 LLM 时流程不中断，但不再伪造候选方法。"""
+    solver = QuestionSolver(llm=None, search_tool=None)
+    context = CurrentQuestionContext(
+        question_id="q1",
+        question_text="问题1 建立评价模型",
+        objective="建立评价模型",
+    )
+
+    result = solver.solve(context, data_profile=None)
+
+    assert result.method_candidates == []
+    assert result.decision_record["decision_source"] == "none"
+    assert result.decision_record["selected_method"] == "无可用方法"
+    assert result.assumptions == []

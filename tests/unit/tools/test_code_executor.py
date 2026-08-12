@@ -102,6 +102,35 @@ class TestExecuteModelCode:
         assert len(result["figures"]) == 1
         assert Path(result["figures"][0]).is_file()
 
+    def test_injects_chinese_matplotlib_font_config(self, tmp_path: Path):
+        code = (
+            "import json, os\n"
+            "import matplotlib.pyplot as plt\n"
+            "from matplotlib import rcParams\n"
+            "rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']\n"
+            "fig, ax = plt.subplots()\n"
+            "ax.set_title('中文标题')\n"
+            "ax.set_xlabel('时间')\n"
+            "ax.set_ylabel('目标值')\n"
+            "figure_path = os.path.join(os.environ['MODEL_FIGURE_DIR'], 'zh.png')\n"
+            "fig.savefig(figure_path)\n"
+            "plt.close(fig)\n"
+            "result = {'fonts': list(rcParams['font.sans-serif'])[:4]}\n"
+            "print('__MODEL_RESULT__' + json.dumps(result, ensure_ascii=False))\n"
+        )
+
+        result = execute_model_code(
+            code,
+            figure_output_dir=tmp_path / "figures",
+            figure_prefix="q1",
+            require_figures=True,
+        )
+
+        assert result["fonts"][0] == "Microsoft YaHei"
+        assert "SimHei" in result["fonts"]
+        assert len(result["figures"]) == 1
+        assert Path(result["figures"][0]).is_file()
+
     def test_empty_code(self):
         with pytest.raises(CodeExecutionError, match="为空"):
             execute_model_code("   \n  ")

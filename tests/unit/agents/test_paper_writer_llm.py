@@ -29,6 +29,7 @@ class MockTextLLM:
     def invoke(self, prompt: str) -> _Msg:
         idx = min(self.calls, len(self._responses) - 1)
         self.calls += 1
+        self.last_prompt = prompt
         return _Msg(self._responses[idx])
 
 
@@ -141,3 +142,64 @@ def test_write_tolerates_list_shaped_computation_fields(tmp_path):
     markdown_path.write_text(paper.full_text, encoding="utf-8")
     docx_path = Path(convert_paper_md_to_docx(markdown_path))
     assert docx_path.is_file()
+
+
+def test_write_tolerates_vector_metrics(tmp_path):
+    """仿真指标为向量时，报告写作不应因数值格式化中断。"""
+    result = _question_result()
+    result.findings["math_task"] = "simulation"
+    result.findings["selected_method"] = "随机游走模型"
+    result.computation["results"] = {"simulation": {"time": [0, 1, 2]}}
+    result.computation["metrics"] = {
+        "n_simulations": 100,
+        "mean": [0.0, 1.25, 2.5],
+        "std": [0.0, 0.1, 0.2],
+        "ci_lower": [0.0, 1.0, 2.0],
+        "ci_upper": [0.0, 1.5, 3.0],
+    }
+
+    paper = PaperWriter().write(
+        {
+            "question_results": {"q1": result},
+            "project_context": _project_context(),
+            "data_profile": None,
+            "output_dir": str(tmp_path),
+        },
+        output_dir=str(tmp_path),
+    )
+
+    assert paper.full_text
+    assert "[0.0000, 1.2500, 2.5000]" in paper.full_text
+
+
+def test_llm_receives_compact_result_material(tmp_path):
+    """LLM 写作输入应是选择性摘要，而不是原始大数组。"""
+    llm = MockTextLLM([
+        "模型建立段：建立仿真模型。",
+        "结果解释段：仿真轨迹随时间变化，关键指标已由摘要给出。",
+    ])
+    result = _question_result()
+    result.findings["math_task"] = "simulation"
+    result.findings["selected_method"] = "随机游走模型"
+    result.computation["results"] = {
+        "simulation": {
+            "time": list(range(20)),
+            "x": [i * 2 for i in range(20)],
+        }
+    }
+    result.computation["metrics"] = {
+        "mean": [i * 0.5 for i in range(20)],
+    }
+
+    PaperWriter(llm=llm).write(
+        {
+            "question_results": {"q1": result},
+            "project_context": _project_context(),
+            "data_profile": None,
+            "output_dir": str(tmp_path),
+        },
+        output_dir=str(tmp_path),
+    )
+
+    assert "20项，首值=0.0000，末值=19.0000" in llm.last_prompt
+    assert "0, 1, 2, 3, 4, 5, 6, 7, 8, 9" not in llm.last_prompt

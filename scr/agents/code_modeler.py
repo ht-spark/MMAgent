@@ -64,6 +64,7 @@ class CodeModeler:
         math_task: str,
         method_hint: str = "",
         data_summary: str = "",
+        modeling_context: str = "",
         feedback: str = "",
     ) -> dict:
         """生成数学模型 JSON（不含代码）。
@@ -73,12 +74,12 @@ class CodeModeler:
             LLMTimeoutError: LLM 调用超时。
         """
         prompt = self._build_model_prompt(
-            question_text, math_task, method_hint, data_summary, feedback
+            question_text, math_task, method_hint, data_summary, modeling_context, feedback
         )
         t0 = time.time()
         print(
             f"[code_modeler] 第 1 段：LLM 设计数学模型"
-            f"（题型={math_task}，方法={method_hint or 'auto'}，超时 {MODEL_DESIGN_TIMEOUT}s）..."
+            f"（题型={math_task}，参考方法={method_hint or 'auto'}，超时 {MODEL_DESIGN_TIMEOUT}s）..."
         )
         content = self._invoke(prompt, timeout=MODEL_DESIGN_TIMEOUT)
 
@@ -171,6 +172,7 @@ class CodeModeler:
         math_task: str,
         method_hint: str,
         data_summary: str,
+        modeling_context: str,
         feedback: str,
     ) -> str:
         template = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -180,6 +182,7 @@ class CodeModeler:
             math_task=math_task,
             method_hint=method_hint,
             data_summary=data_summary,
+            modeling_context=modeling_context,
             feedback=feedback,
         )
 
