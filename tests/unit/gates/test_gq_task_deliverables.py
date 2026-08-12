@@ -34,7 +34,7 @@ def _base_result(computation):
     )
 
 
-def test_gq_rejects_generic_stats_for_optimization_task():
+def test_gq_rejects_generic_stats_without_explicit_stats_contract():
     result = _base_result({
         "status": "generic_stats",
         "results": {"data_summary": {"mean": [1.0]}},
@@ -44,10 +44,32 @@ def test_gq_rejects_generic_stats_for_optimization_task():
     gate = check_gq({"current_result": result, "current_question_id": "q1"})
 
     assert gate.passed is False
-    assert "optimization_generic_stats_not_sufficient" in gate.failed_checks
+    assert "generic_stats_not_sufficient" in gate.failed_checks
 
 
-def test_gq_accepts_optimization_with_solution_and_objective():
+def test_gq_accepts_question_contract_outputs_without_task_specific_keys():
+    result = _base_result({
+        "status": "success",
+        "results": {
+            "allocation": {"地块A": {"玉米": 10.0}},
+            "profit": 3.5,
+            "constraint_check": {"面积约束": True},
+        },
+        "metrics": {},
+    })
+    result.problem_interpretation.result_form = "作物-地块-季次分配方案"
+    result.decision_record["required_outputs"] = [
+        "作物-地块-季次分配方案",
+        "收益",
+        "约束满足情况",
+    ]
+
+    gate = check_gq({"current_result": result, "current_question_id": "q1"})
+
+    assert gate.passed is True
+
+
+def test_gq_accepts_legacy_solution_and_objective_as_contract_outputs():
     result = _base_result({
         "status": "success",
         "results": {
@@ -56,6 +78,7 @@ def test_gq_accepts_optimization_with_solution_and_objective():
         },
         "metrics": {"objective_value": 3.5},
     })
+    result.decision_record["required_outputs"] = ["optimal_solution", "optimal_objective"]
 
     gate = check_gq({"current_result": result, "current_question_id": "q1"})
 
@@ -72,6 +95,7 @@ def test_gq_accepts_llm_contract_keys_for_optimization():
         },
         "metrics": {},
     })
+    result.decision_record["required_outputs"] = ["solution", "objective"]
 
     gate = check_gq({"current_result": result, "current_question_id": "q1"})
 
@@ -120,6 +144,7 @@ def test_gq_accepts_stochastic_risk_in_results_top_level():
         },
         "metrics": {},
     })
+    result.decision_record["required_outputs"] = ["robust_solution", "expected_objective"]
 
     gate = check_gq({"current_result": result, "current_question_id": "q1"})
 

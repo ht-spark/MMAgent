@@ -21,7 +21,7 @@ from ..tools.tavily_search import (
 
 
 class _MethodDecision(BaseModel):
-    """LLM 方法决策输出（P1-B2：方法决策 LLM 化）。"""
+    """LLM 建模参考决策输出。"""
     selected_method: str = ""
     canonical_method: str = ""
     canonical_family: str = ""
@@ -185,7 +185,7 @@ class MethodExplorer:
         context: CurrentQuestionContext,
         interpretation: ProblemInterpretation,
     ) -> dict:
-        """从候选方法中选择最佳方法，生成决策记录。
+        """整理候选参考，生成问题驱动建模决策记录。
 
         Args:
             candidates: explore 产出的候选列表。
@@ -194,9 +194,9 @@ class MethodExplorer:
 
         Returns:
             决策记录字典，包含：
-              - selected_method: 选中方法名称
-              - selected_family: 方法家族
-              - selected_reason: 选择理由
+              - selected_method: 建模策略名称
+              - selected_family: 建模策略家族
+              - selected_reason: 建模参考说明
               - alternatives: 备选方法列表
               - eliminated: 被淘汰方法及原因
               - assumptions: 选中方法的核心假设
@@ -239,16 +239,17 @@ class MethodExplorer:
         assumptions = llm_pick["assumptions"]
         decision_source = "llm"
 
-        alternatives = [
+        references = [selected] + [
             c for c in candidates if c.get("name") != selected.get("name")
-        ][:3]
+        ]
+        alternatives = references[:3]
 
         # 构建决策记录
         decision = {
-            "selected_method": selected["name"],
-            "selected_family": selected.get("family", ""),
-            "canonical_method": selected.get("canonical_method", ""),
-            "canonical_family": selected.get("canonical_family", selected.get("family", "")),
+            "selected_method": "问题驱动建模",
+            "selected_family": "LLM问题推理建模",
+            "canonical_method": "",
+            "canonical_family": "LLM问题推理建模",
             "required_outputs": selected.get("required_outputs", []),
             "validation_requirements": selected.get("validation_requirements", []),
             "selected_reason": selected_reason,
@@ -256,7 +257,7 @@ class MethodExplorer:
                 {
                     "name": a["name"],
                     "family": a.get("family", ""),
-                    "reason": "备选方案，未被最终 LLM 决策选中",
+                    "reason": "参考资料，供 LLM 构造本题专属模型时吸收或舍弃",
                 }
                 for a in alternatives
             ],
@@ -265,11 +266,12 @@ class MethodExplorer:
             "validation_method": selected.get("validation_method", ""),
             "implementation_difficulty": selected.get("implementation_difficulty", "medium"),
             "selected_details": selected,
+            "reference_methods": references[:8],
             "decision_source": decision_source,
         }
 
-        print(f"[explorer] 决策: {selected['name']} "
-              f"(备选 {len(alternatives)}, source={decision_source})")
+        print(f"[explorer] 决策: 问题驱动建模 "
+              f"(参考 {len(alternatives)} 个, source={decision_source})")
 
         return decision
 
@@ -279,11 +281,10 @@ class MethodExplorer:
         context: CurrentQuestionContext,
         interpretation: ProblemInterpretation,
     ) -> dict | None:
-        """用 LLM 综合权衡候选方法并生成决策（P1-B2）。
+        """用 LLM 整理候选方法为建模参考。
 
-        让 LLM 按题意匹配/数据匹配/可实现性/可验证性选择方法，
-        并把选中方法映射到内置可执行计算（canonical_method），
-        避免"选中了方法名却无法落地计算"的问题。
+        让 LLM 按题意匹配/数据匹配/可验证性选择最值得参考的候选，
+        但后续建模不再把该候选方法名当成完整模型。
 
         Returns:
             含 selected/selected_reason/assumptions 的字典；
@@ -343,9 +344,9 @@ class MethodExplorer:
             )
             return None
 
-        # 用 LLM 决策覆盖 canonical 映射、验证与产出要求
+        # 用 LLM 决策覆盖验证与产出要求；canonical 不再驱动内置方法回退。
         selected = {**selected}
-        selected["canonical_method"] = decision_data.canonical_method
+        selected["canonical_method"] = ""
         selected["canonical_family"] = decision_data.canonical_family
         selected["validation_method"] = decision_data.validation_method
         selected["required_outputs"] = decision_data.required_outputs

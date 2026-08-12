@@ -23,6 +23,7 @@ CODE_BASED_TASKS = {
     "simulation",
     "classification",
     "clustering",
+    "mechanism",
     "composite",
 }
 

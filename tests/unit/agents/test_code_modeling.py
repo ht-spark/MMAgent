@@ -195,7 +195,7 @@ class TestModelBuilderCodeBased:
         assert comp["method_key"] == "code_based"
         assert comp["intermediate_values"]["generation_attempts"] == 2
 
-    def test_fallback_after_all_failures(self, sample_csv: Path, tmp_path: Path):
+    def test_llm_failure_does_not_fallback_to_preset_method(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
 
         dp = run_intake(
@@ -204,8 +204,8 @@ class TestModelBuilderCodeBased:
         comp = self._build(
             MockLLM([_model_design(), BAD_CODE, _model_design(), BAD_CODE]), dp
         )
-        assert comp["status"] == "success"  # 回退预设方法
-        assert comp["method_key"] != "code_based"
+        assert comp["status"] == "error"
+        assert "失败" in comp["error"] or comp["error"]
 
     def test_no_llm_uses_preset(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake

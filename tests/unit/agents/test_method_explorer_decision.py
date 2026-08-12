@@ -94,16 +94,17 @@ def _llm_payload(selected_method: str = "线性规划模型") -> str:
     })
 
 
-def test_decide_uses_llm_when_available():
-    """有 LLM 时决策使用 LLM 的选择与 canonical 映射。"""
+def test_decide_uses_llm_reference_when_available():
+    """有 LLM 时候选方法只作为问题驱动建模参考。"""
     explorer = MethodExplorer(
         llm=MockStructuredLLM(_llm_payload()), search_tool=None
     )
     decision = explorer.decide(_candidates(), _context(), _interpretation())
 
     assert decision["decision_source"] == "llm"
-    assert decision["selected_method"] == "线性规划模型"
-    assert decision["canonical_method"] == "linear_programming"
+    assert decision["selected_method"] == "问题驱动建模"
+    assert decision["canonical_method"] == ""
+    assert decision["selected_details"]["name"] == "线性规划模型"
     assert decision["selected_reason"].startswith("题意匹配")
     assert decision["assumptions"] == ["目标与约束均为线性"]
     assert decision["required_outputs"] == ["optimal_solution", "optimal_objective"]

@@ -53,7 +53,7 @@ def test_node_degradation_blocked_not_retried():
 
 
 def test_no_budget_falls_back_to_constant():
-    # 无预算管理器：沿用 GQ_MAX_RETRIES 常量路径（不抛错）
+    # 无预算管理器：直接 blocked（不抛错）
     state = {
         "current_result": QuestionResult(question_id="Q1", status="validating"),
         "current_question_id": "Q1",
@@ -61,7 +61,7 @@ def test_no_budget_falls_back_to_constant():
         "budget_manager": None,
     }
     upd = run_gq_node(state)
-    assert upd["_gq_action"] == "retry"
+    assert upd["_gq_action"] == "blocked"
 
 
 def test_validation_iteration_override_via_question_limits():

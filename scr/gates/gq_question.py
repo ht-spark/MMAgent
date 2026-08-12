@@ -20,6 +20,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from ..runtime.budget import BudgetManager, BudgetType
 from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
@@ -319,15 +321,12 @@ def _build_gate_result(failed_checks: list[str], state: dict) -> GateResult:
 
 
 def _check_task_deliverables(result: QuestionResult) -> list[str]:
-    """Check task-specific minimum deliverables.
+    """Check question-specific deliverables without task-type hard coding.
 
-    This prevents descriptive statistics from being treated as a solved model.
+    GQ only checks whether the current result satisfies the question contract
+    implied by result_form / required_outputs / formulation. The coarse
+    math_task label is not used to require fixed output keys.
     """
-    interp = result.problem_interpretation
-    if interp is None:
-        return []
-
-    task = interp.math_task
     computation = result.computation or {}
     status = computation.get("status", "")
     from ..tools.result_keys import normalize_computation
@@ -338,60 +337,183 @@ def _check_task_deliverables(result: QuestionResult) -> list[str]:
     intermediate = computation.get("intermediate_values", {}) or {}
     failures: list[str] = []
 
-    if task in {
-        "evaluation",
-        "prediction",
-        "optimization",
-        "stochastic_optimization",
-        "simulation",
-    } and status == "generic_stats":
-        failures.append(f"{task}_generic_stats_not_sufficient")
+    if not results and not metrics and not intermediate:
+        failures.append("computation_outputs_missing")
 
-    if task == "evaluation":
-        if not any(k in results for k in ("weights", "scores", "ranking", "relative_closeness")):
-            failures.append("evaluation_outputs_missing")
-    elif task == "prediction":
-        has_predictions = any(k in results for k in ("predictions", "forecast", "fitted_values"))
-        has_error_metric = any(k in metrics for k in ("r_squared", "rmse", "mse", "mae", "mape"))
-        if not has_predictions or not has_error_metric:
-            failures.append("prediction_outputs_missing")
-    elif task == "optimization":
-        has_solution = any(k in results for k in ("optimal_solution", "decision_solution"))
-        has_objective = any(k in results for k in ("optimal_objective", "objective_value")) or "objective_value" in metrics
-        if not has_solution or not has_objective:
-            failures.append("optimization_solution_missing")
-    elif task == "stochastic_optimization":
-        has_scenario = (
-            any(k in results for k in (
-                "simulation",
-                "scenario_solutions",
-                "scenario_objectives",
-                "robust_solution",
-                "n_scenarios",
-            ))
-            or "scenario_objectives" in intermediate
-        )
-        # 风险指标同时查 results 顶层与 metrics（兼容 LLM 提示词契约的顶层输出）
-        has_risk_metric = any(
-            k in {**results, **metrics}
-            for k in ("expected_objective", "objective_std", "worst_case", "cvar")
-        )
-        if not has_scenario or not has_risk_metric:
-            failures.append("stochastic_outputs_missing")
-    elif task == "simulation":
-        has_simulation = "simulation" in results or "n_simulations" in metrics
-        has_interval = (
-            "confidence_interval" in results
-            or "confidence_interval_90" in str(results)
-            or "confidence_interval" in metrics
-        )
-        if not has_simulation or not has_interval:
-            failures.append("simulation_outputs_missing")
+    if status == "generic_stats" and not _contract_allows_generic_stats(result):
+        failures.append("generic_stats_not_sufficient")
 
-    formulation = result.formulation or {}
-    if task in {"optimization", "stochastic_optimization"}:
-        ir = formulation.get("ir", {})
-        if not ir or not ir.get("variables") or not ir.get("objective"):
-            failures.append("formulation_ir_incomplete")
+    missing_outputs = _missing_contract_outputs(
+        result=result,
+        results=results,
+        metrics=metrics,
+        intermediate=intermediate,
+    )
+    if missing_outputs:
+        failures.append(
+            "contract_outputs_missing:" + ", ".join(missing_outputs[:3])
+        )
+
+    if not _has_model_formulation(result):
+        failures.append("model_formulation_missing")
 
     return failures
+
+
+def _contract_allows_generic_stats(result: QuestionResult) -> bool:
+    """Return True only when the question explicitly asks for statistics."""
+    interp = result.problem_interpretation
+    text = " ".join([
+        interp.result_form if interp else "",
+        interp.math_task_description if interp else "",
+        result.findings.get("summary", "") if result.findings else "",
+    ]).lower()
+    return any(
+        kw in text
+        for kw in ("描述统计", "统计摘要", "数据概览", "数据画像", "exploratory", "descriptive")
+    )
+
+
+def _collect_contract_outputs(result: QuestionResult) -> list[str]:
+    """Collect required outputs from the available question contract fields."""
+    outputs: list[str] = []
+    interp = result.problem_interpretation
+    if interp and interp.result_form:
+        outputs.append(interp.result_form)
+
+    formulation = result.formulation or {}
+    for key in ("required_outputs", "outputs", "deliverables"):
+        value = formulation.get(key)
+        if isinstance(value, list):
+            outputs.extend(str(v) for v in value if str(v).strip())
+        elif value:
+            outputs.append(str(value))
+
+    decision = result.decision_record or {}
+    for key in ("required_outputs", "outputs", "deliverables"):
+        value = decision.get(key)
+        if isinstance(value, list):
+            outputs.extend(str(v) for v in value if str(v).strip())
+        elif value:
+            outputs.append(str(value))
+
+    selected = decision.get("selected_details", {})
+    if isinstance(selected, dict):
+        value = selected.get("required_outputs")
+        if isinstance(value, list):
+            outputs.extend(str(v) for v in value if str(v).strip())
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in outputs:
+        item = item.strip()
+        if item and item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
+def _missing_contract_outputs(
+    result: QuestionResult,
+    results: dict,
+    metrics: dict,
+    intermediate: dict,
+) -> list[str]:
+    """Return contract outputs not evidenced by computation/findings/formulation."""
+    required = _collect_contract_outputs(result)
+    if not required:
+        return []
+
+    output_keys = {
+        str(k).lower()
+        for container in (results, metrics, intermediate)
+        for k in container.keys()
+    }
+    evidence_text = _json_text({
+        "results": results,
+        "metrics": metrics,
+        "intermediate": intermediate,
+        "findings": result.findings,
+        "formulation": result.formulation,
+        "tables": result.tables,
+        "figures": result.figures,
+    })
+
+    missing = [
+        item for item in required
+        if not _contract_item_satisfied(item, output_keys, evidence_text)
+    ]
+    return missing
+
+
+def _contract_item_satisfied(
+    item: str,
+    output_keys: set[str],
+    evidence_text: str,
+) -> bool:
+    """Heuristic semantic match for contract item evidence."""
+    text = item.lower()
+    if text in evidence_text:
+        return True
+    compact = text.replace(" ", "_")
+    if compact in output_keys:
+        return True
+
+    groups = [
+        (
+            ("solution", "decision", "方案", "策略", "安排", "分配", "取值", "计划"),
+            ("solution", "optimal_solution", "decision_solution", "assignment", "allocation", "schedule", "plan", "strategy"),
+        ),
+        (
+            ("objective", "profit", "cost", "revenue", "收益", "利润", "成本", "目标", "效益"),
+            ("objective", "optimal_objective", "objective_value", "profit", "cost", "revenue", "benefit"),
+        ),
+        (
+            ("constraint", "feasible", "约束", "可行", "满足", "校验", "验证"),
+            ("constraint_check", "constraint_satisfaction", "feasibility", "validation", "checks"),
+        ),
+        (
+            ("prediction", "forecast", "预测"),
+            ("predictions", "forecast", "fitted_values"),
+        ),
+        (
+            ("ranking", "score", "评价", "排序", "得分"),
+            ("ranking", "scores", "weights", "relative_closeness"),
+        ),
+        (
+            ("simulation", "scenario", "仿真", "模拟", "情景", "场景"),
+            ("simulation", "scenario_solutions", "scenario_objectives", "n_scenarios"),
+        ),
+    ]
+    for triggers, aliases in groups:
+        if any(token in text for token in triggers):
+            return any(alias in output_keys or alias in evidence_text for alias in aliases)
+    return any(part and part in evidence_text for part in text.replace("/", " ").split())
+
+
+def _has_model_formulation(result: QuestionResult) -> bool:
+    """Check that some problem-specific model description exists."""
+    formulation = result.formulation or {}
+    if not formulation:
+        return False
+    ir = formulation.get("ir", {})
+    fields = [
+        formulation.get("description", ""),
+        formulation.get("model_summary", ""),
+        formulation.get("objective", ""),
+        formulation.get("objective_function", ""),
+        formulation.get("decision_variables", []),
+        formulation.get("constraints", []),
+        ir.get("variables", []) if isinstance(ir, dict) else [],
+        ir.get("objective", "") if isinstance(ir, dict) else "",
+        ir.get("constraints", []) if isinstance(ir, dict) else [],
+    ]
+    return any(bool(v) for v in fields)
+
+
+def _json_text(value: object) -> str:
+    """Serialize evidence to lowercase text for lightweight matching."""
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str).lower()
+    except TypeError:
+        return str(value).lower()

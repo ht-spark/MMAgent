@@ -4,8 +4,7 @@
 """
 from __future__ import annotations
 
-import pytest
-
+from scr.runtime.budget import BudgetManager
 from scr.schemas.question import (
     ProblemInterpretation,
     QuestionResult,
@@ -15,7 +14,6 @@ from scr.gates.gq_question import (
     check_gq,
     run_gq_node,
     route_after_gq,
-    GQ_MAX_RETRIES,
 )
 
 
@@ -34,6 +32,23 @@ def _make_valid_result(qid: str = "q1") -> QuestionResult:
             math_task="optimization",
             result_form="最优方案表",
         ),
+        decision_record={
+            "selected_method": "问题驱动建模",
+            "required_outputs": ["最优方案表", "目标值"],
+        },
+        assumptions=[{"description": "测试假设", "type": "model"}],
+        formulation={
+            "description": "测试模型",
+            "decision_variables": ["x"],
+            "objective_function": "max Z",
+            "constraints": ["x >= 0"],
+        },
+        computation={
+            "status": "success",
+            "results": {"solution": [1.0], "objective": 1.0},
+            "metrics": {},
+        },
+        validation={"status": "passed", "checks": [{"passed": True}]},
         reusable_summary=ReusableSummary(
             question_id=qid,
             verified_conclusions=["测试结论"],
@@ -42,12 +57,18 @@ def _make_valid_result(qid: str = "q1") -> QuestionResult:
     )
 
 
-def _make_state(result: QuestionResult | None, qid: str = "q1", retry_count: int = 0) -> dict:
+def _make_state(
+    result: QuestionResult | None,
+    qid: str = "q1",
+    retry_count: int = 0,
+    budget_manager=None,
+) -> dict:
     """创建测试用状态。"""
     return {
         "current_question_id": qid,
         "current_result": result,
         "_solve_retry_count": retry_count,
+        "budget_manager": budget_manager,
     }
 
 
@@ -129,17 +150,17 @@ class TestRunGQNode:
         """结构不完整时触发重试。"""
         result = _make_valid_result()
         result.reusable_summary = None  # 缺少摘要
-        state = _make_state(result, retry_count=0)
+        state = _make_state(result, retry_count=0, budget_manager=BudgetManager())
         gq_result = run_gq_node(state)
         assert gq_result["_gq_action"] == "retry"
         assert gq_result["_solve_retry_count"] == 1
         assert gq_result["current_result"].status == "solving"
 
-    def test_block_after_max_retries(self):
-        """超过重试次数后标记为 blocked。"""
+    def test_block_without_budget_manager(self):
+        """无预算管理器时直接 blocked。"""
         result = _make_valid_result()
         result.reusable_summary = None  # 缺少摘要，永远过不了
-        state = _make_state(result, retry_count=GQ_MAX_RETRIES)
+        state = _make_state(result)
         gq_result = run_gq_node(state)
         assert gq_result["_gq_action"] == "blocked"
         assert gq_result["current_result"].status == "blocked"
@@ -149,7 +170,7 @@ class TestRunGQNode:
         """blocked 时记录失败项。"""
         result = _make_valid_result()
         result.reusable_summary = None
-        state = _make_state(result, retry_count=GQ_MAX_RETRIES)
+        state = _make_state(result)
         gq_result = run_gq_node(state)
         assert "reusable_summary_missing" in gq_result["current_result"].error_message
 

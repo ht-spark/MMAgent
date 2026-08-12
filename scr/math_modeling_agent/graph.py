@@ -217,11 +217,10 @@ def _make_progress_event(node_name: str, update: dict) -> dict:
 # 节点函数
 # ---------------------------------------------------------------------------
 
-
 @_logged_node("intake")
 def _intake_node(state: ProjectState) -> dict:
     """intake 节点：输入摄入。"""
-    print("[intake] 开始：数据画像...")
+    print("[intake] 开始：数据画像")
     result = run_intake(state)
     dp = result.get("data_profile")
     if dp:
@@ -234,11 +233,11 @@ def _intake_node(state: ProjectState) -> dict:
 @_logged_node("context")
 def _context_node(state: ProjectState) -> dict:
     """context 节点：全局上下文建立。"""
-    print("[context] 开始：任务理解 + 小问拆分...")
+    print("[context] 开始：任务理解 + 子任务拆分")
     result = run_context(state)
     pc = result.get("project_context")
     if pc:
-        print(f"[context] 完成：{len(pc.questions)} 个小问")
+        print(f"[context] 完成：共 {len(pc.questions)} 个子任务")
         for q in pc.questions:
             deps = pc.question_dependencies.get(q.question_id, [])
             print(f"  → {q.question_id}: {q.objective[:40]}... (deps={deps})")
@@ -295,13 +294,13 @@ def _g0_clarification_node(state: ProjectState) -> dict:
 
 @_logged_node("select_question")
 def _select_question_node(state: ProjectState) -> dict:
-    """select_question 节点：选择下一个可执行的小问。"""
+    """select_question 节点：选择下一个可执行的子任务。"""
     return select_question(state)
 
 
 @_logged_node("assemble_context")
 def _assemble_context_node(state: ProjectState) -> dict:
-    """assemble_context 节点：装配当前小问上下文。"""
+    """assemble_context 节点：装配当前子任务上下文。"""
     return assemble_context(state)
 
 
@@ -350,7 +349,7 @@ def _global_review_node(state: ProjectState) -> dict:
 @_logged_node("write_paper")
 def _write_paper_node(state: ProjectState) -> dict:
     """write_paper 节点：报告写作（Phase 6 §6.2）。"""
-    print("[write_paper] 开始：报告写作...")
+    print("[write_paper] 开始：报告写作")
     result = write_paper_node(state)
     paper = result.get("paper_draft")
     if paper:
@@ -362,7 +361,7 @@ def _write_paper_node(state: ProjectState) -> dict:
 @_logged_node("review_paper")
 def _review_paper_node(state: ProjectState) -> dict:
     """review_paper 节点：报告审查（Phase 6 §6.1）。"""
-    print("[review_paper] 开始：报告审查...")
+    print("[review_paper] 开始：报告审查")
     result = review_paper_node(state)
     report = result.get("review_report")
     if report:

@@ -776,8 +776,8 @@ class ModelBuilder:
 
         data_matrix = data_prep.get("data_matrix")
 
-        # 任务驱动建模：有 LLM 且题型支持时，优先用 LLM 生成具体数学模型与
-        # 求解代码并沙箱执行，得到真实计算结果；失败则回退预设方法目录。
+        # 任务驱动建模：有 LLM 且题型支持时，用 LLM 生成具体数学模型与
+        # 求解代码并沙箱执行。失败时返回错误，避免预设方法产生误导性成功。
         if self._llm is not None and math_task in CODE_BASED_TASKS:
             try:
                 code_computation = self._execute_code_based(
@@ -789,10 +789,12 @@ class ModelBuilder:
                     return code_computation
                 print(
                     f"[builder] 任务驱动建模未成功（{code_computation.get('status')}），"
-                    f"回退预设方法: {code_computation.get('error', '')[:120]}"
+                    f"停止预设方法回退: {code_computation.get('error', '')[:120]}"
                 )
+                return code_computation
             except Exception as e:
-                print(f"[builder] 任务驱动建模异常，回退预设方法: {e}")
+                print(f"[builder] 任务驱动建模异常，停止预设方法回退: {e}")
+                return {"status": "error", "error": str(e)[:200]}
 
         try:
             if data_matrix is not None and len(data_matrix) > 0:

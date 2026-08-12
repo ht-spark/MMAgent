@@ -155,8 +155,8 @@ def test_explore_with_search_uses_search_and_llm_branches():
     assert any(entry[0] == "SEARCH" for entry in budget.consumed)
 
 
-def test_explore_and_decide_uses_llm_final_pick():
-    """最终方法由 LLM 在全部候选中判断。"""
+def test_explore_and_decide_uses_llm_reference_pick():
+    """LLM 在全部候选中整理建模参考，但不把方法名作为最终模型。"""
     explorer = MethodExplorer(
         llm=MockExplorerLLM(pick="搜索方法1"),
         search_tool=MockSearchTool(),
@@ -167,8 +167,9 @@ def test_explore_and_decide_uses_llm_final_pick():
 
     assert len(candidates) == 4
     assert decision["decision_source"] == "llm"
-    assert decision["selected_method"] == "搜索方法1"
-    assert decision["canonical_method"] == "linear_programming"
+    assert decision["selected_method"] == "问题驱动建模"
+    assert decision["selected_details"]["name"] == "搜索方法1"
+    assert decision["canonical_method"] == ""
     assert decision["eliminated"] == []
 
 
