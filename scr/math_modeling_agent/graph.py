@@ -306,13 +306,30 @@ def _assemble_context_node(state: ProjectState) -> dict:
 
 @_logged_node("configure_question_budget")
 def _configure_question_budget_node(state: ProjectState) -> dict:
-    """configure_question_budget 节点：调用回调让用户在该问覆盖预算上限。"""
+    """configure_question_budget 节点：配置当前子任务预算。"""
     return configure_question_budget(state)
+
+
+@_logged_node("configure_delivery_budget")
+def _configure_delivery_budget_node(state: ProjectState) -> dict:
+    """所有子任务完成后，配置 GF 交付质量门修订预算。"""
+    callback = state.get("delivery_budget_config_callback")
+    budget_manager: BudgetManager | None = state.get("budget_manager")
+    if callback is None or budget_manager is None:
+        return {}
+    try:
+        override = callback(state)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[budget] GF 预算回调异常，沿用默认: {exc}")
+        return {}
+    if override:
+        budget_manager.update_run_limits(override)
+    return {}
 
 
 @_logged_node("solve_question")
 def _solve_question_node(state: ProjectState) -> dict:
-    """solve_question 节点：小问求解（含方法探索 + 建模计算）。"""
+    """solve_question 节点：基于问题上下文直接建模求解。"""
     return solve_question_node(state)
 
 
@@ -489,6 +506,7 @@ def build_graph(checkpoint: bool = True):
 
     # Phase 6 节点
     builder.add_node("global_review", _global_review_node)
+    builder.add_node("configure_delivery_budget", _configure_delivery_budget_node)
     builder.add_node("write_paper", _write_paper_node)
     builder.add_node("review_paper", _review_paper_node)
     builder.add_node("gf_revise", _gf_revise_node)
@@ -516,11 +534,11 @@ def build_graph(checkpoint: bool = True):
     )
 
     # Phase 2-5 边：逐问闭环
-    # select_question → has_next: assemble_context / done: global_review
+    # select_question → has_next: assemble_context / done: configure_delivery_budget
     builder.add_conditional_edges(
         "select_question",
         route_after_select,
-        {"has_next": "assemble_context", "done": "global_review"},
+        {"has_next": "assemble_context", "done": "configure_delivery_budget"},
     )
 
     # assemble_context → configure_question_budget → solve_question → validate_result → gq_check
@@ -540,7 +558,8 @@ def build_graph(checkpoint: bool = True):
     builder.add_edge("archive_result", "select_question")
 
     # Phase 6 边：全任务审查 + 报告写作 + 交付
-    # global_review → write_paper → review_paper → gf_check
+    # 所有子任务完成后先设置 GF 修订预算，再进行全局审查、写作和交付。
+    builder.add_edge("configure_delivery_budget", "global_review")
     builder.add_edge("global_review", "write_paper")
     builder.add_edge("write_paper", "review_paper")
 
@@ -576,6 +595,7 @@ def run_graph(
     cancel_check: Callable[[], bool] | None = None,
     budget_manager: BudgetManager | None = None,
     budget_config_callback: Callable[[dict], dict | None] | None = None,
+    delivery_budget_config_callback: Callable[[dict], dict | None] | None = None,
     clarification_callback: Callable[[dict], dict | None] | None = None,
 ) -> dict:
     """用 LangGraph 运行完整工作流。
@@ -602,7 +622,9 @@ def run_graph(
         checkpoint: 是否启用 checkpoint。
         log_level: 运行日志级别（写入 run.log，默认 INFO）。
         budget_manager: 预算管理器（None 时自动创建）。
-        budget_config_callback: 用户预算覆盖回调（None 表示不暂停）。
+        budget_config_callback: 子任务预算覆盖回调（None 表示不暂停）。
+            在每个子任务求解前配置检索、GQ 验证和代码修复预算。
+        delivery_budget_config_callback: 所有子任务完成后配置 GF 修订预算的回调。
         clarification_callback: G0 硬失败澄清回调（None 时直接终止）。
 
     Returns:
@@ -651,6 +673,7 @@ def run_graph(
         search_provider=search_provider,
         budget_manager=budget_manager,
         budget_config_callback=budget_config_callback,
+        delivery_budget_config_callback=delivery_budget_config_callback,
         clarification_callback=clarification_callback,
     )
 

@@ -478,7 +478,7 @@ async def execute_run(
         return _cancel_flags.get(run_id, False)
 
     def _budget_callback(state: dict) -> dict | None:
-        """每问 configure_question_budget 节点触发：暂停等用户在弹窗确认预算。
+        """在每个子任务开始前请求搜索、验证和代码修复预算。
 
         返回 {BudgetType: int} 作为该问覆盖；返回 None 表示沿用默认。
         本函数在后台线程（asyncio.to_thread）中执行，可安全阻塞。
@@ -488,9 +488,13 @@ async def execute_run(
         proposed: dict = {}
         if bm is not None:
             try:
-                proposed = {bt.value: r.limit for bt, r in bm.all_records().items()
-                           if bt in (BudgetType.SEARCH, BudgetType.CANDIDATE,
-                                     BudgetType.CODE_REPAIR, BudgetType.VALIDATION_ITERATION)}
+                proposed = {
+                    BudgetType.SEARCH.value: bm.get_record(BudgetType.SEARCH).limit,
+                    BudgetType.VALIDATION_ITERATION.value:
+                    bm.get_record(BudgetType.VALIDATION_ITERATION).limit,
+                    BudgetType.CODE_REPAIR.value:
+                    bm.get_record(BudgetType.CODE_REPAIR).limit,
+                }
             except Exception:  # noqa: BLE001
                 proposed = {}
         ev = request_budget_confirmation(run_id, qid, proposed)
@@ -545,20 +549,25 @@ async def execute_run(
                 "timestamp": time.time(),
             },
         )
-        try:
-            return {BudgetType(k): int(v) for k, v in decision.items()}
-        except Exception:  # noqa: BLE001
-            return None
+        return {
+            BudgetType(key): int(value)
+            for key, value in decision.items()
+            if key in {
+                BudgetType.SEARCH.value,
+                BudgetType.VALIDATION_ITERATION.value,
+                BudgetType.CODE_REPAIR.value,
+            }
+        }
 
     def _request_initial_budget() -> dict | None:
-        """任务启动前请求用户配置任务级预算（INTAKE_RETRY / PAPER_REVISION）。
+        """任务启动前请求用户配置 G0 输入质量门重试预算。
 
         在后台线程中阻塞等待用户确认。返回 {BudgetType: int} 或 None（沿用默认）。
         """
         from scr.runtime.budget import DEFAULT_BUDGETS
         proposed = {
-            BudgetType.INTAKE_RETRY.value: DEFAULT_BUDGETS[BudgetType.INTAKE_RETRY],
-            BudgetType.PAPER_REVISION.value: DEFAULT_BUDGETS[BudgetType.PAPER_REVISION],
+            BudgetType.INTAKE_RETRY.value:
+            DEFAULT_BUDGETS[BudgetType.INTAKE_RETRY],
         }
         ev = request_budget_confirmation(run_id, "", proposed)
         append_progress(
@@ -608,10 +617,54 @@ async def execute_run(
                 "timestamp": time.time(),
             },
         )
-        try:
-            return {BudgetType(k): int(v) for k, v in decision.items()}
-        except Exception:  # noqa: BLE001
-            return None
+        return {
+            BudgetType(key): int(value)
+            for key, value in decision.items()
+            if key == BudgetType.INTAKE_RETRY.value
+        }
+
+    def _delivery_budget_callback(state: dict) -> dict | None:
+        """所有子任务完成后请求用户配置 GF 交付修订预算。"""
+        from scr.runtime.budget import DEFAULT_BUDGETS
+
+        proposed = {
+            BudgetType.PAPER_REVISION.value:
+            DEFAULT_BUDGETS[BudgetType.PAPER_REVISION],
+        }
+        ev = request_budget_confirmation(run_id, "", proposed)
+        append_progress(
+            run_id,
+            {
+                "type": "budget_request",
+                "phase": "delivery",
+                "node": "configure_delivery_budget",
+                "question_id": "",
+                "proposed": proposed,
+                "timestamp": time.time(),
+            },
+        )
+        while not ev.wait(timeout=1.0):
+            if _cancel_flags.get(run_id, False):
+                clear_budget_pending(run_id)
+                return None
+        decision = take_budget_decision(run_id)
+        clear_budget_pending(run_id)
+        append_progress(
+            run_id,
+            {
+                "type": "budget_confirmed",
+                "phase": "delivery",
+                "question_id": "",
+                "action": "override" if decision else "default",
+                "limits": decision or {},
+                "timestamp": time.time(),
+            },
+        )
+        return {
+            BudgetType(key): int(value)
+            for key, value in (decision or {}).items()
+            if key == BudgetType.PAPER_REVISION.value
+        }
 
     def _clarification_callback(state: dict) -> dict | None:
         """G0 硬失败时暂停等用户选择终止或补充材料继续。
@@ -657,7 +710,7 @@ async def execute_run(
         return decision or {"action": "terminate"}
 
     try:
-        # 任务启动前：请求用户配置任务级预算（INTAKE_RETRY / PAPER_REVISION）
+        # 任务启动前：请求用户配置 G0 输入质量门预算。
         from scr.runtime.budget import BudgetManager
         bm = BudgetManager()
         initial_limits = await asyncio.to_thread(_request_initial_budget)
@@ -676,6 +729,7 @@ async def execute_run(
             cancel_check=_cancel_check,
             budget_manager=bm,
             budget_config_callback=_budget_callback,
+            delivery_budget_config_callback=_delivery_budget_callback,
             clarification_callback=_clarification_callback,
         )
         # 任务完成后推送预算统计（time/token），前端在聊天中展示

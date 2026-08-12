@@ -47,16 +47,8 @@ def _make_budget_config_callback(pause_at: list[str] | None):
 
     返回的函数签名满足 run_graph 要求：``(state) -> dict[BudgetType, int] | None``。
     """
-    enforced = [
-        BudgetType.SEARCH,
-        BudgetType.CANDIDATE,
-        BudgetType.CODE_REPAIR,
-        BudgetType.VALIDATION_ITERATION,
-    ]
+    enforced = [BudgetType.VALIDATION_ITERATION]
     labels = {
-        BudgetType.SEARCH: "联网检索次数上限 (search)",
-        BudgetType.CANDIDATE: "方法候选数量上限 (candidate)",
-        BudgetType.CODE_REPAIR: "代码修复次数上限 (code_repair)",
         BudgetType.VALIDATION_ITERATION: "验证迭代次数上限 (validation)",
     }
 
@@ -95,12 +87,7 @@ def _print_budget_report(budget_manager: BudgetManager) -> None:
     per_enf = report.get("per_question_enforced_usage", {})
     per_mon = report.get("per_question_monitor_usage", {})
 
-    enforced_types = [
-        BudgetType.SEARCH.value,
-        BudgetType.CANDIDATE.value,
-        BudgetType.CODE_REPAIR.value,
-        BudgetType.VALIDATION_ITERATION.value,
-    ]
+    enforced_types = [BudgetType.VALIDATION_ITERATION.value]
 
     print("  [强制预算·每问消耗]")
     all_qids = sorted(set(per_enf.keys()) | set(per_mon.keys()))

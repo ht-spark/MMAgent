@@ -14,19 +14,6 @@ from typing import Any
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "code_based_modeling.md"
 _CODE_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "code_generation.md"
 
-#: 允许参与"任务驱动建模"的任务类型
-CODE_BASED_TASKS = {
-    "optimization",
-    "stochastic_optimization",
-    "evaluation",
-    "prediction",
-    "simulation",
-    "classification",
-    "clustering",
-    "mechanism",
-    "composite",
-}
-
 #: 模型设计调用超时（秒）——"思考"阶段，给足时间（10 分钟）
 MODEL_DESIGN_TIMEOUT = 600
 #: 代码生成调用超时（秒）——"写代码"阶段，给足时间（10 分钟）
@@ -79,8 +66,8 @@ class CodeModeler:
         )
         t0 = time.time()
         print(
-            f"[code_modeler] 第 1 段：LLM 设计数学模型"
-            f"（题型={math_task}，参考方法={method_hint or 'auto'}，超时 {MODEL_DESIGN_TIMEOUT}s）..."
+            f"[code_modeler] 第 1 段：LLM 根据问题设计数学模型"
+            f"（超时 {MODEL_DESIGN_TIMEOUT}s）..."
         )
         content = self._invoke(prompt, timeout=MODEL_DESIGN_TIMEOUT)
 

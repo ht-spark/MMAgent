@@ -35,12 +35,13 @@ type ChatMsg = {
 }
 
 type Phase = 'compose' | 'running' | 'done'
+type BudgetPhase = 'initial' | 'question' | 'delivery'
 
 type ProgressCardProps = {
   text: string
   currentStep: string
   running: boolean
-  budgetReq: { question_id: string; proposed: Record<string, number>; phase: 'initial' | 'question' } | null
+  budgetReq: { question_id: string; proposed: Record<string, number>; phase: BudgetPhase } | null
   budgetDraft: Record<string, number>
   budgetBusy: boolean
   onBudgetDraftChange: (key: string, value: number) => void
@@ -97,16 +98,20 @@ function ProgressCard({
         <div className="progress-budget">
           <div className="progress-budget-title">
             {budgetReq.phase === 'initial'
-              ? '任务预算配置'
-              : `确认${fmtQid(budgetReq.question_id)}预算`}
+              ? '设置 G0 输入质量门预算'
+              : budgetReq.phase === 'delivery'
+                ? '设置 GF 交付质量门预算'
+                : `设置${fmtQid(budgetReq.question_id)}预算`}
           </div>
           <p>
             {budgetReq.phase === 'initial'
-              ? '任务即将开始。可调整任务级预算上限后确认，或直接使用默认继续。'
-              : '建模已暂停。可调整上限后确认覆盖，或直接使用默认预算继续。'}
+              ? 'G0 未通过时，系统会重做任务理解和输入检查，并消耗一次重试预算。'
+              : budgetReq.phase === 'delivery'
+                ? 'GF 未通过时，系统会修订报告并消耗一次交付修订预算。'
+                : '每个子任务独立配置检索、GQ 验证迭代和代码修复预算；建模方法仍由 LLM 根据问题直接推理。'}
           </p>
           <div className="budget-fields">
-            {(budgetReq.phase === 'initial' ? INITIAL_BUDGET_FIELDS : QUESTION_BUDGET_FIELDS).map((field) => (
+            {BUDGET_FIELDS[budgetReq.phase].map((field) => (
               <label key={field.key} className="budget-field">
                 <span className="budget-field-label">{field.label}</span>
                 <input
@@ -194,24 +199,20 @@ function ProgressCard({
   )
 }
 
-/** 初始任务级预算字段（任务启动时一次性配置） */
-const INITIAL_BUDGET_FIELDS: { key: string; label: string }[] = [
-  { key: 'intake_retry', label: 'G0 输入质量门重试' },
-  { key: 'paper_revision', label: 'GF 交付质量门修订' },
-]
-
-/** 每问级预算字段（每个子问题求解前配置） */
-const QUESTION_BUDGET_FIELDS: { key: string; label: string }[] = [
-  { key: 'search', label: '联网检索次数' },
-  { key: 'candidate', label: '方法候选数量' },
-  { key: 'code_repair', label: '代码修复次数' },
-  { key: 'validation', label: '验证迭代次数' },
-]
+const BUDGET_FIELDS: Record<BudgetPhase, { key: string; label: string }[]> = {
+  initial: [{ key: 'intake_retry', label: 'G0 输入质量门重试次数' }],
+  question: [
+    { key: 'search', label: '联网检索次数' },
+    { key: 'validation', label: 'GQ 验证迭代次数' },
+    { key: 'code_repair', label: '代码修复次数' },
+  ],
+  delivery: [{ key: 'paper_revision', label: 'GF 交付质量门修订次数' }],
+}
 
 type BudgetReq = {
   question_id: string
   proposed: Record<string, number>
-  phase: 'initial' | 'question'
+  phase: BudgetPhase
 }
 
 type ClarificationReq = {
@@ -351,7 +352,11 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     const qidBefore = currentQuestionIdRef.current
     if (ev.type === 'budget_request') {
       const proposed: Record<string, number> = ev.proposed || {}
-      const phase: 'initial' | 'question' = ev.phase === 'initial' ? 'initial' : 'question'
+      const phase: BudgetPhase = ev.phase === 'initial'
+        ? 'initial'
+        : ev.phase === 'delivery'
+          ? 'delivery'
+          : 'question'
       setBudgetReq({ question_id: ev.question_id || '', proposed, phase })
       setBudgetDraft({ ...proposed })
     } else if (ev.type === 'budget_confirmed') {
@@ -466,7 +471,11 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
           pendingBudget = {
             question_id: ev.question_id || '',
             proposed: ev.proposed || {},
-            phase: ev.phase === 'initial' ? 'initial' : 'question',
+            phase: ev.phase === 'initial'
+              ? 'initial'
+              : ev.phase === 'delivery'
+                ? 'delivery'
+                : 'question',
           }
         } else if (ev.type === 'budget_confirmed') {
           pendingBudget = null
@@ -696,8 +705,7 @@ export default function ChatModeling({ resumeRunId, onViewResult }: Props) {
     setBudgetBusy(true)
     const limits: Record<string, number> = {}
     if (!useDefaults) {
-      const fields = budgetReq.phase === 'initial' ? INITIAL_BUDGET_FIELDS : QUESTION_BUDGET_FIELDS
-      for (const field of fields) {
+      for (const field of BUDGET_FIELDS[budgetReq.phase]) {
         const v = Number(budgetDraft[field.key])
         if (Number.isFinite(v) && v > 0) limits[field.key] = Math.floor(v)
       }

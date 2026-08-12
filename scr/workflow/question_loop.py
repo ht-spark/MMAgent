@@ -104,6 +104,7 @@ def select_question(state: dict) -> dict:
         "workflow_status": "solving",
         "_solve_retry_count": 0,
         "_gq_action": "",
+        "_gq_feedback": "",
     }
 
 
@@ -268,6 +269,7 @@ def archive_result(state: dict) -> dict:
         "current_result": None,
         "_solve_retry_count": 0,
         "_gq_action": "",
+        "_gq_feedback": "",
         "decision_log": decision_log,
     }
 
@@ -407,18 +409,14 @@ def _build_budget_info(state: dict) -> dict:
     qid = state.get("current_question_id", "")
 
     return {
-        "search_remaining": bm.remaining(BudgetType.SEARCH, question_id=qid),
-        "candidate_limit": bm.remaining(BudgetType.CANDIDATE, question_id=qid),
-        "code_repair_remaining": bm.remaining(BudgetType.CODE_REPAIR, question_id=qid),
         "validation_remaining": bm.remaining(BudgetType.VALIDATION_ITERATION, question_id=qid),
-        "search_run_total": bm.get_total_usage().get(BudgetType.SEARCH, 0),
         "time_run_total": bm.get_total_usage().get(BudgetType.TIME, 0),
         "token_run_total": bm.get_total_usage().get(BudgetType.TOKEN, 0),
     }
 
 
 # ---------------------------------------------------------------------------
-# 节点 2.5：configure_question_budget — 让用户在指定小问临时调整预算上限
+# 节点 2.5：configure_question_budget — 子任务预算配置
 # ---------------------------------------------------------------------------
 
 
@@ -432,8 +430,7 @@ def configure_question_budget(state: dict) -> dict:
       - 若 callback 返回 None 或抛错：跳过，不覆盖（默认配置生效）。
 
     典型回调：
-      - CLI 模式：从 stdin 读取 "SEARCH=15,CANDIDATE=5"
-      - Web 模式：前端表单提交后由 server 写入回调结果
+      - CLI/Web 模式：允许覆盖 SEARCH / VALIDATION_ITERATION / CODE_REPAIR。
 
     Args:
         state: 项目状态。

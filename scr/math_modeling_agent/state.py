@@ -43,6 +43,7 @@ class ProjectState(TypedDict, total=False):
     search_provider: Any
     budget_manager: BudgetManager | None  # 预算管理器（强制项按小问重置 + 监控项全程累计）
     budget_config_callback: Any            # 可选回调：在指定小问让用户临时覆盖预算
+    delivery_budget_config_callback: Any   # 可选回调：所有子任务完成后配置 GF 修订预算
     clarification_callback: Any            # 可选回调：G0 硬失败时暂停等用户选择终止或补充材料
     data_paths: list[str]  # 原始数据文件路径列表
 
@@ -77,6 +78,7 @@ class ProjectState(TypedDict, total=False):
     _g0_clarification_action: str  # G0 澄清动作 (terminate/continue)
     _solve_retry_count: int    # 当前小问求解重试计数
     _gq_action: str            # GQ 质量门最近一次动作 (pass/retry/blocked)
+    _gq_feedback: str          # 最近一次 GQ 未通过原因，供下一轮 LLM 修订
     _gf_retry_count: int       # GF 交付质量门修订计数
 
 
@@ -89,6 +91,7 @@ def create_initial_state(
     search_provider: Any = None,
     budget_manager: BudgetManager | None = None,
     budget_config_callback: Any = None,
+    delivery_budget_config_callback: Any = None,
     clarification_callback: Any = None,
 ) -> ProjectState:
     """创建初始项目状态。
@@ -102,7 +105,10 @@ def create_initial_state(
         search_provider: 可选的搜索 Provider。
         budget_manager: 预算管理器（可选；未传则在 run_graph 自动实例化）。
         budget_config_callback: 可选回调；签名
-            ``(state) -> dict[BudgetType, int] | None``，返回 None 表示沿用默认。
+            ``(state) -> dict[BudgetType, int] | None``，在每个子任务开始前
+            配置检索、GQ 验证迭代和代码修复预算；返回 None 表示沿用默认。
+        delivery_budget_config_callback: 可选回调；所有子任务完成后配置
+            GF 交付质量门修订预算。
         clarification_callback: 可选回调；签名
             ``(state) -> dict | None``，G0 硬失败时暂停等待用户选择终止或补充材料。
 
@@ -116,6 +122,7 @@ def create_initial_state(
         search_provider=search_provider,
         budget_manager=budget_manager,
         budget_config_callback=budget_config_callback,
+        delivery_budget_config_callback=delivery_budget_config_callback,
         clarification_callback=clarification_callback,
         data_paths=data_paths or [],
         project_context=ProjectContext(
@@ -135,6 +142,7 @@ def create_initial_state(
         _g0_clarification_action="",
         _solve_retry_count=0,
         _gq_action="",
+        _gq_feedback="",
         _gf_retry_count=0,
     )
 

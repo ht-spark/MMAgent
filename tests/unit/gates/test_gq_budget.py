@@ -75,3 +75,23 @@ def test_validation_iteration_override_via_question_limits():
     state["_solve_retry_count"] = upd1["_solve_retry_count"]
     upd2 = run_gq_node(state)
     assert upd2["_gq_action"] == "blocked"
+
+
+def test_computation_error_consumes_validation_budget_and_returns_feedback():
+    """执行失败也必须由 GQ 统一决定重试并提供修订反馈。"""
+    bm = BudgetManager()
+    result = QuestionResult(
+        question_id="Q1",
+        status="validating",
+        computation={"status": "error", "error": "generated code failed"},
+    )
+    update = run_gq_node({
+        "current_result": result,
+        "current_question_id": "Q1",
+        "_solve_retry_count": 0,
+        "budget_manager": bm,
+    })
+
+    assert update["_gq_action"] == "retry"
+    assert bm.get_record(BudgetType.VALIDATION_ITERATION).used == 1
+    assert "computation_error" in update["_gq_feedback"]

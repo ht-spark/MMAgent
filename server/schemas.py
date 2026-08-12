@@ -82,5 +82,5 @@ class BudgetConfirmBody(BaseModel):
     use_defaults: bool = Field(False, description="True=沿用默认预算，不覆盖")
     limits: dict[str, int] | None = Field(
         None,
-        description='预算覆盖，键为预算类型字符串(search/candidate/code_repair/validation/intake_retry/paper_revision)，值为上限',
+        description='预算覆盖，键为当前阶段允许的预算类型，值为正整数上限',
     )

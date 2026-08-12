@@ -1,12 +1,9 @@
 """管理建模任务的资源预算和受限时的降级策略。
 
-  预算包括联网检索次数、方法候选数量、代码修复次数、验证迭代次数、G0/GF 重试次数。
-  预算紧张时的降级顺序为：减少低价值候选、优先简单基线、减少非关键图表、
-  保留必要验证；不得跳过数据质量检查、数值复现和任务覆盖检查。
+  对外可配置的建模预算只有验证迭代次数：GQ 未通过时消耗一次并重新建模。
 
 本模块同时承担两类不同性质的预算：
-  - 强制（enforced）：SEARCH / CANDIDATE / CODE_REPAIR / VALIDATION_ITERATION /
-    INTAKE_RETRY / PAPER_REVISION。
+  - 强制（enforced）：VALIDATION_ITERATION，以及 G0/GF 的内部安全重试计数。
     按小问独立计数，超额拒绝继续；每问开始时自动重置；用户可临时覆盖单问上限。
     其中 INTAKE_RETRY 和 PAPER_REVISION 为任务级预算，在任务启动时一次性配置。
   - 监控（monitor）：TIME / TOKEN。
@@ -15,19 +12,14 @@
 典型用法：
 
     bm = BudgetManager()
-    # 任务启动时配置任务级预算（INTAKE_RETRY / PAPER_REVISION）
-    bm.update_run_limits({BudgetType.INTAKE_RETRY: 5, BudgetType.PAPER_REVISION: 3})
-    # 消耗强制预算：超额返回 False
-    if bm.consume(BudgetType.SEARCH, amount=1, question_id=qid):
-        tavily.search(...)
-    else:
-        # 跳过本次搜索，进入降级
-        ...
+    # GQ 未通过后消耗验证迭代预算：超额则将该问标记为 blocked
+    if bm.consume(BudgetType.VALIDATION_ITERATION, amount=1, question_id=qid):
+        retry_modeling(...)
     # 监控式记账：始终成功（无阈值，仅统计）
     bm.record_monitor(BudgetType.TIME, elapsed_seconds, question_id=qid)
     bm.record_monitor(BudgetType.TOKEN, tokens_used, question_id=qid)
     # 用户在指定小问临时覆盖上限
-    bm.set_question_limits(qid, {BudgetType.SEARCH: 20, BudgetType.CANDIDATE: 6})
+    bm.set_question_limits(qid, {BudgetType.VALIDATION_ITERATION: 3})
     # 报告
     report = bm.to_dict()
 """

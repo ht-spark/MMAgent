@@ -6,6 +6,7 @@ export const NODE_CN: Record<string, string> = {
   select_question: '选择子任务',
   assemble_context: '装配上下文',
   configure_question_budget: '预算配置',
+  configure_delivery_budget: '交付预算配置',
   solve_question: '子任务求解',
   validate_result: '结果验证',
   gq_check: '质量检查',
@@ -54,8 +55,10 @@ export function formatProgressLine(ev: any, fallbackQuestionId = ''): string | n
   if (ev.type === 'budget_confirmed') {
     const action = ev.action
     const scope = ev.phase === 'initial'
-      ? '任务预算'
-      : `预算配置 · ${fmtQid(ev.question_id || fallbackQuestionId || '')}`
+      ? 'G0 输入质量门预算'
+      : ev.phase === 'delivery'
+        ? 'GF 交付质量门预算'
+        : `子任务预算 · ${fmtQid(ev.question_id || fallbackQuestionId || '')}`
     if (action === 'override') return `${scope}已按输入覆盖`
     if (action === 'default') return `${scope}沿用默认`
     return `${scope}确认已取消`
@@ -70,7 +73,7 @@ export function formatProgressLine(ev: any, fallbackQuestionId = ''): string | n
   if (ev.type !== 'node') return null
 
   const node = ev.node || 'step'
-  if (node === 'configure_question_budget') return null
+  if (node === 'configure_question_budget' || node === 'configure_delivery_budget') return null
   if (node === 'context' && ev.workflow_status === 'context_ready') {
     const questionCount = Number(ev.question_count)
     const suffix = Number.isFinite(questionCount) && questionCount > 0
@@ -100,10 +103,10 @@ export function formatProgressLine(ev: any, fallbackQuestionId = ''): string | n
 
 export function nextProgressQuestionId(ev: any, currentQuestionId = ''): string {
   if (!ev || typeof ev !== 'object') return currentQuestionId
-  if (ev.type === 'budget_request' && ev.phase !== 'initial' && ev.question_id) {
+  if (ev.type === 'budget_request' && ev.phase === 'question' && ev.question_id) {
     return ev.question_id
   }
-  if (ev.type === 'budget_confirmed' && ev.phase !== 'initial' && ev.question_id) {
+  if (ev.type === 'budget_confirmed' && ev.phase === 'question' && ev.question_id) {
     return ev.question_id
   }
   if (ev.type === 'node' && ev.node === 'select_question' && ev.workflow_status === 'all_questions_done') {

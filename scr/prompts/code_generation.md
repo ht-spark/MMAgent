@@ -25,13 +25,7 @@
   ```python
   print("__MODEL_RESULT__" + json.dumps(result, ensure_ascii=False, default=str))
   ```
-- `result` 必须包含（按题型）：
-  - `optimization`：`solution`（最优解）、`objective`（最优目标值）、`constraint_check`（约束满足情况，可选）
-  - `stochastic_optimization`：`robust_solution`、`expected_objective`、`worst_case`（场景法/抽样法）
-  - `evaluation`：`weights`、`scores`、`ranking`（三者都要）
-  - `prediction`：`predictions`、`metrics`（含 r2/rmse/mae 等至少一个）
-  - `simulation`：`simulation`（模拟结果）、`confidence_interval`
-  - 以及 `metrics`（模型质量指标，dict）、可选 `explanation`（结果解释）
+- `result` 必须包含与本题模型和交付目标相符的真实数值结果，以及 `metrics`（模型质量、约束检查或不确定性指标，dict）；可选 `explanation`（结果解释）。不得依据预定义题型填充固定字段。
 - 数值必须为有限值（float/int），禁止 NaN/Inf
 - 代码必须完整、顶层可执行，运行时间控制在 30 秒以内（大计算请抽样或降低规模）
 - 必须使用 `matplotlib` 生成至少一张与模型结论直接相关的 PNG，保存到 `os.environ["MODEL_FIGURE_DIR"]`，并在 `savefig` 后关闭图形。

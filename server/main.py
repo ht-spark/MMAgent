@@ -30,6 +30,7 @@ from server.runs import (
     submit_budget_decision,
     submit_clarification_decision,
 )
+from scr.runtime.budget import BudgetType
 from server.schemas import (
     BudgetConfirmBody,
     CreateRunResponse,
@@ -262,16 +263,28 @@ async def confirm_budget_endpoint(run_id: str, body: BudgetConfirmBody):
 
     当 run 暂停在 configure_question_budget 节点等待用户确认时，前端弹窗提交：
       - use_defaults=true：沿用默认预算；
-      - limits={search:15, candidate:5, ...}：覆盖该问的强制项上限。
+      - limits：覆盖当前预算阶段允许调整的项目。
     无待确认请求时返回 409。
     """
     pending = get_pending_budget(run_id)
     if not pending:
         raise HTTPException(status_code=409, detail="当前没有待确认的预算请求")
     decision = None if body.use_defaults else (body.limits or None)
-    # 仅保留强制项、正值（与 BudgetManager.set_question_limits 的过滤一致）
+    # 仅保留已定义的、值为正整数的预算项；当前阶段会在后台回调中决定实际采用哪些项。
     if decision:
-        decision = {k: v for k, v in decision.items() if isinstance(v, int) and v > 0}
+        decision = {
+            key: value
+            for key, value in decision.items()
+            if key in {
+                BudgetType.SEARCH.value,
+                BudgetType.CODE_REPAIR.value,
+                BudgetType.VALIDATION_ITERATION.value,
+                BudgetType.INTAKE_RETRY.value,
+                BudgetType.PAPER_REVISION.value,
+            }
+            and isinstance(value, int)
+            and value > 0
+        }
     ok = submit_budget_decision(run_id, decision)
     if not ok:
         raise HTTPException(status_code=409, detail="预算请求已被取消或已确认")

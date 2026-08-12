@@ -20,6 +20,7 @@ from scr.agents.code_modeler import (
     LLMTimeoutError,
 )
 from scr.agents.model_builder import ModelBuilder
+from scr.runtime.budget import BudgetManager, BudgetType
 from scr.schemas.question import CurrentQuestionContext, ProblemInterpretation
 
 
@@ -169,10 +170,6 @@ class TestModelBuilderCodeBased:
         """成功路径：模型设计 → 好代码。"""
         return [_model_design(), GOOD_CODE]
 
-    def _responses_repair(self) -> list[str]:
-        """修复循环：第一轮代码坏，第二轮好（模型设计重来一次）。"""
-        return [_model_design(), BAD_CODE, _model_design(), GOOD_CODE]
-
     def test_code_based_success(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
 
@@ -184,16 +181,33 @@ class TestModelBuilderCodeBased:
         assert comp["method_key"] == "code_based"
         assert "solution" in comp["results"]
 
-    def test_repair_loop(self, sample_csv: Path, tmp_path: Path):
+    def test_failed_attempt_is_returned_for_gq_retry(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
 
         dp = run_intake(
             {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
         )["data_profile"]
-        comp = self._build(MockLLM(self._responses_repair()), dp)
+        comp = self._build(MockLLM([_model_design(), BAD_CODE]), dp)
+        assert comp["status"] == "error"
+
+    def test_code_failure_retries_with_code_repair_budget(self, sample_csv: Path, tmp_path: Path):
+        from scr.workflow.intake import run_intake
+
+        dp = run_intake(
+            {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
+        )["data_profile"]
+        budget_manager = BudgetManager(
+            run_limits={BudgetType.CODE_REPAIR: 1}
+        )
+        builder = ModelBuilder(
+            llm=MockLLM([_model_design(), BAD_CODE, _model_design(), GOOD_CODE]),
+            budget_manager=budget_manager,
+        )
+
+        comp = builder.build(_context(), _interpretation(), _decision(), dp)["computation"]
+
         assert comp["status"] == "success"
-        assert comp["method_key"] == "code_based"
-        assert comp["intermediate_values"]["generation_attempts"] == 2
+        assert budget_manager.get_record(BudgetType.CODE_REPAIR).used == 1
 
     def test_llm_failure_does_not_fallback_to_preset_method(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
@@ -207,17 +221,17 @@ class TestModelBuilderCodeBased:
         assert comp["status"] == "error"
         assert "失败" in comp["error"] or comp["error"]
 
-    def test_no_llm_uses_preset(self, sample_csv: Path, tmp_path: Path):
+    def test_no_llm_does_not_use_preset_method(self, sample_csv: Path, tmp_path: Path):
         from scr.workflow.intake import run_intake
 
         dp = run_intake(
             {"data_paths": [str(sample_csv)], "output_dir": str(tmp_path / "art")}
         )["data_profile"]
         comp = self._build(None, dp)
-        assert comp["status"] == "success"
-        assert comp["method_key"] != "code_based"
+        assert comp["status"] == "error"
+        assert "LLM" in comp["error"]
 
-    def test_model_design_receives_problem_context_and_search_reference(self):
+    def test_model_design_receives_complete_problem_context_without_candidates(self):
         llm = MockLLM([_model_design(), GOOD_CODE])
         builder = ModelBuilder(llm=llm)
         context = CurrentQuestionContext(
@@ -235,21 +249,10 @@ class TestModelBuilderCodeBased:
             necessary_assumptions=["无人机和导弹匀速直线运动"],
             result_form="有效遮蔽时间区间和总时长",
         )
-        decision = {
-            "selected_method": "蒙特卡洛",
-            "selection_reason": "仅作为数值求解参考，仍需先构造几何判定模型",
-            "method_candidates": [
-                {
-                    "name": "空间视线-球体相交判定",
-                    "source": "web_search",
-                    "description": "用线段到球心距离和投影位置判断遮蔽",
-                }
-            ],
-        }
+        decision = {"selected_method": "LLM 问题驱动建模"}
 
         builder.build(context, interpretation, decision, data_profile=None)
 
         prompt = llm.prompts[0]
         assert "烟幕球半径10m" in prompt
-        assert "空间视线-球体相交判定" in prompt
-        assert "参考方法不是模型本身" in prompt
+        assert "不预选候选方法" in prompt

@@ -20,7 +20,6 @@ from ..schemas.question import (
     ReusableSummary,
 )
 from .base import BaseAgent
-from .method_explorer import MethodExplorer
 from .model_builder import ModelBuilder
 
 
@@ -34,15 +33,12 @@ class _SelfReview(BaseModel):
 class QuestionSolver(BaseAgent):
     """小问求解器 Agent。
 
-    Phase 4 集成了方法探索、决策和建模计算。
-    Phase 5+ 将集成题型验证。
+    基于完整问题上下文驱动 LLM 建模、执行和质量验证。
 
     Args:
         llm: 可选的 LLM 客户端。
-        search_tool: 可选的联网搜索工具（TavilySearchTool）。
-                     若不传则 MethodExplorer 自动从环境变量创建。
-        budget_manager: 可选的预算管理器。传给 MethodExplorer / ModelBuilder
-                     用于强制项消耗与监控项记账。
+        search_tool: 兼容保留参数，当前主流程不预选方法。
+        budget_manager: 可选的预算管理器，用于运行监控与 GQ 验证迭代。
     """
 
     def __init__(
@@ -52,9 +48,6 @@ class QuestionSolver(BaseAgent):
         budget_manager: Any | None = None,
     ) -> None:
         super().__init__(llm=llm)
-        self._explorer = MethodExplorer(
-            llm=llm, search_tool=search_tool, budget_manager=budget_manager
-        )
         self._builder = ModelBuilder(llm=llm, budget_manager=budget_manager)
         self._budget_manager = budget_manager
 
@@ -99,6 +92,7 @@ class QuestionSolver(BaseAgent):
         context: CurrentQuestionContext,
         data_profile: DataProfile | None = None,
         output_dir: str | None = None,
+        feedback: str = "",
     ) -> QuestionResult:
         """求解当前小问。
 
@@ -123,28 +117,18 @@ class QuestionSolver(BaseAgent):
             "completed",
             question_id=qid,
             duration=time.monotonic() - t0,
-            detail=f"任务类型: {interpretation.math_task}",
+            detail="问题理解完成",
         )
 
-        # 步骤 2: 方法探索与决策（§5.3-5.4）
-        t0 = time.monotonic()
-        log_step(logger, "solve.explore", "started", question_id=qid)
-        method_candidates, decision_record = self._explorer.explore_and_decide(
-            context, interpretation, data_profile
-        )
-        decision_record = dict(decision_record)
-        decision_record["method_candidates"] = method_candidates
-        selected_method = decision_record.get("selected_method", "未知方法")
-        log_step(
-            logger,
-            "solve.explore",
-            "completed",
-            question_id=qid,
-            duration=time.monotonic() - t0,
-            detail=(
-                f"候选 {len(method_candidates)} 个，决策: {selected_method}"
-            ),
-        )
+        # LLM 直接根据题面、数据、约束和前问结论建立模型；不预选候选方法。
+        decision_record = {
+            "selected_method": "LLM 问题驱动建模",
+            "selection_reason": "根据当前问题、数据和约束直接推理具体数学模型",
+            "assumptions": interpretation.necessary_assumptions,
+            "required_outputs": [],
+            "validation_requirements": [],
+        }
+        selected_method = decision_record["selected_method"]
 
         # 步骤 3: 建模计算与可视化（§5.5）
         t0 = time.monotonic()
@@ -152,6 +136,7 @@ class QuestionSolver(BaseAgent):
         model_output = self._builder.build(
             context, interpretation, decision_record, data_profile,
             output_dir=output_dir,
+            feedback=feedback,
         )
         comp_status = model_output["computation"].get("status", "unknown")
         log_step(
@@ -167,26 +152,8 @@ class QuestionSolver(BaseAgent):
             ),
         )
 
-        # 步骤 3.5: LLM 自评反思（P2-C1）—— revise 时带建议重算一次
+        # 自评只记录建议；是否重试由 GQ 统一决定并消耗验证迭代预算。
         self_review = self._self_review(context, interpretation, model_output)
-        if self_review and self_review.get("verdict") == "revise":
-            suggestions = self_review.get("suggestions", "")
-            print(f"[solver] 自评建议修订，重算小问 {qid}: {suggestions[:100]}")
-            log_step(
-                logger, "solve.self_review", "revise", question_id=qid,
-                detail=f"按自评建议重算: {suggestions[:120]}",
-            )
-            t1 = time.monotonic()
-            model_output = self._builder.build(
-                context, interpretation, decision_record, data_profile,
-                output_dir=output_dir,
-                feedback=suggestions,
-            )
-            log_step(
-                logger, "solve.build", "completed", question_id=qid,
-                duration=time.monotonic() - t1,
-                detail="自评修订后的重算完成",
-            )
         model_output["self_review"] = self_review
         comp_status = model_output["computation"].get("status", "unknown")
 
@@ -225,7 +192,7 @@ class QuestionSolver(BaseAgent):
             status="validating",
             problem_interpretation=interpretation,
             inherited_context={"inherited_summaries": context.inherited_summaries},
-            method_candidates=method_candidates,
+            method_candidates=[],
             decision_record=decision_record,
             assumptions=assumptions,
             formulation=model_output["formulation"],
@@ -242,16 +209,14 @@ class QuestionSolver(BaseAgent):
         )
 
         print(f"[solver] 小问 {qid} 求解完成 "
-              f"(task={interpretation.math_task}, method={selected_method}, "
-              f"computation={comp_status})")
+              f"(模型={selected_method}, computation={comp_status})")
         log_step(
             logger,
             "solve",
             "completed",
             question_id=qid,
             detail=(
-                f"小问求解完成: task={interpretation.math_task}, "
-                f"method={selected_method}, computation={comp_status}"
+                f"小问求解完成: 模型={selected_method}, computation={comp_status}"
             ),
         )
         return result
@@ -272,11 +237,8 @@ class QuestionSolver(BaseAgent):
 
         findings = {
             "summary": f"小问 {qid} 建模完成: {selected_method} (状态: {comp_status})",
-            "math_task": interpretation.math_task,
             "result_form": interpretation.result_form,
             "selected_method": selected_method,
-            "selected_family": decision_record.get("selected_family", ""),
-            "alternatives_count": len(decision_record.get("alternatives", [])),
             "validation_method": decision_record.get("validation_method", ""),
             "computation_status": comp_status,
             "has_numerical_results": bool(results) and comp_status == "success",
@@ -708,10 +670,12 @@ def solve_question_node(state: dict) -> dict:
         budget_manager=budget_manager,
     )
 
-    # Phase 3：方法探索 + 决策，无论是否重试都重新探索
-    # Phase 4+ 将根据 retry_count 选择不同的方法候选
+    # 每次求解都基于题面与上一轮 GQ 反馈重新推理模型，不复用候选方法列表。
     result = solver.solve(
-        current_context, data_profile=data_profile, output_dir=output_dir
+        current_context,
+        data_profile=data_profile,
+        output_dir=output_dir,
+        feedback=state.get("_gq_feedback", ""),
     )
 
     if retry_count > 0:

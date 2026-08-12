@@ -34,6 +34,18 @@ def test_build_graph():
     assert app is not None
 
 
+def test_graph_places_budget_configuration_at_each_required_stage():
+    """预算节点分别位于子任务求解前和全任务交付前。"""
+    graph = build_graph(checkpoint=False).get_graph()
+    assert "configure_question_budget" in graph.nodes
+    assert "configure_delivery_budget" in graph.nodes
+
+    edges = {(edge.source, edge.target) for edge in graph.edges}
+    assert ("assemble_context", "configure_question_budget") in edges
+    assert ("configure_question_budget", "solve_question") in edges
+    assert ("configure_delivery_budget", "global_review") in edges
+
+
 # ---------------------------------------------------------------------------
 # 端到端测试
 # ---------------------------------------------------------------------------

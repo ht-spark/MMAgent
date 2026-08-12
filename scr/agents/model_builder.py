@@ -18,55 +18,17 @@ from ..schemas.formulation import MODELING_TASKS, ConstraintIR, FormulationIR, V
 from ..schemas.question import CurrentQuestionContext, ProblemInterpretation
 
 #: 任务驱动建模的题型范围（LLM 建模 + 代码执行）
-from .code_modeler import CODE_BASED_TASKS
-
-#: 代码生成/执行/校验的重试上限
-CODE_GEN_MAX_RETRIES = 2
-
-
 class ModelBuilder:
     """建模计算与可视化 Agent。
 
     Args:
         llm: 可选的 LLM 客户端（Phase 4 暂不使用，Phase 5+ 可用于模型精调）。
-        budget_manager: 可选的预算管理器。提供时，"任务驱动建模"路径的代码
-            生成/执行/校验重试会消耗 CODE_REPAIR；耗尽立即停止重试并返回 error。
+        budget_manager: 可选的预算管理器，供运行监控使用。
     """
 
     def __init__(self, llm: Any | None = None, budget_manager: Any | None = None) -> None:
         self._llm = llm
         self._budget_manager = budget_manager
-
-    def _consume_code_repair_or_stop(
-        self,
-        question_id: str,
-        stage: str,
-        last_error: str,
-    ) -> bool:
-        """消耗 1 次 CODE_REPAIR；预算耗尽返回 True，调用方应退出重试。
-
-        用于 _execute_code_based 的 4 处 continue 路径；无 budget_manager 时
-        直接返回 False（不限制，由 CODE_GEN_MAX_RETRIES 兜底）。
-        """
-        if self._budget_manager is None:
-            return False
-        try:
-            from ..runtime.budget import BudgetType
-            ok = self._budget_manager.consume(
-                BudgetType.CODE_REPAIR, amount=1, question_id=question_id
-            )
-            if not ok:
-                print(f"[builder] 预算：CODE_REPAIR 已耗尽（{stage}），停止重试")
-                return True
-            rem = self._budget_manager.remaining(
-                BudgetType.CODE_REPAIR, question_id=question_id
-            )
-            print(
-                f"[builder] 预算：CODE_REPAIR 消耗 1 次（{stage}），剩余 {rem}"
-            )
-        except Exception as e:
-            print(f"[builder] CODE_REPAIR 预算记账跳过: {e}")
-        return False
 
     def build(
         self,
@@ -149,23 +111,6 @@ class ModelBuilder:
         decision_record: dict,
     ) -> str:
         """汇总 LLM 建模所需的问题上下文和方法参考材料。"""
-        candidate_refs: list[dict[str, Any]] = []
-        for item in decision_record.get("method_candidates", [])[:8]:
-            if not isinstance(item, dict):
-                continue
-            candidate_refs.append({
-                "name": item.get("name", ""),
-                "source": item.get("source", ""),
-                "family": item.get("family") or item.get("canonical_family", ""),
-                "description": item.get("description", ""),
-                "assumptions": item.get("assumptions", []),
-                "required_data": item.get("required_data", []),
-                "required_outputs": item.get("required_outputs", []),
-                "validation_requirements": item.get("validation_requirements", []),
-                "source_title": item.get("source_title", ""),
-                "source_url": item.get("source_url", ""),
-            })
-
         payload = {
             "question_id": context.question_id,
             "question_text": context.question_text[:2000],
@@ -189,18 +134,7 @@ class ModelBuilder:
                 "relation_to_previous": interpretation.relation_to_previous,
                 "relation_description": interpretation.relation_description,
             },
-            "method_reference": {
-                "selected_method": decision_record.get("selected_method", ""),
-                "selection_reason": (
-                    decision_record.get("selection_reason")
-                    or decision_record.get("reason")
-                    or decision_record.get("rationale", "")
-                ),
-                "selected_details": decision_record.get("selected_details", {}),
-                "required_outputs": decision_record.get("required_outputs", []),
-                "validation_requirements": decision_record.get("validation_requirements", []),
-                "candidates": candidate_refs,
-            },
+            "modeling_instruction": "直接基于以上问题和证据建立本题专属模型，不预选候选方法。",
         }
         text = json.dumps(payload, ensure_ascii=False, default=str, indent=2)
         if len(text) > 6000:
@@ -776,9 +710,8 @@ class ModelBuilder:
 
         data_matrix = data_prep.get("data_matrix")
 
-        # 任务驱动建模：有 LLM 且题型支持时，用 LLM 生成具体数学模型与
-        # 求解代码并沙箱执行。失败时返回错误，避免预设方法产生误导性成功。
-        if self._llm is not None and math_task in CODE_BASED_TASKS:
+        # LLM 根据完整问题上下文直接生成具体数学模型与求解代码。
+        if self._llm is not None:
             try:
                 code_computation = self._execute_code_based(
                     method_name, math_task, data_prep, formulation, context, output_dir,
@@ -796,6 +729,12 @@ class ModelBuilder:
                 print(f"[builder] 任务驱动建模异常，停止预设方法回退: {e}")
                 return {"status": "error", "error": str(e)[:200]}
 
+        return {
+            "status": "error",
+            "error": "LLM 不可用，无法执行问题驱动建模",
+        }
+
+        # 兼容保留的旧预设计算实现；LLM-only 主流程不会到达此处。
         try:
             if data_matrix is not None and len(data_matrix) > 0:
                 data = np.array(data_matrix, dtype=float)
@@ -924,153 +863,113 @@ class ModelBuilder:
         feedback = feedback or ""
         last_error = ""
         t_start = time.time()
-        # 预算：若 budget_manager 可用，按 CODE_REPAIR 剩余动态调整最大尝试次数。
-        # 首次 attempt 不消耗 CODE_REPAIR；之后每次失败 retry 消耗 1 次。
-        max_attempts = CODE_GEN_MAX_RETRIES
-        if self._budget_manager is not None:
-            try:
-                from ..runtime.budget import BudgetType
-                rem = self._budget_manager.remaining(
-                    BudgetType.CODE_REPAIR, question_id=context.question_id
-                )
-                max_attempts = max(1, min(CODE_GEN_MAX_RETRIES, rem + 1))
-            except Exception:
-                pass
         print(
-            f"[builder] 任务驱动建模开始（题型={math_task}，方法={method_name}，"
-            f"最多尝试 {max_attempts} 次，模型设计/代码生成超时均为 10 分钟）"
+            "[builder] 问题驱动建模开始"
+            "（由 LLM 根据题面、数据和约束推理，模型设计/代码生成超时均为 10 分钟）"
         )
 
         try:
-            for attempt in range(max_attempts):
-                print(f"[builder]   └ 第 {attempt + 1}/{max_attempts} 次尝试...")
-                # 1. 模型设计（超时即回退）
-                try:
-                    model_json = modeler.generate_model(
-                        question_text=question_text,
-                        math_task=math_task,
-                        method_hint=method_name,
-                        data_summary=data_summary,
-                        modeling_context=modeling_context,
-                        feedback=feedback,
-                    )
-                except LLMTimeoutError as e:
-                    print(f"[builder]     ↳ 模型设计超时（{e}）→ 直接回退预设方法")
-                    return {"status": "error", "error": f"模型设计超时: {e}"}
-                except CodeModelingError as e:
-                    last_error = str(e)
-                    feedback = f"模型设计失败: {last_error}"
-                    print(f"[builder]     ↳ 模型设计失败: {last_error[:120]}")
-                    if self._consume_code_repair_or_stop(context.question_id, "模型设计", last_error):
-                        return {"status": "error", "error": f"代码修复预算耗尽（模型设计: {last_error[:100]}）"}
-                    continue
-
-                # 2. 代码生成（超时即回退）
-                try:
-                    code = modeler.generate_code(
-                        model_json,
-                        question_text=question_text,
-                        data_summary=data_summary,
-                        feedback=feedback,
-                    )
-                except LLMTimeoutError as e:
-                    print(f"[builder]     ↳ 代码生成超时（{e}）→ 直接回退预设方法")
-                    return {"status": "error", "error": f"代码生成超时: {e}"}
-                except CodeModelingError as e:
-                    last_error = str(e)
-                    feedback = f"代码生成失败: {last_error}"
-                    print(f"[builder]     ↳ 代码生成失败: {last_error[:120]}")
-                    if self._consume_code_repair_or_stop(context.question_id, "代码生成", last_error):
-                        return {"status": "error", "error": f"代码修复预算耗尽（代码生成: {last_error[:100]}）"}
-                    continue
-
-                # 3. 沙箱执行
-                t_exec = time.time()
-                print(
-                    f"[builder]     ↳ 模型代码就绪（{model_json.get('model_name', '?')}，"
-                    f"{len(code)} 字符），开始沙箱执行..."
-                )
-                try:
-                    figure_output_dir = (
-                        Path(output_dir) / "figures" if output_dir else None
-                    )
-                    result = execute_model_code(
-                        code,
-                        data_csv_path=csv_path,
-                        figure_output_dir=figure_output_dir,
-                        figure_prefix=context.question_id,
-                        require_figures=figure_output_dir is not None,
-                    )
-                except CodeExecutionError as e:
-                    last_error = str(e)
-                    feedback = f"求解代码执行失败: {last_error}"
-                    print(
-                        f"[builder]     ↳ 代码执行失败（耗时 {time.time() - t_exec:.1f}s）: "
-                        f"{last_error[:150]}"
-                    )
-                    if self._consume_code_repair_or_stop(context.question_id, "代码执行", last_error):
-                        return {"status": "error", "error": f"代码修复预算耗尽（代码执行: {last_error[:100]}）"}
-                    continue
-                print(f"[builder]     ↳ 代码执行成功（耗时 {time.time() - t_exec:.1f}s），校验结果...")
-
-                # 4. 按题型校验结果
-                try:
-                    self._validate_task_results(result, math_task)
-                except Exception as e:
-                    last_error = str(e)
-                    feedback = f"结果不满足题型要求: {last_error}"
-                    print(f"[builder]     ↳ 结果校验未通过: {last_error[:150]}")
-                    if self._consume_code_repair_or_stop(context.question_id, "结果校验", last_error):
-                        return {"status": "error", "error": f"代码修复预算耗尽（结果校验: {last_error[:100]}）"}
-                    continue
-
-                # 5. 成功
-                print(
-                    f"[builder]   └ 任务驱动建模成功（总耗时 {time.time() - t_start:.1f}s，"
-                    f"第 {attempt + 1} 次尝试）"
-                )
-                # 5.1 持久化解题代码/数据/结果到 artifacts/questions/<qid>/
-                artifacts_dir = self._persist_question_artifacts(
-                    question_id=context.question_id,
-                    output_dir=output_dir,
-                    code=code,
-                    data_csv_path=csv_path,
-                    results=result,
-                    method_name=method_name,
-                    model_name=model_json.get("model_name", method_name),
-                )
-                return {
-                    "status": "success",
-                    "method": method_name,
-                    "method_key": "code_based",
-                    "model_name": model_json.get("model_name", method_name),
-                    "model_summary": model_json.get("model_summary", ""),
-                    "results": result,
-                    "metrics": result.get("metrics", {}) if isinstance(result, dict) else {},
-                    "figures": result.get("figures", []) if isinstance(result, dict) else [],
-                    "parameters_used": model_json.get("key_parameters", {}),
-                    "intermediate_values": {
-                        "generation_attempts": attempt + 1,
-                        "solution_code_snippet": code[:200],
-                        "variables": model_json.get("variables", []),
-                        "objective": model_json.get("objective", ""),
-                        "constraints": model_json.get("constraints", []),
-                    },
-                    "artifacts_dir": str(artifacts_dir) if artifacts_dir else "",
-                    "error": "",
-                }
-
-            print(
-                f"[builder]   └ 任务驱动建模失败（总耗时 {time.time() - t_start:.1f}s）: "
-                f"{last_error[:150]}"
+            model_json = modeler.generate_model(
+                question_text=question_text,
+                math_task=math_task,
+                method_hint="",
+                data_summary=data_summary,
+                modeling_context=modeling_context,
+                feedback=feedback,
             )
-            return {"status": "error", "error": last_error or "建模/执行/校验全部失败"}
+
+            code = modeler.generate_code(
+                model_json,
+                question_text=question_text,
+                data_summary=data_summary,
+                feedback=feedback,
+            )
+
+            t_exec = time.time()
+            print(
+                f"[builder]   ↳ 模型代码就绪（{model_json.get('model_name', '?')}，"
+                f"{len(code)} 字符），开始沙箱执行..."
+            )
+            figure_output_dir = Path(output_dir) / "figures" if output_dir else None
+            result = execute_model_code(
+                code,
+                data_csv_path=csv_path,
+                figure_output_dir=figure_output_dir,
+                figure_prefix=context.question_id,
+                require_figures=figure_output_dir is not None,
+            )
+            print(f"[builder]   ↳ 代码执行成功（耗时 {time.time() - t_exec:.1f}s）")
+
+            self._validate_task_results(result)
+            print(f"[builder] 问题驱动建模成功（总耗时 {time.time() - t_start:.1f}s）")
+            artifacts_dir = self._persist_question_artifacts(
+                question_id=context.question_id,
+                output_dir=output_dir,
+                code=code,
+                data_csv_path=csv_path,
+                results=result,
+                method_name=method_name,
+                model_name=model_json.get("model_name", method_name),
+            )
+            return {
+                "status": "success",
+                "method": method_name,
+                "method_key": "code_based",
+                "model_name": model_json.get("model_name", method_name),
+                "model_summary": model_json.get("model_summary", ""),
+                "results": result,
+                "metrics": result.get("metrics", {}) if isinstance(result, dict) else {},
+                "figures": result.get("figures", []) if isinstance(result, dict) else [],
+                "parameters_used": model_json.get("key_parameters", {}),
+                "intermediate_values": {
+                    "generation_attempts": 1,
+                    "solution_code_snippet": code[:200],
+                    "variables": model_json.get("variables", []),
+                    "objective": model_json.get("objective", ""),
+                    "constraints": model_json.get("constraints", []),
+                },
+                "artifacts_dir": str(artifacts_dir) if artifacts_dir else "",
+                "error": "",
+            }
+        except LLMTimeoutError as exc:
+            print(f"[builder] 问题驱动建模超时: {str(exc)[:150]}")
+            return {"status": "error", "error": str(exc)}
+        except (CodeModelingError, CodeExecutionError, ValueError) as exc:
+            repair_feedback = (
+                f"上一轮模型或代码执行失败：{str(exc)[:800]}。"
+                "请针对该错误重新设计并生成可执行代码。"
+            )
+            if self._consume_code_repair_budget(context.question_id):
+                print("[builder] 消耗一次代码修复预算，使用失败反馈重新生成模型和代码")
+                return self._execute_code_based(
+                    method_name,
+                    math_task,
+                    data_prep,
+                    formulation,
+                    context,
+                    output_dir,
+                    feedback=f"{feedback}\n{repair_feedback}".strip(),
+                    modeling_context=modeling_context,
+                )
+            print(f"[builder] 问题驱动建模失败: {str(exc)[:150]}")
+            return {"status": "error", "error": str(exc)}
         finally:
             if csv_path and os.path.exists(csv_path):
                 try:
                     os.unlink(csv_path)
                 except OSError:
                     pass
+
+    def _consume_code_repair_budget(self, question_id: str) -> bool:
+        """在可用时消耗当前子任务的一次代码修复预算。"""
+        if self._budget_manager is None:
+            return False
+        from ..runtime.budget import BudgetType
+
+        return self._budget_manager.consume(
+            BudgetType.CODE_REPAIR,
+            question_id=question_id,
+        )
 
     def _persist_question_artifacts(
         self,
@@ -1338,8 +1237,8 @@ print("\\n结果已保存到 result.json")
             lines.append(f"- 预处理: {p}")
         return "\n".join(lines)
 
-    def _validate_task_results(self, result: dict, math_task: str) -> None:
-        """按题型校验代码输出结果的关键字段。"""
+    def _validate_task_results(self, result: dict) -> None:
+        """验证 LLM 求解代码返回了通用、可用的结果字典。"""
         from ..tools.result_keys import normalize_result_dict
 
         # 归一化键名：兼容 LLM 提示词契约（solution/objective/r2）与预设方法契约
@@ -1350,31 +1249,9 @@ print("\\n结果已保存到 result.json")
         if not result:
             raise ValueError("结果为空")
 
-        if math_task == "optimization":
-            if "solution" not in result and "optimal_solution" not in result:
-                raise ValueError("缺少 solution（最优解）")
-            if "objective" not in result and "optimal_objective" not in result:
-                raise ValueError("缺少 objective（最优目标值）")
-        elif math_task == "stochastic_optimization":
-            if "robust_solution" not in result and "scenario_solutions" not in result:
-                raise ValueError("缺少 robust_solution 或 scenario_solutions")
-            if not any(k in result for k in ("expected_objective", "worst_case", "objective_std")):
-                raise ValueError("缺少期望/最坏目标值等风险指标")
-        elif math_task == "evaluation":
-            if not any(k in result for k in ("weights", "scores", "ranking")):
-                raise ValueError("缺少 weights/scores/ranking")
-        elif math_task == "prediction":
-            if not any(k in result for k in ("predictions", "forecast", "fitted_values")):
-                raise ValueError("缺少 predictions/forecast")
-            metrics = result.get("metrics") or {}
-            if not any(k in metrics for k in ("r_squared", "rmse", "mse", "mae", "mape")):
-                raise ValueError("缺少误差指标（r2/rmse/mae 等）")
-        elif math_task == "simulation":
-            if "simulation" not in result and "n_simulations" not in (result.get("metrics") or {}):
-                raise ValueError("缺少模拟结果")
-            if "confidence_interval" not in result and "confidence_interval_90" not in str(result):
-                raise ValueError("缺少置信区间")
-        # 其他题型不强制校验
+        metrics = result.get("metrics")
+        if metrics is not None and not isinstance(metrics, dict):
+            raise ValueError("metrics 必须为 dict")
 
     def _compute_entropy_weight(self, data: np.ndarray) -> dict:
         """熵权法计算。"""
