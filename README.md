@@ -1,59 +1,184 @@
 # MMAgent — 数学建模智能体
 
-> 从读题、数据画像、方法探索、建模计算、结果验证，到报告撰写与全任务审查的全流程自动化智能体系统。
+> 从理解任务、数据画像、方法探索、建模计算、结果验证，到报告撰写的全流程自动化智能体系统。
 
-MMAgent 将任务文档与附件数据组织为一个可复现的解题过程：先理解问题与数据，再按小问递进完成模型构建、计算、验证与结果沉淀，最后生成报告草稿、进行审查并交付全部材料。
+## 智能体功能
+
+MMAgent 由 9 个结构化推理 Agent 协同工作，覆盖数学建模全流程：
+
+| Agent                     | 职责       | 关键能力                                            |
+| ------------------------- | ---------- | --------------------------------------------------- |
+| **ProblemAnalyst**  | 任务理解   | 读题、拆分子问题、题型分类（优化/评价/预测/仿真等） |
+| **MethodExplorer**  | 方法探索   | 联网检索文献、LLM 方法决策、生成备选方案与理由      |
+| **ModelBuilder**    | 建模计算   | 公式构建、数值求解、参数估计、结果可视化            |
+| **CodeModeler**     | 代码建模   | LLM 生成求解代码、沙箱执行、提取结构化结果          |
+| **QuestionSolver**  | 小问求解   | 编排方法→建模→计算→摘要的完整闭环                |
+| **ResultValidator** | 结果验证   | 量纲校验、边界检查、合理性判断、独立复算            |
+| **PaperWriter**     | 报告撰写   | 汇总各小问结果、生成 Markdown 报告、自动转 DOCX     |
+| **Reviewer**        | 全任务审查 | 逻辑一致性、完整性、方法合理性审查                  |
+| **ResearchAgent**   | 证据检索   | 文献溯源、方法依据查找                              |
+
+三道质量门（G0 输入 / GQ 小问 / GF 交付）在关键节点拦截低质量输出，GQ 支持自动重试。
+
+## 项目结构
+
+```text
+MMAgent/
+├── scr/math_modeling_agent/     # 核心引擎（命名空间包，LangGraph 状态图驱动）
+│   ├── main.py                  #   CLI 入口（run / init 子命令）
+│   ├── graph.py                 #   LangGraph 主图构建与节点编排
+│   ├── state.py                 #   全局状态（三区 partition：任务 / 小问 / 产物）
+│   ├── config.py                #   配置加载与环境变量管理
+│   ├── llm.py                   #   LLM 抽象层（三级结构化输出回退机制）
+│   ├── agents/                  #   结构化推理模块（9 个 Agent）
+│   │   ├── base.py              #     Agent 基类（LLM 调用、prompt 渲染、JSON 解析）
+│   │   ├── problem_analyst.py   #     任务理解：读题 → 拆分子问题 → 题型分类
+│   │   ├── method_explorer.py   #     方法探索：联网检索 + LLM 方法决策与备选
+│   │   ├── model_builder.py     #     建模计算：公式构建、数值求解、可视化
+│   │   ├── code_modeler.py      #     代码建模：LLM 生成求解代码并沙箱执行
+│   │   ├── question_solver.py   #     小问求解闭环（方法 → 建模 → 计算 → 摘要）
+│   │   ├── result_validator.py  #     结果验证（量纲、边界、合理性、复算）
+│   │   ├── paper_writer.py      #     报告撰写（汇总各小问结果生成 Markdown）
+│   │   ├── reviewer.py          #     全任务审查（逻辑、完整性、一致性）
+│   │   ├── research_agent.py    #     证据检索（文献 / 方法溯源）
+│   │   └── modeling_agent.py    #     模型评分与批评
+│   ├── gates/                   #   质量门（三道关卡保障输出质量）
+│   │   ├── g0_intake.py         #     G0：输入校验（任务可读性、附件完整性）
+│   │   ├── gq_question.py       #     GQ：小问质量门（方法 / 建模 / 结果）
+│   │   └── gf_delivery.py       #     GF：交付质量门（报告、图表、产物齐全）
+│   ├── schemas/                 #   Pydantic 数据契约（Agent 输入输出强类型）
+│   ├── tools/                   #   确定性工具（无 LLM，可复现）
+│   │   ├── file_tools.py        #     文件读取（CSV / Excel / JSON / .mat）
+│   │   ├── llm_response.py      #     LLM 响应解析（剥离思维链、提取 JSON/代码）
+│   │   ├── tavily_search.py     #     联网搜索封装
+│   │   ├── visualization.py     #     图表生成（Matplotlib）
+│   │   └── docx_converter.py    #     Markdown → DOCX 转换
+│   ├── prompts/                 #   LLM 提示词模板（Markdown 格式，与代码分离）
+│   ├── templates/               #   报告模板（LaTeX / DOCX 样式）
+│   ├── workflow/                #   工作流节点（LangGraph 节点实现）
+│   │   ├── intake.py            #     任务接入与文件校验
+│   │   ├── project_context.py   #     数据画像与全局上下文构建
+│   │   └── question_loop.py     #     小问循环调度（逐题求解 + 质量门）
+│   └── runtime/                 #   运行时基础设施
+│       ├── checkpoint.py        #     LangGraph 检查点（断点续跑）
+│       ├── logger.py            #     结构化 JSON 日志
+│       ├── artifacts.py         #     产物目录管理与文件写入
+│       └── budget.py            #     调用预算控制（搜索次数 / LLM 调用）
+│
+├── server/                      # 服务层（FastAPI 常规包）
+│   ├── main.py                  #   FastAPI 应用入口 + 路由注册 + 前端静态托管
+│   ├── runs.py                  #   运行管理（create / get / list / cancel / delete / execute）
+│   ├── files.py                 #   产物文件服务（图表清单、安全路径解析）
+│   ├── schemas.py               #   API 响应模型（RunSummary / RunDetail / ModelConfig）
+│   └── runs.db                  #   SQLite 运行记录数据库（自动创建）
+│
+├── web/                         # 前端（React 18 + Vite 5 + TypeScript 5）
+│   ├── src/
+│   │   ├── App.tsx              #     根组件与路由状态管理
+│   │   ├── main.tsx             #     React 入口
+│   │   ├── api.ts               #     后端 API 调用封装
+│   │   ├── apiConfigs.ts        #     LLM 配置管理（浏览器本地存储）
+│   │   ├── pages/               #     页面组件
+│   │   │   ├── Home.tsx         #       落地页（能力介绍 + 工作流展示）
+│   │   │   ├── NewTask.tsx      #       新建任务（Submit → Progress → Result）
+│   │   │   ├── History.tsx      #       历史任务列表
+│   │   │   ├── ApiManager.tsx   #       LLM 提供商 / Key / 模型配置
+│   │   │   └── Docs.tsx         #       项目文档（内嵌 README）
+│   │   ├── components/          #     通用组件（Sidebar 等）
+│   │   ├── index.css            #     全局主题（淡蓝科技风）
+│   │   └── forms.css            #     表单与功能页样式
+│   ├── index.html
+│   └── package.json
+│
+├── tests/                       # pytest 测试（mock LLM 与网络，无需 API Key）
+├── examples/                    # 示例任务与附件（problem.md + 数据文件）
+├── artifacts/                   # 运行产物目录（按 run_id 隔离，自动创建）
+├── pyproject.toml               # Python 项目配置与依赖声明
+├── architecture.md              # 架构设计文档（详细设计说明）
+└── AGENTS.md                    # 仓库协作规范（编码风格 / 测试 / 安全）
+```
+
+### 核心引擎工作流
+
+核心引擎基于 **LangGraph StateGraph** 构建，主流程如下：
+
+```
+任务接入 (intake)
+    ↓ G0 输入质量门
+数据画像 (project_context) — 分析附件、生成数据画像报告
+    ↓
+小问循环 (question_loop) — 逐题处理
+    ├─ 选择当前小问
+    ├─ 任务理解 (problem_analyst) — 拆分子问题、判定题型
+    ├─ 方法探索 (method_explorer) — 联网检索 + LLM 方法决策
+    ├─ 建模计算 (model_builder / code_modeler) — 公式/代码求解 + 可视化
+    ├─ 结果验证 (result_validator) — 量纲、边界、合理性校验
+    └─ GQ 小问质量门 — 不通过则重试（最多 3 次）
+    ↓
+报告撰写 (paper_writer) — 汇总结果生成 Markdown → DOCX
+    ↓
+全任务审查 (reviewer) — 逻辑 / 完整性 / 一致性审查
+    ↓ GF 交付质量门
+产物交付 (artifacts)
+```
+
+### 设计要点
+
+- **状态分区**：全局状态分为任务区、小问区、产物区，各 Agent 只读写自己负责的分区，避免状态污染。
+- **三级 LLM 回退**：结构化输出优先使用 `response_format`，不支持时降级为 JSON prompt + 手动解析，最后降级为正则提取，保证兼容性。
+- **确定性与 LLM 分离**：文件读取、数值计算、图表生成等可复现逻辑放在 `tools/`，LLM 仅负责推理与决策。
+- **质量门拦截**：G0 / GQ / GF 三道质量门在关键节点拦截低质量输出，GQ 支持自动重试。
+- **产物可复现**：每次运行独立目录，包含原始输入、中间上下文、求解代码、执行结果与最终报告，全程可追溯。
 
 ## 快速开始
 
-### 环境要求
+#### 环境要求
 
 - Python 3.11+
-- Node.js 18+（仅 Web 界面开发/构建需要）
+- Node.js 18+
 - 推荐使用 [uv](https://docs.astral.sh/uv/) 管理 Python 依赖
 
-### 安装
+#### 安装
 
-```bash
-# Python 依赖（核心引擎 + 服务层）
+```
+bash
+# Python 依赖
 uv sync
+
 # 或标准虚拟环境
 python -m venv .venv
 .venv\Scripts\Activate.ps1   # Windows PowerShell
 pip install -e .
 
-# 前端依赖（仅使用 Web 界面时需要）
+# 前端依赖
 cd web && npm install
 ```
 
-### 配置 LLM
+#### 配置 LLM
 
 在项目根目录创建 `.env` 文件：
 
-```ini
-# OpenAI
-OPENAI_API_KEY=your-api-key
-MODEL_NAME=gpt-4o
-OPENAI_BASE_URL=
+```
+#只支持 OpenAI 兼容格式 的大模型 API
 
-# 或 DeepSeek（兼容 OpenAI 接口）
-DEEPSEEK_API_KEY=your-api-key
-DEEPSEEK_MODEL=deepseek-chat
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+LLM_PROVIDER=custom
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://your-provider.example/v1
+LLM_MODEL=your-model-name
 
-# 联网搜索（方法探索用，可选）
-TAVILY_API_KEY=your-tavily-key
+# Tavily API Key（联网搜索用，可选）
+TAVILY_API_KEY=your_tavily_api_key_here
 ```
 
-### 三种运行方式
+### Agent运行方式
 
 **① 命令行模式** —— 直接运行核心引擎，产物落到 `artifacts/<run_id>/`：
 
 ```bash
-python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx examples/附件2.xlsx
+python -m scr.math_modeling_agent.main run --problem examples/ --data examples/
 
 # 指定输出目录与日志级别
-python -m scr.math_modeling_agent.main run --problem examples/problem.md --data examples/附件1.xlsx --output artifacts/my_run --log-level debug
+python -m scr.math_modeling_agent.main run --problem examples/ --data examples/ --output artifacts/my_run --log-level debug
 ```
 
 任务参数可直接传入文本或文件路径：`--problem examples/problem.md` 或 `--problem "某工厂生产A、B两种产品..."`。
@@ -68,7 +193,7 @@ cd web && npm run build && cd ..
 uvicorn server.main:app --port 8000
 
 # 3. 浏览器访问
-#    http://localhost:8000
+#  http://localhost:8000
 ```
 
 服务启动后自动清理上次未完成的"僵尸"任务，前端产物由根路径静态托管。
@@ -88,45 +213,6 @@ cd web && npm run dev
 
 ---
 
-## Web 界面与 REST API
-
-### 前端页面
-
-| 页面       | 路由状态    | 功能                                                         |
-| ---------- | ----------- | ------------------------------------------------------------ |
-| Home       | `home`    | 落地页：能力介绍、工作流展示、入口引导                       |
-| NewTask    | `new`     | 新建任务：提交（Submit）→ 进度（Progress）→ 结果（Result） |
-| History    | `history` | 历史任务列表，可重新打开查看产物                             |
-| ApiManager | `api`     | LLM 提供商 / Key / Base URL / 模型配置管理                   |
-| Docs       | `docs`    | 项目文档（即本 README，与仓库同步）                          |
-
-### REST API
-
-| 方法       | 路径                                | 说明                                                                  |
-| ---------- | ----------------------------------- | --------------------------------------------------------------------- |
-| `POST`   | `/api/runs`                       | 提交解题任务（表单：任务文本/文件 + 附件 + llm_config），后台异步执行 |
-| `GET`    | `/api/runs`                       | 运行历史列表                                                          |
-| `GET`    | `/api/runs/{run_id}`              | 运行详情（含进度事件与产物清单）                                      |
-| `POST`   | `/api/runs/{run_id}/cancel`       | 中断 queued/running 状态的任务                                        |
-| `DELETE` | `/api/runs/{run_id}`              | 删除运行记录（DB 行 + 产物目录）                                      |
-| `GET`    | `/api/runs/{run_id}/paper`        | 获取报告 Markdown 文本                                                |
-| `GET`    | `/api/runs/{run_id}/figures`      | 获取图表文件清单                                                      |
-| `GET`    | `/api/runs/{run_id}/files/{path}` | 下载任意产物文件（安全限制在 run 目录内）                             |
-| `POST`   | `/api/runs/cleanup-stale`         | 手动清理因重启卡住的僵尸任务                                          |
-| `GET`    | `/healthz`                        | 健康检查（前端已构建时可用）                                          |
-| `GET`    | `/docs`                           | FastAPI 自动生成的交互式 API 文档                                     |
-
-提交任务示例：
-
-```bash
-curl -X POST http://localhost:8000/api/runs \
-  -F "problem_text=某工厂生产A、B两种产品..." \
-  -F "data_files=@examples/附件1.xlsx" \
-  -F 'llm_config={"provider":"deepseek","model":"deepseek-chat"}'
-```
-
----
-
 ## 产物结构
 
 每次运行在 `artifacts/<run_id>/` 下保存独立产物：
@@ -134,112 +220,24 @@ curl -X POST http://localhost:8000/api/runs \
 ```text
 artifacts/<run_id>/
   run.log                 # JSON 结构化运行日志（节点、步骤、质量门、耗时、错误）
-  paper.md                # 报告 Markdown 草稿
+  paper.md                # 报告 Markdown 
   paper.docx              # 报告 DOCX（自动转换）
   review_report.json      # 审查报告
   input/                  # 原始任务与附件拷贝
-  context/                # 数据画像报告、inventory JSON
-  figures/                # 报告图表 PNG
-  questions/<qid>/        # 每小问的建模解题产物（任务驱动建模时生成）
-    solution.py           # LLM 生成的完整求解代码
+  context/                # 数据画像报告
+  figures/                # 图片
+  questions/<qid>/        # 每小问的建模解题产物
+    solution.py           # 生成的完整求解代码
     data.csv              # 传入沙箱执行的输入数据
-    result.json           # 执行结果（results + metrics + 方法信息）
+    result.json           # 执行结果
 ```
 
-> `questions/<qid>/` 仅在"任务驱动建模"路径（配置了 LLM 且题型为 optimization / stochastic_optimization / evaluation / prediction / simulation）生成；无 LLM 或回退到预设方法时，该小问不产生代码文件（计算由确定性内置函数完成）。
-
-### 运行日志
+## 运行日志
 
 每次运行实时输出节点进度（开始/完成/耗时/状态更新），并写入 `run.log`：
 
 - **实时查看**：终端实时显示每个智能体节点与小问的进度；另一终端可用 `Get-Content -Wait artifacts/<run_id>/run.log`（Windows）或 `tail -f`（Linux/macOS）跟随日志。
 - **日志级别**：`--log-level debug|info|warning|error` 控制 `run.log` 详细程度（默认 `info`）。
-- **日志内容**：每个节点（intake / context / select_question / solve_question / validate_result / 各质量门）的开始、完成、耗时与失败；每个小问的解题步骤（问题澄清、方法探索、建模计算、可复用摘要）；G0/GQ/GF 质量门动作与失败项。
+- **日志内容**：每个节点（intake / context / select_question / solve_question）的开始、完成、耗时与失败；每个小问的解题步骤；G0/GQ/GF 质量门动作与失败项。
 
 ---
-
-## 项目结构
-
-```text
-MMAgent/
-├── scr/math_modeling_agent/     # 核心引擎（命名空间包，LangGraph 状态图）
-│   ├── main.py                  #   CLI 入口（run / init）
-│   ├── graph.py                 #   LangGraph 主图构建
-│   ├── state.py                 #   项目状态三区 partition
-│   ├── config.py                #   配置管理
-│   ├── llm.py                   #   LLM 抽象与三级结构化输出回退
-│   ├── agents/                  #   结构化推理模块（9 个 Agent）
-│   │   ├── base.py              #     Agent 基类（LLM 管理、prompt 渲染）
-│   │   ├── problem_analyst.py   #     任务理解与小问拆分
-│   │   ├── method_explorer.py   #     联网搜索 + LLM 方法探索与决策
-│   │   ├── model_builder.py     #     建模计算与可视化
-│   │   ├── question_solver.py   #     小问求解闭环
-│   │   ├── result_validator.py  #     题型验证
-│   │   ├── paper_writer.py      #     报告撰写
-│   │   ├── reviewer.py          #     全任务审查
-│   │   ├── research_agent.py    #     证据检索
-│   │   └── modeling_agent.py    #     模型评分与批评
-│   ├── gates/                   #   质量门（G0 输入 / GQ 小问 / GF 交付）
-│   ├── schemas/                 #   Pydantic 数据契约
-│   ├── tools/                   #   确定性工具（文件读取/搜索/可视化/表格/转 DOCX）
-│   ├── prompts/                 #   LLM 提示词模板
-│   ├── templates/               #   报告模板
-│   ├── workflow/                #   工作流节点
-│   └── runtime/                 #   运行时（检查点、日志、产物、预算）
-│
-├── server/                      # 服务层（FastAPI 常规包）
-│   ├── main.py                  #   FastAPI 入口 + 路由 + 前端静态托管
-│   ├── runs.py                  #   运行管理（create/get/list/cancel/delete/execute）
-│   ├── files.py                 #   产物文件解析（图表清单、安全路径解析）
-│   ├── schemas.py               #   API 响应模型（RunSummary/RunDetail/ModelConfig）
-│   └── runs.db                  #   SQLite 运行记录数据库
-│
-├── web/                         # 前端（React + Vite + TypeScript）
-│   ├── src/
-│   │   ├── App.tsx              #   根组件，状态路由
-│   │   ├── main.tsx             #   React 入口
-│   │   ├── api.ts               #   后端 API 客户端
-│   │   ├── apiConfigs.ts        #   LLM 配置管理
-│   │   ├── pages/               #   Home / NewTask / History / ApiManager / Docs
-│   │   │                         #   NewTask 内含 Submit / Progress / Result 子视图
-│   │   ├── components/          #   Sidebar 等通用组件
-│   │   ├── index.css            #   全局主题（淡蓝科技风）
-│   │   └── forms.css            #   表单与功能页样式
-│   ├── index.html
-│   └── package.json
-│
-├── tests/                       # 单元测试
-├── examples/                    # 任务与附件样例
-├── artifacts/                   # 运行产物输出目录（按 run_id 隔离）
-├── pyproject.toml               # Python 项目配置（v1.1.0）
-├── architecture.md              # 目标架构说明
-├── plan.md                      # 实施计划与验收标准
-└── LICENSE
-```
-
----
-
-## 技术栈
-
-**核心引擎**
-
-- **LangGraph** — `StateGraph` 主编排图，条件边实现质量门路由、小问循环与回退重试；`MemorySaver` 检查点支持断点恢复。
-- **LangChain + langchain-openai** — 统一 LLM 抽象层，支持 OpenAI 与 DeepSeek 等 OpenAI 兼容接口。
-- **Pydantic / pydantic-settings** — 全部状态、配置与 LLM 输出的数据契约，端到端类型安全与自动校验。
-- **NumPy / SciPy / scikit-learn** — 回归预测、聚类分类、统计检验等数值计算。
-- **PuLP** — 线性规划与整数规划求解。
-- **Matplotlib** — 图表生成（数据分布、拟合残差、方案比较、敏感性分析）。
-- **Pandas + openpyxl** — 多格式文件读取与数据画像，Excel 自动遍历全部 Sheet。
-- **scipy.io + h5py** — MATLAB `.mat` 读取（v4/v6/v7 与 v7.3 HDF5）。
-- **Tavily Search API** — 方法探索阶段中英文双语联网搜索。
-- **tenacity** — API 调用重试与容错；**python-docx** — 报告 Markdown 到 DOCX 转换；**python-dotenv** — 环境变量管理。
-
-**服务层**
-
-- **FastAPI + Uvicorn** — 异步 Web 服务，后台线程执行同步 LangGraph 图，进度回调写回 SQLite。
-- **SQLite** — 轻量运行记录存储（`runs.db`），无需额外数据库配置。
-
-**前端**
-
-- **React 18 + Vite 5 + TypeScript 5** — 单页应用，状态路由，构建产物由服务层静态托管。
-- **marked** — 项目文档（README）Markdown 渲染。
