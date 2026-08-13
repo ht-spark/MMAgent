@@ -98,17 +98,17 @@ function ProgressCard({
         <div className="progress-budget">
           <div className="progress-budget-title">
             {budgetReq.phase === 'initial'
-              ? '设置 G0 输入质量门预算'
+              ? '设置输入信息质量检查预算'
               : budgetReq.phase === 'delivery'
-                ? '设置 GF 交付质量门预算'
+                ? '设置最后交付前质量检查预算'
                 : `设置${fmtQid(budgetReq.question_id)}预算`}
           </div>
           <p>
             {budgetReq.phase === 'initial'
-              ? 'G0 未通过时，系统会重做任务理解和输入检查，并消耗一次重试预算。'
+              ? '输入信息质量检查未通过时，系统会重做任务理解和输入检查，并消耗一次重试预算。'
               : budgetReq.phase === 'delivery'
-                ? 'GF 未通过时，系统会修订报告并消耗一次交付修订预算。'
-                : '每个子任务独立配置检索、GQ 验证迭代和代码修复预算；建模方法仍由 LLM 根据问题直接推理。'}
+                ? '最后交付前质量检查未通过时，系统会修订报告并消耗一次交付修订预算。'
+                : '每个子任务独立配置检索、子任务质量检查迭代和代码修复预算；建模方法仍由 LLM 根据问题直接推理。'}
           </p>
           <div className="budget-fields">
             {BUDGET_FIELDS[budgetReq.phase].map((field) => (
@@ -138,7 +138,7 @@ function ProgressCard({
         <div className="progress-clarification">
           <div className="progress-clarification-title">输入材料无法支撑建模</div>
           <p className="progress-clarification-desc">
-            G0 输入质量门检测到硬失败，当前材料不足以开始可靠建模。请选择终止任务，或上传补充材料后继续。
+            输入信息质量检查未通过，当前材料不足以开始可靠建模。请选择终止任务，或上传补充材料后继续。
           </p>
           {clarificationReq.failed_checks.length > 0 && (
             <div className="progress-clarification-checks">
@@ -200,13 +200,13 @@ function ProgressCard({
 }
 
 const BUDGET_FIELDS: Record<BudgetPhase, { key: string; label: string }[]> = {
-  initial: [{ key: 'intake_retry', label: 'G0 输入质量门重试次数' }],
+  initial: [{ key: 'intake_retry', label: '输入信息质量检查重试次数' }],
   question: [
     { key: 'search', label: '联网检索次数' },
-    { key: 'validation', label: 'GQ 验证迭代次数' },
+    { key: 'validation', label: '子任务质量检查迭代次数' },
     { key: 'code_repair', label: '代码修复次数' },
   ],
-  delivery: [{ key: 'paper_revision', label: 'GF 交付质量门修订次数' }],
+  delivery: [{ key: 'paper_revision', label: '最后交付前质量检查修订次数' }],
 }
 
 type BudgetReq = {

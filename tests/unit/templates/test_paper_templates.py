@@ -4,7 +4,6 @@ from __future__ import annotations
 import pytest
 
 from scr.templates.paper_templates import (
-    METHOD_LIBRARY,
     UNIFIED_TEMPLATE,
     PaperTemplate,
     SectionSpec,
@@ -49,25 +48,6 @@ class TestUnifiedTemplate:
         titles = [s.title for s in UNIFIED_TEMPLATE.fixed_sections]
         assert any("重述" in t for t in titles)
         assert any("参考文献" in t for t in titles)
-
-
-# ---------------------------------------------------------------------------
-# 方法库测试
-# ---------------------------------------------------------------------------
-
-
-class TestMethodLibrary:
-    """验证方法库按任务类型组织且非空。"""
-
-    def test_categories(self):
-        """方法库应覆盖五类任务。"""
-        expected = {"机理建模", "优化决策", "评价排序", "预测分析", "数据挖掘"}
-        assert expected <= set(METHOD_LIBRARY.keys())
-
-    def test_methods_nonempty(self):
-        """每类任务下应有若干方法。"""
-        for category, methods in METHOD_LIBRARY.items():
-            assert len(methods) >= 3, f"{category} 方法数量不足"
 
 
 # ---------------------------------------------------------------------------
@@ -158,11 +138,11 @@ class TestRenderOutlinePrompt:
     """测试 render_outline_prompt 生成的 LLM 引导提示词。"""
 
     def test_prompt_contains_key_parts(self):
-        """提示词应包含章节结构、摘要要求、方法库和写作要点。"""
+        """提示词应包含章节结构、摘要要求和写作要点。"""
         prompt = render_outline_prompt(3)
         assert "章节结构与写作要求" in prompt
         assert "摘要写作要求" in prompt
-        assert "可选方法库" in prompt
+        assert "可选方法库" not in prompt
         assert "全局写作要点" in prompt
         assert "问题一的建模与求解" in prompt
         assert "问题三的建模与求解" in prompt

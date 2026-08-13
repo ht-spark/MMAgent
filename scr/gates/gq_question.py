@@ -121,20 +121,9 @@ def check_gq(state: dict) -> GateResult:
             failed_checks.append("computation_error")
         failed_checks.extend(_check_task_deliverables(current_result))
 
-    # 检查: 完成题型相符的验证（Phase 5）
+    # 验证节点只记录计算证据与风险；GQ 自己基于题目契约和原始结果决定是否归档。
     if not current_result.validation:
         failed_checks.append("validation_empty")
-    else:
-        val_status = current_result.validation.get("status", "")
-        if val_status == "failed":
-            # 验证失败但不是致命错误时，记录风险而非阻塞
-            val_checks = current_result.validation.get("checks", [])
-            has_error = any(
-                c.get("severity") == "error" and not c.get("passed", True)
-                for c in val_checks
-            )
-            if has_error:
-                failed_checks.append("validation_failed")
 
     return _build_gate_result(failed_checks, state)
 

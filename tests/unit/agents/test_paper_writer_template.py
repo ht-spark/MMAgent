@@ -280,30 +280,30 @@ class TestWriteAbstract:
         abstract = writer._write_abstract(validated_results, sections)
         assert "**关键词**" in abstract
 
-    def test_abstract_includes_actual_keywords(
+    def test_abstract_keywords_exclude_internal_strategy(
         self,
         writer: PaperWriter,
         validated_results: dict[str, QuestionResult],
     ):
-        """摘要关键词应来自各问实际采用的方法。"""
+        """摘要关键词不应来自内部方法或任务标签。"""
         writer._template = get_template()
         sections = writer._build_outline(validated_results)
         abstract = writer._write_abstract(validated_results, sections)
-        # 关键词来自 question_results 的实际方法
-        assert "NSGA-II" in abstract or "层次分析法" in abstract
+        assert "NSGA-II" not in abstract
+        assert "层次分析法" not in abstract
 
-    def test_abstract_methods_from_results_only(
+    def test_abstract_excludes_internal_strategy(
         self,
         writer: PaperWriter,
         validated_results: dict[str, QuestionResult],
     ):
-        """摘要方法论只应包含各问实际方法，不掺入模板推荐方法。"""
+        """摘要不应暴露任何内部方法或问题分类。"""
         writer._template = get_template()
         sections = writer._build_outline(validated_results)
         abstract = writer._write_abstract(validated_results, sections)
-        # 统一模板不再提供 method_preferences，未实际使用的方法不应出现
-        assert "蒙特卡洛模拟" not in abstract
-        assert "马尔科夫链模型" not in abstract
+        assert "层次分析法" not in abstract
+        assert "NSGA-II" not in abstract
+        assert "评价/排序" not in abstract
 
     def test_abstract_template_independent(
         self,

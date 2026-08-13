@@ -1,22 +1,13 @@
-"""按题型验证计算结果是否可信、完整且可复现。
+"""记录子任务的计算证据与已知风险。
 
 职责：
-  1. 按题型组合检查项，对 ``QuestionResult.computation`` 做确定性验证
-  2. 通用检查：计算状态、结果完整性、指标合理性、可复现性、产物与假设
-  3. 题型专项检查：
-     - 评价/排序 (evaluation)：指标方向、权重和、排名完整性、排名稳定性（权重扰动）
-     - 预测/回归 (prediction)：R²、残差分布、基线比较、时间泄漏检查
-     - 优化/规划 (optimization)：约束可行性、目标值、边界情形、参数扰动
-     - 分类/聚类 (classification/clustering)：指标、样本划分、稳定性
-     - 仿真/机理 (simulation/mechanism)：量纲、边界条件、重复试验、参数敏感性
-  4. 生成验证报告（status/checks/narrative/risks）与结果叙述
+  1. 对 ``QuestionResult`` 记录计算状态、输出、数值有限性、模型要素和产物
+  2. 将缺口记录为风险，不按任务类别推断应有的公式、指标或试验
+  3. 生成供 GQ 与报告写作使用的证据报告
 
 设计要点：
-  - 确定性验证：仅用 numpy 做数值与逻辑检查，不依赖 LLM
-  - 优雅降级：缺数据时记录风险而非崩溃
-  - 权重扰动：对权重加 ±10% 噪声后重算排名，检查 top-3 是否稳定
-  - 预算友好：验证迭代预算由质量门控制，本验证器只产出报告
-  - 同时检查单位、量级、数据泄漏、结论边界和任务约束。
+  - 不承担归档、重试或阻塞决策；这些由 GQ 统一完成
+  - 不按预测、优化、仿真等粗粒度类别套用专项检查
 """
 from __future__ import annotations
 
@@ -88,7 +79,7 @@ class ResultValidator:
     # ------------------------------------------------------------------
 
     def validate(self, question_result: QuestionResult) -> dict[str, Any]:
-        """对一个小问的结果执行题型匹配的验证。
+        """记录一个小问的计算证据和风险。
 
         Args:
             question_result: status="validating" 的小问结果包。
@@ -103,42 +94,15 @@ class ResultValidator:
               - summary: 检查统计
         """
         qid = question_result.question_id
-        interp = question_result.problem_interpretation
-        math_task = interp.math_task if interp else "composite"
-
-        # 键名归一化：兼容 LLM 提示词契约（solution/objective/r2）与预设方法契约（幂等）
+        # 键名归一化只用于统一读取结果，不推断题型或预设方法。
         if question_result.computation:
             from ..tools.result_keys import normalize_computation
 
             normalize_computation(question_result.computation)
 
-        checks: list[dict[str, Any]] = []
-        checks.extend(self._validate_general(question_result))
-
-        if math_task == "evaluation":
-            checks.extend(self._validate_evaluation(question_result))
-        elif math_task == "prediction":
-            checks.extend(self._validate_prediction(question_result))
-        elif math_task in ("optimization", "stochastic_optimization"):
-            checks.extend(self._validate_optimization(question_result))
-            if math_task == "stochastic_optimization":
-                checks.extend(self._validate_stochastic(question_result))
-        else:
-            checks.extend(self._validate_generic(question_result, math_task))
-
-        # 综合判定状态
-        has_error = any(
-            (not c["passed"]) and c["severity"] == _SEV_ERROR for c in checks
-        )
-        has_warning = any(
-            (not c["passed"]) and c["severity"] == _SEV_WARNING for c in checks
-        )
-        if has_error:
-            status = "failed"
-        elif has_warning:
-            status = "warning"
-        else:
-            status = "passed"
+        checks = self._validate_evidence(question_result)
+        has_warning = any(not c["passed"] for c in checks)
+        status = "warning" if has_warning else "passed"
 
         risks = [
             c["detail"]
@@ -146,11 +110,11 @@ class ResultValidator:
             if (not c["passed"]) and c["severity"] in (_SEV_WARNING, _SEV_ERROR)
         ]
 
-        narrative = self._build_narrative(question_result, checks, risks, math_task)
+        narrative = self._build_evidence_narrative(question_result, risks)
 
         report: dict[str, Any] = {
             "status": status,
-            "math_task": math_task,
+            "math_task": "",
             "checks": checks,
             "narrative": narrative,
             "risks": risks,
@@ -170,12 +134,66 @@ class ResultValidator:
 
         print(
             f"[validator] 小问 {qid} 验证完成: {status} "
-            f"(task={math_task}, checks={len(checks)}, "
+            f"(checks={len(checks)}, "
             f"errors={report['summary']['errors']}, "
             f"warnings={report['summary']['warnings']})"
         )
 
         return report
+
+    def _validate_evidence(self, question_result: QuestionResult) -> list[dict[str, Any]]:
+        """Check recorded evidence without deriving requirements from a task label."""
+        computation = question_result.computation or {}
+        results = computation.get("results", {})
+        metrics = computation.get("metrics", {})
+        formulation = question_result.formulation or {}
+        status = computation.get("status", "unknown")
+        checks = [
+            _make_check(
+                "computation_recorded", "evidence", bool(computation),
+                _SEV_INFO if computation else _SEV_WARNING,
+                "已记录计算过程" if computation else "未记录计算过程",
+            ),
+            _make_check(
+                "computation_status", "evidence", status in {"success", "optimal", "feasible"},
+                _SEV_INFO if status in {"success", "optimal", "feasible"} else _SEV_WARNING,
+                f"计算状态: {status}",
+            ),
+            _make_check(
+                "outputs_recorded", "evidence", bool(results or metrics),
+                _SEV_INFO if results or metrics else _SEV_WARNING,
+                "已记录计算输出" if results or metrics else "未记录计算输出",
+            ),
+            _make_check(
+                "model_recorded", "evidence", bool(formulation),
+                _SEV_INFO if formulation else _SEV_WARNING,
+                "已记录模型表述" if formulation else "未记录模型表述",
+            ),
+            _make_check(
+                "assumptions_recorded", "evidence", bool(question_result.assumptions),
+                _SEV_INFO if question_result.assumptions else _SEV_WARNING,
+                "已记录模型假设" if question_result.assumptions else "未记录模型假设",
+            ),
+        ]
+        non_finite = [
+            key for key, value in metrics.items()
+            if isinstance(value, float) and not np.isfinite(value)
+        ]
+        checks.append(_make_check(
+            "numeric_finiteness", "evidence", not non_finite,
+            _SEV_INFO if not non_finite else _SEV_WARNING,
+            "数值指标均为有限值" if not non_finite else f"存在非有限数值: {non_finite}",
+        ))
+        return checks
+
+    @staticmethod
+    def _build_evidence_narrative(
+        question_result: QuestionResult, risks: list[str],
+    ) -> str:
+        """Build a neutral evidence summary for the report and GQ."""
+        if risks:
+            return "已记录计算证据与模型材料；仍需关注：" + "；".join(risks)
+        return "计算证据、模型表述与假设记录完整，供子任务质量检查进一步核验。"
 
     # ------------------------------------------------------------------
     # 通用检查

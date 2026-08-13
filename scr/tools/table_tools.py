@@ -592,29 +592,13 @@ def generate_latex_formula(
     if obj_func:
         obj_func = _unicode_to_latex(obj_func)
 
-    if math_task == "optimization":
-        formulas.extend(_build_optimization_formulas(
-            obj_func, decision_vars, constraints, problem_context
-        ))
-    elif math_task == "stochastic_optimization":
-        formulas.extend(_build_stochastic_formulas(
-            obj_func, decision_vars, constraints, problem_context
-        ))
-    elif math_task == "evaluation":
-        formulas.extend(_build_evaluation_formulas())
-    elif math_task == "prediction":
-        formulas.extend(_build_prediction_formulas(problem_context))
-    elif math_task == "simulation":
-        formulas.extend(_build_simulation_formulas(problem_context))
-    else:
-        # 通用：如果有自定义目标函数则使用
-        if obj_func:
-            formulas.append(("目标函数", obj_func))
-        if constraints:
-            math_constraints = [c for c in constraints if _is_mathematical_constraint(c)]
-            for c in math_constraints[:3]:
-                c_latex = _unicode_to_latex(c)
-                formulas.append(("约束条件", c_latex))
+    # 论文只展示模型构建阶段实际记录的公式。不得依据任务分类或方法名
+    # 补写线性规划、回归、蒙特卡洛等通用公式，否则会掩盖模型信息缺失。
+    if obj_func:
+        formulas.append(("核心关系", obj_func))
+    for constraint in constraints:
+        if _is_mathematical_constraint(constraint):
+            formulas.append(("约束条件", _unicode_to_latex(constraint)))
 
     return formulas
 

@@ -784,6 +784,88 @@ _STATUS_LABELS: dict[str, str] = {
 }
 
 
+_INTERNAL_WRITING_TERMS = ("LLM", "问题驱动建模", "候选方法")
+
+
+def _public_model_label(formulation: dict[str, Any]) -> str:
+    """Return a paper-facing model label without exposing workflow internals."""
+    description = str(formulation.get("description", "")).strip()
+    if description and not any(term in description for term in _INTERNAL_WRITING_TERMS):
+        return description
+    return "本题数学模型"
+
+
+def _write_model_from_evidence(qid: str, formulation: dict[str, Any]) -> str:
+    """Describe only the recorded model elements; never infer a preset method."""
+    parts: list[str] = []
+    description = _public_model_label(formulation)
+    if description != "本题数学模型":
+        parts.append(description)
+    variables = formulation.get("decision_variables", [])
+    if variables:
+        parts.append(f"模型以{', '.join(map(str, variables[:8]))}等变量刻画题设对象及其状态。")
+    objective = formulation.get("objective_function", "")
+    if objective:
+        parts.append(f"核心数学关系由“{objective}”给出，并与题设条件共同确定计算过程。")
+    constraints = formulation.get("constraints", [])
+    if constraints:
+        parts.append(f"模型同时纳入{len(constraints)}项已记录约束，以保证计算过程符合题设边界。")
+    if not parts:
+        return f"问题{qid}的模型要素尚未完整记录，无法补写未提供的变量、方程或约束。"
+    return "\n\n".join(parts)
+
+
+def _write_results_from_evidence(qid: str, computation: dict[str, Any]) -> str:
+    """Summarize recorded scalar outputs without task-type assumptions."""
+    status = computation.get("status", "unknown")
+    if status in {"failed", "error", "infeasible"}:
+        return "当前计算未形成可用于论文结论的有效结果，需修正模型或参数后重新求解。"
+    evidence = {
+        **_as_mapping(computation.get("results", {}), f"{qid}.results"),
+        **_as_mapping(computation.get("metrics", {}), f"{qid}.metrics"),
+    }
+    displayed = [
+        f"{key}={_fmt_numeric(value)}"
+        for key, value in evidence.items()
+        if not isinstance(value, dict)
+    ]
+    if not displayed:
+        return f"问题{qid}的计算结果见本节表格和图表；未记录可直接展开的标量结论。"
+    return (
+        "计算得到的关键结果为：" + "；".join(displayed[:6])
+        + "。上述输出仅在题设条件和已声明假设下成立。"
+    )
+
+
+def _write_conclusion_from_evidence(qid: str, computation: dict[str, Any]) -> str:
+    """Produce a bounded conclusion based on available computation evidence."""
+    if computation.get("status") in {"failed", "error", "infeasible"}:
+        return f"问题{qid}尚未形成可交付结论，需要补充有效计算结果。"
+    return f"问题{qid}的结论以本节列示的模型计算结果为依据，适用范围限于题设条件和已声明的模型假设。"
+
+
+def _validation_summary_from_evidence(qid: str, validation: dict[str, Any]) -> str:
+    """Describe recorded validation evidence without inferring a task-specific test."""
+    checks = validation.get("checks", [])
+    if not checks:
+        return f"问题{qid}未记录可展开的验证明细，结论仅限于已展示的计算输出。"
+    passed = sum(1 for check in checks if isinstance(check, dict) and check.get("passed"))
+    return f"本问记录了{len(checks)}项结果核查，其中{passed}项通过；具体核查内容见下表。"
+
+
+def _remove_internal_writing_terms(text: str) -> str:
+    """Keep implementation vocabulary out of the delivered paper."""
+    replacements = {
+        "LLM 问题驱动建模": "本题数学模型",
+        "LLM问题驱动建模": "本题数学模型",
+        "LLM": "",
+        "Agent": "",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return text
+
+
 class PaperWriter:
     """报告写作 Agent（确定性模板，无 LLM）。
 
@@ -880,6 +962,9 @@ class PaperWriter:
 
             text = strip_thinking(str(text))
             text = self._strip_markdown_headers(text)
+            if any(term in text for term in _INTERNAL_WRITING_TERMS):
+                print(f"[writer] LLM 起草 {template_name} 包含内部流程术语，改用事实型正文")
+                return None
             return text or None
         except Exception as e:
             print(f"[writer] LLM 起草 {template_name} 失败，回退模板: {e}")
@@ -1056,11 +1141,7 @@ class PaperWriter:
         覆盖：全局写作要点、摘要要求、问题章节五段式结构、可选方法库。
         这样 LLM 写作时严格遵循统一模板规范，而不是自由发挥。
         """
-        from ..templates.paper_templates import (
-            METHOD_LIBRARY,
-            UNIFIED_TEMPLATE,
-            build_problem_section,
-        )
+        from ..templates.paper_templates import UNIFIED_TEMPLATE, build_problem_section
 
         parts: list[str] = []
 
@@ -1076,14 +1157,7 @@ class PaperWriter:
             )
 
         problem_guide = build_problem_section(1).writing_guide
-        parts.append("【问题章节五段式结构】\n" + problem_guide)
-
-        lib_lines = [
-            f"- {cat}：{'、'.join(methods)}"
-            for cat, methods in METHOD_LIBRARY.items()
-        ]
-        if lib_lines:
-            parts.append("【可选方法库（按每问任务类型选择，说明依据）】\n" + "\n".join(lib_lines))
+        parts.append("【问题章节组织原则】\n" + problem_guide)
 
         return "\n\n".join(parts)
 
@@ -1287,29 +1361,9 @@ class PaperWriter:
             )
         lines.append("")
 
-        # 方法论概述（仅使用各问实际采用的方法，不掺入模板推荐方法）
-        method_set = []
-        task_set = set()
-        for qid in sorted_qids:
-            result = question_results[qid]
-            findings = result.findings
-            method = findings.get("selected_method", "")
-            if method and method not in method_set:
-                method_set.append(method)
-            task_set.add(findings.get("math_task", ""))
-
-        all_methods = list(method_set)
-
-        methods_str = "、".join(all_methods[:5])
-        # 根据任务类型生成方法论描述
-        task_labels = [_TASK_LABELS.get(t, t) for t in task_set if t]
-        task_str = "与".join(sorted(set(task_labels))) if task_labels else "数学建模"
         lines.append(
-            f"在方法论层面，本文综合运用{methods_str}等方法，"
-            f"围绕{task_str}任务展开系统建模。"
-            f"建模过程中注重数据的预处理与特征提取，"
-            f"通过严格的质量检验确保数值结果的可靠性，"
-            f"并借助可视化手段对求解结果进行多维度呈现。"
+            "全文以题设条件为起点，将已归档的变量、数学关系、约束和计算输出"
+            "组织为可核查的建模过程；文中的数值结论、表格和图形均对应实际求解记录。"
         )
         lines.append("")
 
@@ -1318,49 +1372,14 @@ class PaperWriter:
         lines.append("")
         for qid in sorted_qids:
             result = question_results[qid]
-            findings = result.findings
-            method = findings.get("selected_method", "未知方法")
-            task = findings.get("math_task", "未知")
-            task_label = _TASK_LABELS.get(task, task)
-            key_result = findings.get("key_result", "")
-
-            # 提取关键数值
             computation = result.computation
-            results = computation.get("results", {})
-            metrics = computation.get("metrics", {})
-
-            result_summary = ""
-            if task in ("optimization", "stochastic_optimization"):
-                obj = results.get("optimal_objective")
-                if obj is not None:
-                    result_summary = f"最优目标值为 {obj:.4f}"
-            elif task == "prediction":
-                r2 = metrics.get("r_squared")
-                rmse = metrics.get("rmse")
-                if r2 is not None:
-                    result_summary = f"R² = {r2:.4f}"
-                    if rmse is not None:
-                        result_summary += f"，RMSE = {rmse:.4f}"
-            elif task == "simulation":
-                n_sim = metrics.get("n_simulations")
-                if n_sim is not None:
-                    result_summary = f"完成 {int(n_sim)} 次模拟"
-
-            line = f"针对问题 {qid}（{task_label}类），采用 {method} 方法"
-            if result_summary:
-                line += f"，{result_summary}"
-            elif key_result:
-                line += f"，得到 {key_result}"
-            line += "。"
-            lines.append(line)
+            lines.append(f"针对问题 {qid}，{_write_results_from_evidence(qid, computation)}")
 
         # 总体结论（基于实际结果生成结论）
-        category_desc = self._get_category_description(template)
         lines.append("")
         lines.append(
-            f"综上，本文构建的模型体系在{category_desc}中取得了良好的应用效果，"
-            "各子问题的求解结果均通过了严格的质量检验，具有可复现性。"
-            "所提方法论框架可为同类问题的建模与求解提供参考。"
+            "综上，结论以各问已展示的模型与计算证据为限；其适用性受题设条件、"
+            "数据范围和已声明假设约束。"
         )
 
         # 关键词（仅取各问实际关键词；模板中的 keyword_suggestions
@@ -1454,49 +1473,18 @@ class PaperWriter:
 
         if project_context is None or not project_context.questions:
             lines.append(
-                "本文问题涉及多个子问题，各子问题之间存在递进关系，"
-                "需要综合运用不同的数学建模方法进行求解。"
+                "本文围绕题设对象、已知条件和所需输出展开，并以各问的实际建模记录组织后续论述。"
             )
             return "\n".join(lines)
 
         n_questions = len(project_context.questions)
-
-        # 分析问题类型分布
-        task_types = set()
-        for q in project_context.questions:
-            if hasattr(q, "math_task") and q.math_task:
-                task_types.add(q.math_task)
-
-        # 生成分析文本
         lines.append(
             f"本题共包含 {n_questions} 个子问题，"
-            f"各子问题之间存在递进关系，后一问往往在前一问的基础上"
-            f"增加新的约束条件或不确定性因素。"
+            "各问的衔接关系以题目陈述、输入条件和前序计算结果为准。"
         )
-        lines.append("")
-
-        # 问题间关系分析
-        if n_questions >= 2:
-            lines.append(
-                "从问题结构来看，各子问题呈现出由简到繁、由确定性到不确定性的递进特征："
-            )
-            lines.append(
-                "- 前期问题通常在确定性假设下建立基础模型；"
-            )
-            lines.append(
-                "- 中期问题引入不确定性因素，需要扩展模型以适应参数波动；"
-            )
-            lines.append(
-                "- 后期问题进一步考虑变量间的关联性，需要综合模拟与优化方法。"
-            )
-            lines.append("")
-
-        # 解题思路
         lines.append(
-            "针对上述问题特点，本文采用分步求解的策略："
-            "首先对数据进行全面画像和预处理，"
-            "然后依次对各子问题进行建模、求解和验证，"
-            "最后整合各问结果完成报告写作。"
+            "报告对每一问分别呈现已建立的数学关系、实际计算输出和可核查的验证信息，"
+            "不以预设的问题类别或通用方法框架替代具体分析。"
         )
 
         return "\n".join(lines)
@@ -1640,16 +1628,10 @@ class PaperWriter:
         self._tbl_counter += 1
 
         lines: list[str] = [
-            f"本章对 {n} 个子问题分别进行模型建立、求解、结果分析和检验。"
-            f"每个子问题遵循\"问题分析 — 方法选择 — 模型建立 — 求解与结果 — 结果检验 — 结论\""
-            f"的完整叙述结构，确保建模过程的系统性和完整性。",
+            f"本章汇集 {n} 个子问题的建模与求解记录。每问只呈现与该问相关的"
+            "模型关系、实际求解结果、图表和验证证据；章节内的叙述顺序由材料本身决定。",
             "",
-            f"在建模过程中，本文注重以下几点：（1）根据各子问题的特点选择合适的数学方法；"
-            f"（2）建立能够反映问题本质的数学模型，包括合理设定决策变量、目标函数和约束条件；"
-            f"（3）通过严格的质量检验确保求解结果的可靠性；"
-            f"（4）对结果进行深入分析，提炼有价值的结论。",
-            "",
-            f"各子问题的求解结果汇总如下表所示。",
+            "各子问题的关键计算结果汇总如下表所示。",
             "",
             f"**表 {self._tbl_counter}：各子问题求解结果汇总**",
             "",
@@ -1913,20 +1895,20 @@ class PaperWriter:
             "selected_method",
             decision_record.get("selected_method", "未知方法"),
         )
+        decision_record = {}
+        task = ""
 
         # --- 问题描述 ---
         lines.append(f"#### {qid}.1 问题描述")
         lines.append("")
         if interp is not None:
-            task_label = _TASK_LABELS.get(interp.math_task, interp.math_task)
             # 基于 ProblemInterpretation 生成问题描述
             if interp.math_task_description:
                 lines.append(interp.math_task_description)
                 lines.append("")
             else:
                 lines.append(
-                    f"本问要求建立{task_label}模型，"
-                    f"对给定问题进行数学建模与求解。"
+                    "本问围绕题设给定的对象、条件、约束和目标建立可计算的数学关系。"
                 )
                 lines.append("")
 
@@ -1946,8 +1928,7 @@ class PaperWriter:
                 )
             if analysis_parts:
                 lines.append(
-                    f"根据问题分析，{ '，'.join(analysis_parts)}。"
-                    f"本问的求解需要综合运用{task_label}相关的理论与方法。"
+                    f"本问需明确{ '，'.join(analysis_parts)}。"
                 )
                 lines.append("")
         else:
@@ -1955,7 +1936,7 @@ class PaperWriter:
 
         # --- 方法选择 ---
         lines.append("")
-        lines.append(f"#### {qid}.2 方法选择")
+        lines.append(f"#### {qid}.2 建模思路")
         lines.append("")
         decision = decision_record
         family = decision.get("selected_family", "")
@@ -1965,14 +1946,12 @@ class PaperWriter:
         alternatives = decision.get("alternatives", [])
 
         lines.append(
-            f"针对本问的特点，选用**{method}**进行建模求解。"
+            "针对本问的特点，围绕题设条件建立可计算的数学关系。"
         )
         lines.append("")
 
         # 学术性方法描述
-        lines.append(_academic_method_description(method, task, qid))
-        lines.append("")
-        lines.append(self._professional_method_rationale(qid, method, task, result))
+        lines.append("本问围绕题设对象、已知条件、约束边界和所需输出建立具体数学关系；内部的探索过程不作为论文中的模型名称。")
         lines.append("")
 
         if reason:
@@ -2025,9 +2004,6 @@ class PaperWriter:
                     interp.math_task_description if interp and interp.math_task_description
                     else f"小问 {qid}"
                 ),
-                task=task,
-                result_form=interp.result_form if interp else "",
-                method=method,
                 decision_variables=formulation.get("decision_variables", []),
                 objective_function=formulation.get("objective_function", ""),
                 constraints=formulation.get("constraints", []),
@@ -2036,7 +2012,7 @@ class PaperWriter:
                 writing_guide=self._writing_guide,
             )
             if not model_analysis:
-                model_analysis = self._build_model_analysis(method, task, qid, formulation)
+                model_analysis = _write_model_from_evidence(qid, formulation)
             if model_analysis:
                 lines.append(model_analysis)
                 lines.append("")
@@ -2058,7 +2034,6 @@ class PaperWriter:
             # 传递方法名以便公式生成器选择方法特定的公式
             if ctx_dict is None:
                 ctx_dict = {}
-            ctx_dict["method"] = method
             latex_formulas = generate_latex_formula(
                 formulation, qid, ctx_dict
             )
@@ -2123,7 +2098,7 @@ class PaperWriter:
         metrics = computation.get("metrics", {})
 
         # 根据计算状态生成学术性描述
-        lines.append(self._professional_solution_lead(qid, method, status, computation))
+        lines.append("本节仅报告模型实际输出的数值、表格和图形，不补充未记录的求解过程或统计结论。")
         lines.append("")
         if status in ("success", "optimal", "feasible"):
             lines.append("计算结果表明，模型在当前数据与约束条件下能够形成稳定的数值输出。")
@@ -2187,7 +2162,6 @@ class PaperWriter:
                 interp.math_task_description if interp and interp.math_task_description
                 else f"小问 {qid}"
             ),
-            method=method,
             status=status,
             results=llm_result_material,
             metrics="已并入上方结果写作材料摘要",
@@ -2195,7 +2169,7 @@ class PaperWriter:
             template_guide=self._template_guide,
             writing_guide=self._writing_guide,
         )
-        lines.append(result_analysis or _academic_result_analysis(method, task, qid, computation))
+        lines.append(result_analysis or _write_results_from_evidence(qid, computation))
         lines.append("")
 
         # 其他结果（仅展示有意义的摘要值，过滤原始数据数组和代码细节）
@@ -2273,7 +2247,7 @@ class PaperWriter:
         validation = _as_mapping(result.validation, f"{qid}.validation")
         if validation:
             # 检验分析段落
-            lines.append(_academic_validation_analysis(task, qid, validation))
+            lines.append(_validation_summary_from_evidence(qid, validation))
             lines.append("")
 
             self._tbl_counter += 1
@@ -2283,7 +2257,7 @@ class PaperWriter:
             lines.append("")
             lines.append(val_table)
         else:
-            lines.append(_academic_validation_analysis(task, qid, {}))
+            lines.append(_validation_summary_from_evidence(qid, {}))
 
         # --- 结论 ---
         lines.append("")
@@ -2293,7 +2267,7 @@ class PaperWriter:
         key_result = findings.get("key_result", "")
 
         # 学术性结论段落
-        lines.append(_academic_conclusion(method, task, qid, computation))
+        lines.append(_write_conclusion_from_evidence(qid, computation))
         lines.append("")
 
         # 格式化关键结果，避免过多小数位
@@ -2379,6 +2353,34 @@ class PaperWriter:
     ) -> str:
         """生成模型评价、优缺点与推广。"""
         lines: list[str] = []
+
+        lines.extend([
+            "### 5.1 模型总结",
+            "",
+            "本节仅归纳各问已经展示的模型要素、计算结果和验证记录，不引入内部的方法选择或题型标签。",
+            "",
+            "### 5.2 适用范围与局限",
+            "",
+        ])
+        seen: set[str] = set()
+        for qid, result in sorted(question_results.items()):
+            for limitation in result.limitations:
+                if limitation and limitation not in seen and "Phase" not in limitation:
+                    seen.add(limitation)
+                    lines.append(f"- [{qid}] {limitation}")
+        if not seen:
+            lines.append("- 各问的适用范围以题设条件、输入数据和正文中声明的模型假设为限。")
+
+        directions: list[str] = []
+        for qid, result in sorted(question_results.items()):
+            if result.reusable_summary is None:
+                continue
+            for direction in result.reusable_summary.improvement_directions:
+                if direction and "Phase" not in direction:
+                    directions.append(f"- [{qid}] {direction}")
+        if directions:
+            lines.extend(["", "### 5.3 可进一步完善的方向", "", *directions])
+        return "\n".join(lines)
 
         # 5.1 模型总结
         lines.append("### 5.1 模型总结")
@@ -2663,7 +2665,7 @@ class PaperWriter:
             parts.append(revision_notes)
             parts.append("")
 
-        return "\n".join(parts)
+        return _remove_internal_writing_terms("\n".join(parts))
 
     def _build_revision_notes(self, review_report: Any, gf_retry: int) -> str:
         """构建修订说明（基于审查反馈）。"""
@@ -2847,17 +2849,19 @@ class PaperWriter:
     def _collect_keywords(
         self, question_results: dict[str, QuestionResult]
     ) -> list[str]:
-        """收集报告关键词。"""
+        """Collect paper keywords from public model evidence only."""
         keywords: set[str] = set()
         for result in question_results.values():
-            findings = result.findings
-            task = findings.get("math_task", "")
-            if task:
-                task_label = _TASK_LABELS.get(task, task)
-                keywords.add(task_label)
-            method = findings.get("selected_method", "")
-            if method:
-                keywords.add(method)
+            formulation = _as_mapping(result.formulation, "formulation")
+            for variable in formulation.get("decision_variables", [])[:3]:
+                if isinstance(variable, str) and variable.strip():
+                    keywords.add(variable.strip())
+            description = _public_model_label(formulation)
+            if description != "本题数学模型":
+                keywords.add(description[:24])
+            objective = formulation.get("objective_function", formulation.get("objective", ""))
+            if isinstance(objective, str) and objective.strip():
+                keywords.add("模型求解")
         return sorted(keywords)
 
 

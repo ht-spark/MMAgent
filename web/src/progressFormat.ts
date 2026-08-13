@@ -55,9 +55,9 @@ export function formatProgressLine(ev: any, fallbackQuestionId = ''): string | n
   if (ev.type === 'budget_confirmed') {
     const action = ev.action
     const scope = ev.phase === 'initial'
-      ? 'G0 输入质量门预算'
+        ? '输入信息质量检查预算'
       : ev.phase === 'delivery'
-        ? 'GF 交付质量门预算'
+        ? '最后交付前质量检查预算'
         : `子任务预算 · ${fmtQid(ev.question_id || fallbackQuestionId || '')}`
     if (action === 'override') return `${scope}已按输入覆盖`
     if (action === 'default') return `${scope}沿用默认`

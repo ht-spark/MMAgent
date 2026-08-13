@@ -1,7 +1,7 @@
 from scr.tools.table_tools import generate_latex_formula
 
 
-def test_stochastic_formula_generation_escapes_latex_braces_in_f_strings():
+def test_formula_generation_does_not_invent_stochastic_template_formulas():
     formulation = {
         "math_task": "stochastic_optimization",
         "objective_function": "",
@@ -15,9 +15,4 @@ def test_stochastic_formula_generation_escapes_latex_braces_in_f_strings():
         {"math_task": "stochastic_optimization", "alpha": 0.1},
     )
 
-    chance_constraints = [
-        formula for _, formula in formulas if r"g_i(\mathbf{x}" in formula
-    ]
-    assert chance_constraints
-    assert r"\mathbf{x}" in chance_constraints[0]
-    assert r"\boldsymbol{\xi}" in chance_constraints[0]
+    assert formulas == []

@@ -4,7 +4,6 @@
 公共骨架章节 + 按子问题数量动态生成的问题章节。
 """
 from .paper_templates import (
-    METHOD_LIBRARY,
     UNIFIED_TEMPLATE,
     PaperTemplate,
     SectionSpec,
@@ -17,7 +16,6 @@ from .paper_templates import (
 )
 
 __all__ = [
-    "METHOD_LIBRARY",
     "UNIFIED_TEMPLATE",
     "PaperTemplate",
     "SectionSpec",

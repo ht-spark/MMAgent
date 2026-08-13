@@ -131,6 +131,35 @@ def test_write_falls_back_to_template_without_llm(tmp_path):
     assert "模型建立段" not in full  # 未使用 LLM 文本
 
 
+def test_paper_excludes_internal_modeling_terms(tmp_path):
+    """论文不得暴露 Agent 工作流标签或由题型补写通用公式。"""
+    result = _question_result()
+    result.findings["selected_method"] = "LLM 问题驱动建模"
+    result.decision_record["selected_method"] = "LLM 问题驱动建模"
+    result.formulation = {
+        "description": "LLM 问题驱动建模",
+        "decision_variables": ["x"],
+        "objective_function": "",
+        "constraints": [],
+        "parameters": {},
+        "math_task": "simulation",
+    }
+
+    paper = PaperWriter().write(
+        {
+            "question_results": {"q1": result},
+            "project_context": _project_context(),
+            "data_profile": None,
+            "output_dir": str(tmp_path),
+        },
+        output_dir=str(tmp_path),
+    )
+
+    assert "LLM" not in paper.full_text
+    assert "问题驱动建模" not in paper.full_text
+    assert "蒙特卡洛估计量" not in paper.full_text
+
+
 def test_write_tolerates_list_shaped_computation_fields(tmp_path):
     """求解器异常返回列表时，报告写作仍应完成，保证后续 DOCX 可交付。"""
     result = _question_result()
