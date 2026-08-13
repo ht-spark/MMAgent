@@ -115,7 +115,7 @@ def test_llm_core_sections_receive_writing_guide(tmp_path):
 
     PaperWriter(llm=llm).write(_state(tmp_path), output_dir=str(tmp_path))
 
-    assert "数学建模竞赛论文主笔与技术编辑" in llm.last_prompt
+    assert "数学建模报告写作专家与技术编辑" in llm.last_prompt
     assert "不得编造" in llm.last_prompt
 
 
@@ -212,6 +212,30 @@ def test_write_tolerates_vector_metrics(tmp_path):
 
     assert paper.full_text
     assert "[0.0000, 1.2500, 2.5000]" in paper.full_text
+
+
+def test_write_tolerates_nested_metric_evidence(tmp_path):
+    """嵌套边界检查记录不会阻断整篇报告，并会以证据摘要保留。"""
+    result = _question_result()
+    result.computation["metrics"] = {
+        "effective_duration_s": 1.435,
+        "boundary_checks": [{"start_s": 8.013, "end_s": 9.448}],
+        "constraint_checks": {"trajectory_matches_input": True},
+    }
+
+    paper = PaperWriter().write(
+        {
+            "question_results": {"q1": result},
+            "project_context": _project_context(),
+            "data_profile": None,
+            "output_dir": str(tmp_path),
+        },
+        output_dir=str(tmp_path),
+    )
+
+    assert paper.full_text
+    assert "结构化计算证据摘要" in paper.full_text
+    assert "boundary_checks" in paper.full_text
 
 
 def test_llm_receives_compact_result_material(tmp_path):

@@ -18,6 +18,7 @@ import numpy as np
 __all__ = [
     "format_solution_table",
     "format_metrics_table",
+    "format_structured_evidence_table",
     "format_validation_table",
     "format_data_summary_table",
     "format_comparison_table",
@@ -30,17 +31,41 @@ __all__ = [
 
 
 def _fmt_num(v: Any, decimals: int = 4) -> str:
-    """格式化数值。"""
-    if isinstance(v, float):
-        if np.isfinite(v):
-            return f"{v:.{decimals}f}"
-        return "N/A"
-    if isinstance(v, (list, np.ndarray)):
-        arr = np.array(v, dtype=float)
-        if len(arr) <= 5:
-            return ", ".join(f"{x:.2f}" for x in arr)
-        return f"[{', '.join(f'{x:.2f}' for x in arr[:5])}, ...]"
+    """安全格式化数值或结构化值，不假设序列一定由数值组成。"""
+    if isinstance(v, bool):
+        return "是" if v else "否"
+    if isinstance(v, (int, float, np.number)):
+        value = float(v)
+        return f"{value:.{decimals}f}" if np.isfinite(value) else "N/A"
+    if isinstance(v, np.ndarray):
+        v = v.tolist()
+    if isinstance(v, (list, tuple)):
+        if all(isinstance(item, (int, float, np.number)) and not isinstance(item, bool) for item in v):
+            shown = [f"{float(item):.{decimals}f}" for item in v[:5]]
+            if len(v) > 5:
+                shown.append("...")
+            return "[" + ", ".join(shown) + "]"
+        return _structured_summary(v)
+    if isinstance(v, dict):
+        return _structured_summary(v)
     return str(v)
+
+
+def _structured_summary(value: Any) -> str:
+    """将嵌套结果压缩为可写入报告的安全摘要。"""
+    if isinstance(value, dict):
+        keys = list(value)[:5]
+        suffix = "，..." if len(value) > 5 else ""
+        return f"{len(value)} 个字段：" + "、".join(map(str, keys)) + suffix
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "空列表"
+        first = value[0]
+        if isinstance(first, dict):
+            keys = list(first)[:4]
+            return f"{len(value)} 条记录，字段：" + "、".join(map(str, keys))
+        return f"{len(value)} 项非标量数据"
+    return str(value)
 
 
 # ---------------------------------------------------------------------------
@@ -164,15 +189,41 @@ def format_metrics_table(
         "n_samples",  # 样本数是代码级信息
     }
 
+    scalar_count = 0
     for key, value in metrics.items():
         if key in _SKIP_METRIC_KEYS:
             continue
         # 跳过过长的字符串值（如求解器状态消息）
         if isinstance(value, str) and len(value) > 50:
             continue
+        if isinstance(value, (dict, list, tuple, np.ndarray)):
+            continue
         label, desc = metric_labels.get(key, (key, ""))
         lines.append(f"| {label} | {_fmt_num(value)} | {desc} |")
+        scalar_count += 1
 
+    if scalar_count == 0:
+        lines.append("| — | 无可直接展示的标量指标 | 结构化证据将在下方摘要展示 |")
+
+    return "\n".join(lines)
+
+
+def format_structured_evidence_table(
+    metrics: dict[str, Any],
+    qid: str,
+) -> str:
+    """将嵌套指标转为证据摘要，避免把字典或记录列表误作数值。"""
+    structured = {
+        key: value
+        for key, value in metrics.items()
+        if isinstance(value, (dict, list, tuple, np.ndarray))
+    }
+    if not structured:
+        return ""
+
+    lines = ["| 结构化证据项 | 摘要 |", "|--------------|------|"]
+    for key, value in structured.items():
+        lines.append(f"| {key} | {_structured_summary(value)} |")
     return "\n".join(lines)
 
 

@@ -4,7 +4,11 @@
 （如蒙特卡洛的 1000 个采样值）时，旧实现直接调用 sim.items() 崩溃，
 导致 write_paper 节点失败、paper.md 无法生成。
 """
-from scr.tools.table_tools import format_data_summary_table
+from scr.tools.table_tools import (
+    format_data_summary_table,
+    format_metrics_table,
+    format_structured_evidence_table,
+)
 
 
 def test_simulation_list_samples_does_not_crash_and_summarizes():
@@ -74,3 +78,22 @@ def test_no_summary_key_returns_placeholder():
     table = format_data_summary_table(computation, "q1")
 
     assert "无数据摘要" in table
+
+
+def test_nested_metrics_are_excluded_from_scalar_table_and_summarized():
+    """代码返回的检查记录不能被误转换为 float，仍需在报告中可追溯。"""
+    metrics = {
+        "sampled_d_min": 4.7167,
+        "boundary_checks": [{"start_s": 8.01, "end_s": 9.45}],
+        "constraint_checks": {"drop_point_matches_given": True},
+    }
+    computation = {"metrics": metrics}
+
+    scalar_table = format_metrics_table(computation, "q1")
+    evidence_table = format_structured_evidence_table(metrics, "q1")
+
+    assert "4.7167" in scalar_table
+    assert "boundary_checks" not in scalar_table
+    assert "boundary_checks" in evidence_table
+    assert "1 条记录" in evidence_table
+    assert "constraint_checks" in evidence_table

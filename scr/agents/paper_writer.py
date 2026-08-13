@@ -19,6 +19,7 @@ from ..tools.code_executor import generate_all_figures
 from ..tools.table_tools import (
     format_solution_table,
     format_metrics_table,
+    format_structured_evidence_table,
     format_validation_table,
     format_data_summary_table,
     format_comparison_table,
@@ -200,6 +201,15 @@ def _instrumented_llm(state: dict) -> Any:
     if budget_manager is not None and llm is not None:
         return InstrumentedLLM(llm, budget_manager, qid_getter=None)
     return llm
+
+
+def _render_table_safely(table_name: str, renderer: Any) -> str:
+    """单张报告表失败时保留正文，并给出可追踪的占位说明。"""
+    try:
+        return renderer()
+    except (TypeError, ValueError, KeyError) as exc:
+        print(f"[writer] 跳过 {table_name}：{exc}")
+        return f"（{table_name}生成失败，已保留其余报告内容）"
 
 
 # ---------------------------------------------------------------------------
@@ -2119,7 +2129,10 @@ class PaperWriter:
             self._tbl_counter += 1
             lines.append(f"**表 {self._tbl_counter}：问题 {qid} 最优解**")
             lines.append("")
-            sol_table = format_solution_table(computation, qid, feature_names)
+            sol_table = _render_table_safely(
+                f"问题 {qid} 最优解表",
+                lambda: format_solution_table(computation, qid, feature_names),
+            )
             # 去除工具自带的标题行
             sol_table = self._strip_table_title(sol_table)
             lines.append(sol_table)
@@ -2131,7 +2144,10 @@ class PaperWriter:
             self._tbl_counter += 1
             lines.append(f"**表 {self._tbl_counter}：问题 {qid} 数据统计**")
             lines.append("")
-            ds_table = format_data_summary_table(computation, qid)
+            ds_table = _render_table_safely(
+                f"问题 {qid} 数据统计表",
+                lambda: format_data_summary_table(computation, qid),
+            )
             ds_table = self._strip_table_title(ds_table)
             lines.append(ds_table)
             q_tables.append(ds_table)
@@ -2142,10 +2158,25 @@ class PaperWriter:
             self._tbl_counter += 1
             lines.append(f"**表 {self._tbl_counter}：问题 {qid} 关键指标**")
             lines.append("")
-            metrics_table = format_metrics_table(computation, qid)
+            metrics_table = _render_table_safely(
+                f"问题 {qid} 关键指标表",
+                lambda: format_metrics_table(computation, qid),
+            )
             metrics_table = self._strip_table_title(metrics_table)
             lines.append(metrics_table)
             q_tables.append(metrics_table)
+            lines.append("")
+
+        evidence_table = _render_table_safely(
+            f"问题 {qid} 结构化证据摘要",
+            lambda: format_structured_evidence_table(metrics, qid),
+        )
+        if evidence_table:
+            self._tbl_counter += 1
+            lines.append(f"**表 {self._tbl_counter}：问题 {qid} 结构化计算证据摘要**")
+            lines.append("")
+            lines.append(evidence_table)
+            q_tables.append(evidence_table)
             lines.append("")
 
         # 结果分析段落（学术风格）
