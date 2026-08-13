@@ -31,6 +31,10 @@ from ..tools.table_tools import (
 
 __all__ = ["PaperWriter", "write_paper_node"]
 
+_PAPER_WRITING_GUIDE_PATH = (
+    Path(__file__).resolve().parent.parent / "prompts" / "writing_superclass.md"
+)
+
 
 def _as_mapping(value: Any, field_name: str) -> dict[str, Any]:
     """将不符合预期的映射字段降级为空字典，避免报告交付中断。"""
@@ -811,6 +815,7 @@ class PaperWriter:
         self._shown_conclusions: set[str] = set()
         self._template: PaperTemplate | None = None
         self._template_guide: str = ""  # 模板写作指导（注入 LLM 提示词）
+        self._writing_guide: str = ""
         self._project_context: ProjectContext | None = None
         self._data_profile: DataProfile | None = None
 
@@ -828,6 +833,15 @@ class PaperWriter:
         if not path.exists():
             raise FileNotFoundError(f"Prompt template not found: {path}")
         return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _load_writing_guide() -> str:
+        """加载 prompts 中的报告写作总纲，缺失时不阻断既有流程。"""
+        try:
+            return _PAPER_WRITING_GUIDE_PATH.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"[writer] 未加载报告写作总纲，使用现有写作提示词: {exc}")
+            return ""
 
     @staticmethod
     def _render_prompt(template: str, **kwargs: Any) -> str:
@@ -919,6 +933,9 @@ class PaperWriter:
         self._shown_conclusions = set()
         self._project_context = project_context
         self._data_profile = data_profile
+        self._writing_guide = self._load_writing_guide()
+        if self._writing_guide:
+            print("[writer] 已加载报告写作总纲，用于 LLM 核心章节写作")
 
         # 生成所有图表 PNG（包括 blocked 结果，只要含有 computation 数据即可生成图表）
         all_results_for_figures = {**validated, **blocked}
@@ -2016,6 +2033,7 @@ class PaperWriter:
                 constraints=formulation.get("constraints", []),
                 parameters=formulation.get("parameters", {}),
                 template_guide=self._template_guide,
+                writing_guide=self._writing_guide,
             )
             if not model_analysis:
                 model_analysis = self._build_model_analysis(method, task, qid, formulation)
@@ -2175,6 +2193,7 @@ class PaperWriter:
             metrics="已并入上方结果写作材料摘要",
             tables="\n\n".join(q_tables)[:1500],
             template_guide=self._template_guide,
+            writing_guide=self._writing_guide,
         )
         lines.append(result_analysis or _academic_result_analysis(method, task, qid, computation))
         lines.append("")

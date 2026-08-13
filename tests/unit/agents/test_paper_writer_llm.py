@@ -106,6 +106,19 @@ def test_write_uses_llm_for_core_sections(tmp_path):
     assert "q1.4 求解与结果" in full
 
 
+def test_llm_core_sections_receive_writing_guide(tmp_path):
+    """报告写作总纲应注入 LLM 写作提示词。"""
+    llm = MockTextLLM([
+        "模型建立段：基于题目约束建立模型。",
+        "结果解释段：仅依据给定结果进行分析。",
+    ])
+
+    PaperWriter(llm=llm).write(_state(tmp_path), output_dir=str(tmp_path))
+
+    assert "数学建模竞赛论文主笔与技术编辑" in llm.last_prompt
+    assert "不得编造" in llm.last_prompt
+
+
 def test_write_falls_back_to_template_without_llm(tmp_path):
     """无 LLM 时回退确定性模板，论文仍完整生成。"""
     writer = PaperWriter(llm=None)
