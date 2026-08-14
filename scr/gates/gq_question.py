@@ -106,11 +106,10 @@ def check_gq(state: dict) -> GateResult:
     if not current_result.limitations:
         failed_checks.append("limitations_empty")
 
-    # Phase 5 实质检查：主方法、假设、关键参数可解释
+    # Phase 5 实质检查：建模与结果依据可追溯。
+    # 假设是否需要显式列出由具体题面和验证结果决定，不能把空列表作为通用失败条件。
     if not current_result.decision_record:
         failed_checks.append("decision_record_empty")
-    if not current_result.assumptions:
-        failed_checks.append("assumptions_empty")
 
     # 检查: 数值、图表和表格有可复现产物
     if not current_result.computation:

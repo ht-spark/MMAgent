@@ -7,6 +7,10 @@ import {
   saveActiveId,
   newId,
   maskKey,
+  ExternalService,
+  ExternalServiceConfig,
+  loadExternalServiceConfigs,
+  saveExternalServiceConfigs,
 } from '../apiConfigs'
 
 type Props = {
@@ -21,15 +25,32 @@ const EMPTY: Omit<ApiConfig, 'id' | 'createdAt'> = {
   model: '',
 }
 
+const SERVICE_META: Record<ExternalService, { name: string; keyLabel: string; hint: string }> = {
+  tavily: {
+    name: 'Tavily 联网检索',
+    keyLabel: 'Tavily API Key',
+    hint: '用于联网搜索与知识检索补充。',
+  },
+  mineru: {
+    name: 'MinerU 文档转换',
+    keyLabel: 'MinerU Token',
+    hint: '用于后续将文档转换为 Markdown。',
+  },
+}
+
 export default function ApiManager({ onUsed }: Props) {
   const [configs, setConfigs] = useState<ApiConfig[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Partial<ApiConfig>>(EMPTY)
   const [isNew, setIsNew] = useState(false)
+  const [serviceConfigs, setServiceConfigs] = useState<Record<ExternalService, ExternalServiceConfig>>(
+    loadExternalServiceConfigs,
+  )
 
   useEffect(() => {
     setConfigs(loadConfigs())
     setActiveId(loadActiveId())
+    setServiceConfigs(loadExternalServiceConfigs())
   }, [])
 
   function persist(next: ApiConfig[], nextActive: string | null) {
@@ -100,13 +121,26 @@ export default function ApiManager({ onUsed }: Props) {
     if (onUsed) onUsed()
   }
 
+  function updateService(
+    service: ExternalService,
+    field: keyof ExternalServiceConfig,
+    value: string,
+  ) {
+    const next = {
+      ...serviceConfigs,
+      [service]: { ...serviceConfigs[service], [field]: value },
+    }
+    setServiceConfigs(next)
+    saveExternalServiceConfigs(next)
+  }
+
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1 className="page-title">API 管理</h1>
           <div className="page-sub">
-            在这里保存多个 LLM 服务商的 API。点 <strong>使用</strong> 把它设为默认，新建任务时会自动带入。
+            管理 LLM、联网检索和文档转换服务。密钥仅保存在当前浏览器。
           </div>
         </div>
         <button className="submit-btn" style={{ width: 'auto', marginTop: 0, padding: '10px 18px' }} onClick={startNew}>
@@ -188,6 +222,12 @@ export default function ApiManager({ onUsed }: Props) {
         </div>
       )}
 
+      <section className="api-section" aria-labelledby="model-api-heading">
+        <div className="api-section-head">
+          <h2 id="model-api-heading">模型服务</h2>
+          <p>选择默认配置后，新建任务会自动带入。</p>
+        </div>
+
       {configs.length === 0 ? (
         <div className="form-card center muted">
           还没有保存任何 API。点 <strong>新增配置</strong> 添加一个。
@@ -222,6 +262,50 @@ export default function ApiManager({ onUsed }: Props) {
           })}
         </div>
       )}
+
+      </section>
+
+      <section className="api-section" aria-labelledby="external-api-heading">
+        <div className="api-section-head">
+          <h2 id="external-api-heading">扩展服务</h2>
+          <p>这些配置不参与 LLM 默认模型选择。</p>
+        </div>
+        <div className="api-grid">
+          {(Object.keys(SERVICE_META) as ExternalService[]).map((service) => {
+            const meta = SERVICE_META[service]
+            const config = serviceConfigs[service]
+            return (
+              <div className="api-card" key={service}>
+                <div className="api-card-head">
+                  <div className="api-name">{meta.name}</div>
+                  <span className={`api-badge ${config.apiKey ? '' : 'muted-badge'}`}>
+                    {config.apiKey ? '已配置' : '未配置'}
+                  </span>
+                </div>
+                <p className="api-service-hint">{meta.hint}</p>
+                <div className="field">
+                  <label>{meta.keyLabel}</label>
+                  <input
+                    type="password"
+                    value={config.apiKey}
+                    onChange={(event) => updateService(service, 'apiKey', event.target.value)}
+                    placeholder={service === 'tavily' ? 'tvly-...' : '输入 MinerU Token'}
+                  />
+                </div>
+                <div className="field">
+                  <label>Base URL</label>
+                  <input
+                    type="url"
+                    value={config.baseUrl}
+                    onChange={(event) => updateService(service, 'baseUrl', event.target.value)}
+                    placeholder="可使用默认地址"
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
 
       {configs.length > 0 && (
         <div className="center" style={{ marginTop: 24 }}>

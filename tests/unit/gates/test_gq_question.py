@@ -122,6 +122,13 @@ class TestCheckGQ:
         assert gq.passed is False
         assert "limitations_empty" in gq.failed_checks
 
+    def test_allows_empty_assumptions_when_other_evidence_is_complete(self):
+        """题面不需要额外假设时，不能仅因 assumptions 为空而重试。"""
+        result = _make_valid_result()
+        result.assumptions = []
+        gq = check_gq(_make_state(result))
+        assert gq.passed is True
+
     def test_fail_when_question_id_mismatch(self):
         """question_id 不匹配时 GQ 失败。"""
         result = _make_valid_result("q1")

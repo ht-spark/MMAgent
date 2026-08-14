@@ -84,3 +84,24 @@ class BudgetConfirmBody(BaseModel):
         None,
         description='预算覆盖，键为当前阶段允许的预算类型，值为正整数上限',
     )
+
+
+class KnowledgeDocument(BaseModel):
+    """知识库中已归档的原始文档。"""
+
+    name: str
+    size_bytes: int
+    uploaded_at: str
+
+
+class KnowledgeStatus(BaseModel):
+    """知识库能力与当前文档清单。"""
+
+    retrieval_ready: bool = False
+    documents: list[KnowledgeDocument] = Field(default_factory=list)
+
+
+class BrainstormRequest(BaseModel):
+    """头脑风暴对话接口的输入契约。"""
+
+    message: str = Field(min_length=1, max_length=20_000)

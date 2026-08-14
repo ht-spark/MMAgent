@@ -4,6 +4,7 @@ type Props = {
   onToggleCollapse: () => void
   onHome: () => void
   onNew: () => void
+  onBrainstorm: () => void
   onHistory: () => void
   onApi: () => void
   onDocs: () => void
@@ -42,6 +43,7 @@ export default function Sidebar({
   onToggleCollapse,
   onHome,
   onNew,
+  onBrainstorm,
   onHistory,
   onApi,
   onDocs,
@@ -78,6 +80,18 @@ export default function Sidebar({
             <path d="M12 5v14M5 12h14" strokeLinecap="round" />
           </svg>
           {!collapsed && '新建任务'}
+        </button>
+        <button
+          className={`nav-item ${section === 'brainstorm' ? 'active' : ''}`}
+          onClick={onBrainstorm}
+          title={collapsed ? '头脑风暴' : undefined}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18h6" />
+            <path d="M10 22h4" />
+            <path d="M8.2 14.5A6 6 0 1 1 15.8 14.5c-.8.65-1.3 1.4-1.45 2.2h-2.7c-.15-.8-.65-1.55-1.45-2.2Z" />
+          </svg>
+          {!collapsed && '头脑风暴'}
         </button>
         <button
           className={`nav-item ${section === 'history' ? 'active' : ''}`}

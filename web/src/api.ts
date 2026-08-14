@@ -159,3 +159,37 @@ export async function submitClarification(
   }
   return res.json()
 }
+
+export type KnowledgeDocument = {
+  name: string
+  size_bytes: number
+  uploaded_at: string
+}
+
+export type KnowledgeStatus = {
+  retrieval_ready: boolean
+  documents: KnowledgeDocument[]
+}
+
+export async function getKnowledgeStatus(): Promise<KnowledgeStatus> {
+  const res = await fetch('/api/knowledge/status')
+  if (!res.ok) throw new Error(await extractDetail(res, '获取知识库状态失败'))
+  return res.json()
+}
+
+export async function uploadKnowledgeDocument(file: File): Promise<KnowledgeDocument> {
+  const form = new FormData()
+  form.append('document', file)
+  const res = await fetch('/api/knowledge/documents', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(await extractDetail(res, '文档上传失败'))
+  return res.json()
+}
+
+export async function sendBrainstormMessage(message: string): Promise<void> {
+  const res = await fetch('/api/knowledge/brainstorm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
+  if (!res.ok) throw new Error(await extractDetail(res, '头脑风暴请求失败'))
+}

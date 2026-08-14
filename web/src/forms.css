@@ -781,6 +781,57 @@
 .api-btn.primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 .api-btn.danger { color: var(--danger); border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.06); }
 .api-btn.danger:hover { background: rgba(239, 68, 68, 0.14); border-color: var(--danger); color: var(--danger); }
+.api-section { margin-top: 30px; }
+.api-section-head { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
+.api-section-head h2 { margin: 0; color: var(--text-primary); font-size: 18px; font-weight: 750; }
+.api-section-head p { margin: 0; color: var(--text-tertiary); font-size: 13px; }
+.api-service-hint { min-height: 38px; margin: -3px 0 4px; color: var(--text-tertiary); font-size: 13px; line-height: 1.45; }
+.api-card .field { margin-bottom: 12px; }
+.api-card .field > label { margin-bottom: 6px; font-size: 12px; }
+.api-card .field input { padding: 10px 12px; font-size: 13px; }
+.api-badge.muted-badge { background: var(--bg-soft); color: var(--text-tertiary); }
+
+/* ---------- Knowledge-base brainstorming ---------- */
+.brainstorm-page { padding: 28px 40px 32px; }
+.brainstorm-status {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.1);
+  color: #a16207;
+  font-size: 12px;
+  font-weight: 700;
+}
+.brainstorm-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 18px; flex: 1 1 auto; min-height: 0; }
+.knowledge-panel, .brainstorm-chat { background: var(--bg-card-solid); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.knowledge-panel { padding: 18px; display: flex; flex-direction: column; min-height: 0; }
+.knowledge-panel-head { display: flex; align-items: flex-start; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 14px; }
+.knowledge-panel-head > div:first-child { flex: 1; }
+.knowledge-panel h2 { margin: 0; color: var(--text-primary); font-size: 16px; }
+.knowledge-panel p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 12px; }
+.icon-action { width: 30px; height: 30px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg); color: var(--primary-700); font-size: 20px; line-height: 1; cursor: pointer; }
+.icon-action:hover:not(:disabled) { background: var(--primary-50); border-color: var(--primary-500); }
+.knowledge-list { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; overflow-y: auto; }
+.knowledge-item { padding: 10px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.knowledge-item strong { display: block; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-item span { color: var(--text-tertiary); font-size: 11px; }
+.brainstorm-chat { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.brainstorm-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; background: var(--bg-soft); }
+.brainstorm-message { max-width: min(690px, 88%); padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 14px; line-height: 1.65; white-space: pre-wrap; }
+.brainstorm-message.assistant { align-self: flex-start; background: var(--bg-card-solid); }
+.brainstorm-message.user { align-self: flex-end; background: var(--primary-50); border-color: var(--primary-200); color: var(--primary-800); }
+.brainstorm-composer { padding: 14px; border-top: 1px solid var(--border); background: var(--bg-card-solid); }
+.brainstorm-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 88px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--bg); color: var(--text-primary); font: inherit; line-height: 1.55; }
+.brainstorm-composer textarea:focus { outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.15); }
+.brainstorm-composer > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.brainstorm-composer span { color: var(--text-tertiary); font-size: 12px; }
+@media (max-width: 768px) {
+  .brainstorm-page { padding: 24px 18px 50px; }
+  .brainstorm-layout { grid-template-columns: 1fr; min-height: auto; }
+  .knowledge-panel { min-height: 170px; }
+  .brainstorm-chat { min-height: 520px; }
+}
 
 @media (max-width: 1024px) {
   .home .hero { grid-template-columns: 1fr; }

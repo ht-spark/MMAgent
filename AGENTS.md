@@ -1,16 +1,15 @@
 # Repository Guidelines
 
-### 项目目标和功能
+### Project Objectives and Functions
 
-    目标：这是一个数学建模智能体，目标是实现面向具体任务的自动化数学建模
+    **Objective**: This is an intelligent agent for mathematical modeling, aiming to implement task-oriented automated mathematical modeling.
 
-    功能：通过用户提交的问题和附件资料，全流程自动化完成建模、执行和生成最终交付报告。
+    **Functions**: Based on problems submitted by users and attached documents, it completes the full workflow automatically — including modeling, execution, and generation of final deliverable reports.
 
-### 项目核心设定
+### Core Project Settings
 
-    1、该智能体一定是面向通用数学建模任务，所有提出的优化或者修改错误均需要基于通用性考虑，不能为了一个具体的问题做局限性的修改；
-
-    2、智能体的核心是建模，建模的核心是建立准确合理的模型，本智能体项目的所有建模工作流均基于LLM-only策略，不做方法预设，不对问题进行分类，然后基于类别用僵化的方法，本智能体的策略是LLM驱动建模，是聚焦于问题本身的建模，需要具体问题具体分析。
+1. The agent is designed for general mathematical modeling tasks. All proposed optimizations or error corrections must take generality into consideration; localized modifications tailored only to one specific problem are prohibited.
+2. The core capability of this agent lies in modeling, and the essence of modeling is constructing accurate and reasonable models. The entire modeling workflow of this agent adopts an **LLM-only strategy**. No predefined methodologies are imposed, nor are problems rigidly categorized to apply fixed sets of methods. Driven by LLMs, the agent focuses on modeling centered on the problem itself and conducts targeted analysis for each individual case.
 
 ## Coding Style & Naming Conventions
 

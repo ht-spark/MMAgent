@@ -48,7 +48,7 @@ def run_context(state: dict) -> dict:
         llm = InstrumentedLLM(llm, budget_manager, qid_getter=None)
     
     # 调用任务理解 Agent
-    analysis, subproblems, classification = _run_problem_analysis(
+    analysis, subproblems = _run_problem_analysis(
         problem_text, data_profile, llm
     )
     
@@ -71,8 +71,8 @@ def _run_problem_analysis(
     problem_text: str,
     data_profile: DataProfile | None,
     llm: Any | None,
-) -> tuple[ProblemAnalysis | None, list[SubProblem], Any | None]:
-    """执行任务理解三步：understand → decompose → classify。
+) -> tuple[ProblemAnalysis | None, list[SubProblem]]:
+    """执行任务理解：understand → decompose。
     
     无 LLM 时使用占位分析。
     """
@@ -90,7 +90,7 @@ def _run_problem_analysis(
             keywords=[],
         )
         subproblems = _create_fallback_subproblems(analysis)
-        return analysis, subproblems, None
+        return analysis, subproblems
     
     from ..agents.problem_analyst import ProblemAnalyst
 
@@ -172,30 +172,7 @@ def _run_problem_analysis(
         )
         subproblems = _create_fallback_subproblems(analysis)
 
-    try:
-        t0 = time.monotonic()
-        log_step(logger, "context.classify", "started", detail="LLM 任务分类")
-        classification = analyst.classify(analysis, subproblems)
-        log_step(
-            logger,
-            "context.classify",
-            "completed",
-            duration=time.monotonic() - t0,
-            detail=(
-                f"题型: {getattr(classification, 'primary_type', 'unknown')}"
-            ),
-        )
-    except Exception as e:
-        log_step(logger, "context.classify", "failed", error=str(e)[:200])
-        print(f"[context] classify 失败: {e}")
-        from ..schemas.problem import ProblemClassification
-        classification = ProblemClassification(
-            primary_type="composite",
-            secondary_types=[],
-            reasoning="LLM 分类失败，使用默认复合类型",
-        )
-    
-    return analysis, subproblems, classification
+    return analysis, subproblems
 
 
 def _build_project_context(

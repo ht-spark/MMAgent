@@ -2,7 +2,18 @@
 from __future__ import annotations
 
 from scr.schemas.problem import ProblemAnalysis
-from scr.workflow.project_context import _create_fallback_subproblems
+from scr.workflow.project_context import (
+    _create_fallback_subproblems,
+    _run_problem_analysis,
+)
+
+
+def test_problem_analysis_does_not_classify_tasks_without_an_llm() -> None:
+    """任务理解只产出题意与子任务，不产生旧的题型分类结果。"""
+    analysis, subproblems = _run_problem_analysis("问题一：给出可执行方案", None, None)
+
+    assert analysis is not None
+    assert subproblems
 
 
 def test_fallback_subproblems_keep_dependency_only_when_question_refers_back():

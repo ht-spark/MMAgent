@@ -4,11 +4,8 @@
 """
 from __future__ import annotations
 
-import json
 import time
-from typing import Any, Literal
-
-from pydantic import BaseModel
+from typing import Any
 
 from ..runtime.instrumented_llm import InstrumentedLLM
 from ..runtime.logging import get_run_logger, log_step
@@ -21,13 +18,6 @@ from ..schemas.question import (
 )
 from .base import BaseAgent
 from .model_builder import ModelBuilder
-
-
-class _SelfReview(BaseModel):
-    """LLM 结果自评输出（P2-C1：反思循环）。"""
-    verdict: Literal["pass", "revise"] = "pass"
-    review: str = ""
-    suggestions: str = ""
 
 
 class QuestionSolver(BaseAgent):
@@ -152,11 +142,6 @@ class QuestionSolver(BaseAgent):
             ),
         )
 
-        # 自评只记录建议；是否重试由 GQ 统一决定并消耗验证迭代预算。
-        self_review = self._self_review(context, interpretation, model_output)
-        model_output["self_review"] = self_review
-        comp_status = model_output["computation"].get("status", "unknown")
-
         # 步骤 4: 提取假设（统一规范化为 list[dict]，兼容 LLM list[str] 与 heuristic list[dict]）
         assumptions = self._normalize_assumptions(
             decision_record.get("assumptions", [])
@@ -184,9 +169,6 @@ class QuestionSolver(BaseAgent):
         findings = self._build_findings(
             qid, interpretation, decision_record, model_output
         )
-        if self_review:
-            findings["self_review"] = self_review
-
         result = QuestionResult(
             question_id=qid,
             status="validating",
@@ -281,28 +263,8 @@ class QuestionSolver(BaseAgent):
         self,
         context: CurrentQuestionContext,
     ) -> ProblemInterpretation:
-        """问题澄清（architecture.md §5.2）。
-
-        优先用 LLM 深度理解生成（决策变量/目标/约束/假设/结果形式）；
-        无 LLM 或调用失败时回退到启发式关键词判断。
-        """
-        llm_interpretation = self._interpret_problem_llm(context)
-        if llm_interpretation is not None:
-            return llm_interpretation
-
-        # ---- 启发式回退（原有逻辑）----
+        """Create a neutral context record without pre-classifying the task."""
         qid = context.question_id
-
-        # 启发式判断数学任务类型
-        math_task = self._guess_math_task(context)
-
-        # 推断结果形式
-        result_form = self._guess_result_form(context, math_task)
-
-        # 可用数据
-        available_data = context.required_data[:]
-
-        # 与前问的关系
         relation = "independent"
         relation_desc = ""
         if context.inherited_summaries:
@@ -312,108 +274,20 @@ class QuestionSolver(BaseAgent):
 
         return ProblemInterpretation(
             question_id=qid,
-            math_task=math_task,
-            math_task_description=context.objective[:200] if context.objective else "目标待明确",
-            decision_variables=[],  # Phase 4+ 填充
-            objective_function="",  # Phase 4+ 填充
-            constraints=context.global_constraints[:3],  # 取前 3 条约束
-            evaluation_metrics=[],  # Phase 4+ 填充
-            result_form=result_form,
-            available_data=available_data,
-            missing_data=[],  # Phase 4+ 填充
-            necessary_assumptions=[],  # Phase 4+ 填充
-            acceptable_simplifications=[],  # Phase 4+ 填充
+            math_task="composite",
+            math_task_description=context.objective or context.question_text,
+            decision_variables=[],
+            objective_function="",
+            constraints=context.global_constraints[:],
+            evaluation_metrics=[],
+            result_form="",
+            available_data=context.required_data[:],
+            missing_data=[],
+            necessary_assumptions=[],
+            acceptable_simplifications=[],
             relation_to_previous=relation,
             relation_description=relation_desc,
         )
-
-    def _self_review(
-        self,
-        context: CurrentQuestionContext,
-        interpretation: ProblemInterpretation,
-        model_output: dict,
-    ) -> dict | None:
-        """LLM 对求解结果做自评反思（P2-C1）。
-
-        判断结果是否回答了任务、数值是否合理；verdict=revise 时由调用方
-        携带建议重算一次。失败或无 LLM 时返回 None（跳过反思，不阻塞）。
-        """
-        if self._llm is None:
-            return None
-        computation = model_output.get("computation", {})
-        results = computation.get("results", {}) or {}
-        metrics = computation.get("metrics", {}) or {}
-        try:
-            prompt = self._render_prompt(
-                self._load_prompt("self_review"),
-                question_text=context.question_text,
-                math_task=interpretation.math_task,
-                math_task_description=interpretation.math_task_description,
-                decision_variables=interpretation.decision_variables,
-                objective_function=interpretation.objective_function,
-                constraints=interpretation.constraints,
-                status=computation.get("status", "unknown"),
-                results=json.dumps(results, ensure_ascii=False, default=str)[:1000],
-                metrics=json.dumps(metrics, ensure_ascii=False, default=str)[:500],
-            )
-            review = self._call_structured(_SelfReview, prompt)
-            result: dict = {
-                "verdict": review.verdict,
-                "review": review.review,
-                "suggestions": review.suggestions,
-            }
-            log_step(
-                get_run_logger(), "solve.self_review", "completed",
-                question_id=context.question_id,
-                detail=f"verdict={review.verdict}: {review.review[:100]}",
-            )
-            return result
-        except Exception as e:
-            print(f"[solver] 自评失败（不影响结果）: {e}")
-            return None
-
-    def _interpret_problem_llm(
-        self, context: CurrentQuestionContext
-    ) -> ProblemInterpretation | None:
-        """用 LLM 生成问题澄清（ProblemInterpretation）。
-
-        Returns:
-            LLM 生成的问题澄清；无 LLM 或调用失败时返回 None（回退启发式）。
-        """
-        if self._llm is None:
-            return None
-        try:
-            inherited = json.dumps(
-                context.inherited_summaries, ensure_ascii=False
-            )[:1500]
-            prompt = self._render_prompt(
-                self._load_prompt("problem_clarification"),
-                question_text=context.question_text,
-                objective=context.objective,
-                global_background=context.global_background,
-                global_constraints=context.global_constraints,
-                available_data=context.required_data,
-                data_quality_summary=context.data_quality_summary,
-                inherited_summaries=inherited,
-            )
-            interp = self._call_structured(ProblemInterpretation, prompt)
-            interp.question_id = context.question_id
-            log_step(
-                get_run_logger(),
-                "solve.interpret.llm",
-                "completed",
-                question_id=context.question_id,
-                detail=(
-                    f"LLM 问题澄清: task={interp.math_task}, "
-                    f"变量 {len(interp.decision_variables)} 个, "
-                    f"约束 {len(interp.constraints)} 条, "
-                    f"假设 {len(interp.necessary_assumptions)} 条"
-                ),
-            )
-            return interp
-        except Exception as e:
-            print(f"[solver] LLM 问题澄清失败，回退启发式: {e}")
-            return None
 
     def _guess_math_task(self, context: CurrentQuestionContext) -> str:
         """启发式判断数学任务类型。

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -33,7 +34,10 @@ from server.runs import (
 from scr.runtime.budget import BudgetType
 from server.schemas import (
     BudgetConfirmBody,
+    BrainstormRequest,
     CreateRunResponse,
+    KnowledgeDocument,
+    KnowledgeStatus,
     ModelConfig,
     RunDetail,
     RunSummary,
@@ -41,6 +45,7 @@ from server.schemas import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
+KNOWLEDGE_DOCUMENTS_ROOT = PROJECT_ROOT / "KnowledgeBase" / "documents"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 
 app = FastAPI(title="MMAgent Web", version="0.1.0")
@@ -57,12 +62,68 @@ app.add_middleware(
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
+def _list_knowledge_documents() -> list[KnowledgeDocument]:
+    """Return locally archived source documents for the knowledge-base MVP."""
+    if not KNOWLEDGE_DOCUMENTS_ROOT.exists():
+        return []
+    return [
+        KnowledgeDocument(
+            name=path.name,
+            size_bytes=path.stat().st_size,
+            uploaded_at=datetime.fromtimestamp(
+                path.stat().st_mtime, tz=timezone.utc
+            ).isoformat(),
+        )
+        for path in sorted(KNOWLEDGE_DOCUMENTS_ROOT.iterdir(), key=lambda item: item.name.lower())
+        if path.is_file()
+    ]
+
+
 @app.on_event("startup")
 async def _on_startup() -> None:
     """启动时清理因服务重启而留下的\"僵尸\"运行（status=running 但无对应后台线程）。"""
     cleaned = cleanup_stale_runs(max_age_seconds=120)
     if cleaned:
         print(f"[startup] cleaned {cleaned} stale running run(s)")
+
+
+@app.get("/api/knowledge/status", response_model=KnowledgeStatus)
+async def knowledge_status_endpoint() -> KnowledgeStatus:
+    """Expose the knowledge-base MVP state without claiming retrieval is ready."""
+    return KnowledgeStatus(documents=_list_knowledge_documents())
+
+
+@app.post("/api/knowledge/documents", response_model=KnowledgeDocument)
+async def upload_knowledge_document_endpoint(
+    document: UploadFile = File(..., description="知识库原始文档"),
+) -> KnowledgeDocument:
+    """Archive one source document for later parsing and embedding."""
+    filename = Path(document.filename or "knowledge-document").name
+    if not filename:
+        raise HTTPException(status_code=400, detail="文档名称不能为空")
+
+    content = await document.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="不能上传空文档")
+
+    KNOWLEDGE_DOCUMENTS_ROOT.mkdir(parents=True, exist_ok=True)
+    target = KNOWLEDGE_DOCUMENTS_ROOT / filename
+    target.write_bytes(content)
+    return KnowledgeDocument(
+        name=target.name,
+        size_bytes=target.stat().st_size,
+        uploaded_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@app.post("/api/knowledge/brainstorm")
+async def brainstorm_endpoint(body: BrainstormRequest):
+    """Reserve the RAG chat contract until retrieval infrastructure is configured."""
+    del body
+    raise HTTPException(
+        status_code=501,
+        detail="知识库检索与对话尚未配置：请先接入 Qdrant、嵌入模型和检索链路。",
+    )
 
 
 @app.post("/api/runs", response_model=CreateRunResponse)

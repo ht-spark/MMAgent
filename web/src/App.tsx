@@ -4,9 +4,10 @@ import Home from './pages/Home'
 import NewTask from './pages/NewTask'
 import History from './pages/History'
 import ApiManager from './pages/ApiManager'
+import Brainstorm from './pages/Brainstorm'
 import Docs from './pages/Docs'
 
-type Section = 'home' | 'new' | 'history' | 'api' | 'docs'
+type Section = 'home' | 'new' | 'brainstorm' | 'history' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
@@ -49,6 +50,7 @@ export default function App() {
           onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
           onHome={() => setSection('home')}
           onNew={startNew}
+          onBrainstorm={() => setSection('brainstorm')}
           onHistory={() => setSection('history')}
           onApi={() => setSection('api')}
           onDocs={() => setSection('docs')}
@@ -68,6 +70,7 @@ export default function App() {
         {section === 'new' && (
           <NewTask task={task} setTask={setTask} onHistory={() => setSection('history')} />
         )}
+        {section === 'brainstorm' && <Brainstorm />}
         {section === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
         {section === 'docs' && <Docs />}

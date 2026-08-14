@@ -11,8 +11,16 @@ export type ApiConfig = {
   createdAt: number
 }
 
+export type ExternalService = 'tavily' | 'mineru'
+
+export type ExternalServiceConfig = {
+  apiKey: string
+  baseUrl: string
+}
+
 const KEY_CONFIGS = 'mmagent.apiConfigs'
 const KEY_ACTIVE = 'mmagent.apiActiveId'
+const KEY_EXTERNAL_SERVICES = 'mmagent.externalServiceConfigs'
 
 export function loadConfigs(): ApiConfig[] {
   try {
@@ -36,6 +44,30 @@ export function loadActiveId(): string | null {
 export function saveActiveId(id: string | null) {
   if (id) localStorage.setItem(KEY_ACTIVE, id)
   else localStorage.removeItem(KEY_ACTIVE)
+}
+
+export function loadExternalServiceConfigs(): Record<ExternalService, ExternalServiceConfig> {
+  const defaults: Record<ExternalService, ExternalServiceConfig> = {
+    tavily: { apiKey: '', baseUrl: 'https://api.tavily.com' },
+    mineru: { apiKey: '', baseUrl: 'https://mineru.net' },
+  }
+  try {
+    const raw = localStorage.getItem(KEY_EXTERNAL_SERVICES)
+    if (!raw) return defaults
+    const saved = JSON.parse(raw) as Partial<Record<ExternalService, ExternalServiceConfig>>
+    return {
+      tavily: { ...defaults.tavily, ...saved.tavily },
+      mineru: { ...defaults.mineru, ...saved.mineru },
+    }
+  } catch {
+    return defaults
+  }
+}
+
+export function saveExternalServiceConfigs(
+  configs: Record<ExternalService, ExternalServiceConfig>,
+) {
+  localStorage.setItem(KEY_EXTERNAL_SERVICES, JSON.stringify(configs))
 }
 
 export function newId(): string {
