@@ -38,8 +38,11 @@ export default function Brainstorm() {
     if (!file) return
     setUploading(true)
     try {
-      const document = await uploadKnowledgeDocument(file)
-      setDocuments((current) => [...current.filter((item) => item.name !== document.name), document])
+      const prepared = await uploadKnowledgeDocument(file)
+      setDocuments((current) => [
+        ...current.filter((item) => !prepared.some((document) => document.name === item.name)),
+        ...prepared,
+      ])
     } catch (error) {
       setMessages((current) => [
         ...current,

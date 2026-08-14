@@ -45,7 +45,17 @@
                       LLM
 
 ## 四、技术细节
+#### 基于LlamaIndex实习
+
 #### 嵌入模型
     Qwen3-Embedding-0.6B
+
 #### 向量数据库
     Qdrant
+
+
+## 五、架构
+    upload_file.py -> 实现文档上传以及markdown格式转换，完成数据准备
+    chunk_embedding.py -> 实现文档chunk和向量数据库的嵌入
+    vectorstore.py -> 创建和部署本地向量数据库
+    interface.py -> 实现用户与基于本地知识库的LLM的交互

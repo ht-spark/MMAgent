@@ -17,6 +17,11 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
+from KnowledgeBase.upload_file import (
+    DOCUMENTS_ROOT as KNOWLEDGE_DOCUMENTS_ROOT,
+    KnowledgePreparationError,
+    prepare_upload,
+)
 from server.runs import (
     cancel_run,
     cleanup_stale_runs,
@@ -45,7 +50,6 @@ from server.schemas import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
-KNOWLEDGE_DOCUMENTS_ROOT = PROJECT_ROOT / "KnowledgeBase" / "documents"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 
 app = FastAPI(title="MMAgent Web", version="0.1.0")
@@ -93,27 +97,37 @@ async def knowledge_status_endpoint() -> KnowledgeStatus:
     return KnowledgeStatus(documents=_list_knowledge_documents())
 
 
-@app.post("/api/knowledge/documents", response_model=KnowledgeDocument)
+@app.post("/api/knowledge/documents", response_model=list[KnowledgeDocument])
 async def upload_knowledge_document_endpoint(
     document: UploadFile = File(..., description="知识库原始文档"),
-) -> KnowledgeDocument:
-    """Archive one source document for later parsing and embedding."""
+    mineru_config: str = Form("{}", description="JSON: apiKey/baseUrl"),
+) -> list[KnowledgeDocument]:
+    """Prepare one uploaded document or ZIP for the later embedding pipeline."""
     filename = Path(document.filename or "knowledge-document").name
     if not filename:
         raise HTTPException(status_code=400, detail="文档名称不能为空")
 
     content = await document.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="不能上传空文档")
+    try:
+        config = json.loads(mineru_config) if mineru_config else {}
+        prepared = prepare_upload(
+            filename,
+            content,
+            mineru_api_key=config.get("apiKey"),
+            mineru_base_url=config.get("baseUrl"),
+        )
+    except (ValueError, KnowledgePreparationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    KNOWLEDGE_DOCUMENTS_ROOT.mkdir(parents=True, exist_ok=True)
-    target = KNOWLEDGE_DOCUMENTS_ROOT / filename
-    target.write_bytes(content)
-    return KnowledgeDocument(
-        name=target.name,
-        size_bytes=target.stat().st_size,
-        uploaded_at=datetime.now(timezone.utc).isoformat(),
-    )
+    uploaded_at = datetime.now(timezone.utc).isoformat()
+    return [
+        KnowledgeDocument(
+            name=item.name,
+            size_bytes=item.path.stat().st_size,
+            uploaded_at=uploaded_at,
+        )
+        for item in prepared
+    ]
 
 
 @app.post("/api/knowledge/brainstorm")

@@ -1,6 +1,8 @@
 // 与 FastAPI 后端交互的薄封装。开发期经 Vite 代理（/api -> :8000）。
 
 /** 后端是否在线（缓存结果，避免频繁探测）。 */
+import { loadExternalServiceConfigs } from './apiConfigs'
+
 let _backendOnline: boolean | null = null
 
 /**
@@ -177,9 +179,10 @@ export async function getKnowledgeStatus(): Promise<KnowledgeStatus> {
   return res.json()
 }
 
-export async function uploadKnowledgeDocument(file: File): Promise<KnowledgeDocument> {
+export async function uploadKnowledgeDocument(file: File): Promise<KnowledgeDocument[]> {
   const form = new FormData()
   form.append('document', file)
+  form.append('mineru_config', JSON.stringify(loadExternalServiceConfigs().mineru))
   const res = await fetch('/api/knowledge/documents', { method: 'POST', body: form })
   if (!res.ok) throw new Error(await extractDetail(res, '文档上传失败'))
   return res.json()
