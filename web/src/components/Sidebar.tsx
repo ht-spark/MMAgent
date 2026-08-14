@@ -3,9 +3,8 @@ type Props = {
   collapsed: boolean
   onToggleCollapse: () => void
   onHome: () => void
-  onNew: () => void
+  onModeling: () => void
   onBrainstorm: () => void
-  onHistory: () => void
   onApi: () => void
   onDocs: () => void
 }
@@ -42,9 +41,8 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
   onHome,
-  onNew,
+  onModeling,
   onBrainstorm,
-  onHistory,
   onApi,
   onDocs,
 }: Props) {
@@ -72,14 +70,14 @@ export default function Sidebar({
 
       <nav className="sidebar-nav">
         <button
-          className={`nav-item ${section === 'new' ? 'active' : ''}`}
-          onClick={onNew}
-          title={collapsed ? '新建任务' : undefined}
+          className={`nav-item ${section === 'modeling' ? 'active' : ''}`}
+          onClick={onModeling}
+          title={collapsed ? '建模任务' : undefined}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" strokeLinecap="round" />
           </svg>
-          {!collapsed && '新建任务'}
+          {!collapsed && '建模任务'}
         </button>
         <button
           className={`nav-item ${section === 'brainstorm' ? 'active' : ''}`}
@@ -92,17 +90,6 @@ export default function Sidebar({
             <path d="M8.2 14.5A6 6 0 1 1 15.8 14.5c-.8.65-1.3 1.4-1.45 2.2h-2.7c-.15-.8-.65-1.55-1.45-2.2Z" />
           </svg>
           {!collapsed && '头脑风暴'}
-        </button>
-        <button
-          className={`nav-item ${section === 'history' ? 'active' : ''}`}
-          onClick={onHistory}
-          title={collapsed ? '历史任务' : undefined}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 3v18h18" />
-            <path d="M7 14l4-4 3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          {!collapsed && '历史任务'}
         </button>
         <button
           className={`nav-item ${section === 'api' ? 'active' : ''}`}

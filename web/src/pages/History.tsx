@@ -87,7 +87,7 @@ export default function History({ onOpen }: { onOpen: (runId: string) => void })
 
       {!loading && !err && runs.length === 0 && (
         <div className="form-card">
-          <p className="muted">暂无历史任务。点击左侧「新建任务」开始一次建模。</p>
+          <p className="muted">暂无历史任务。请返回“建模任务”新建一次建模任务。</p>
         </div>
       )}
 

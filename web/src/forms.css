@@ -167,6 +167,7 @@
   margin-left: 260px;
   flex: 1;
   min-width: 0;
+  position: relative;
   transition: margin-left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .content--full { margin-left: 0; }
@@ -215,7 +216,42 @@
 .chat-page {
   align-items: stretch;
   justify-content: center;
-  padding: 8px 24px 12px;
+  padding: 10px 32px 18px;
+}
+
+.chat-page .chatapp {
+  width: min(100%, 1120px);
+  height: calc(100vh - 28px);
+  margin: 0 auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.page-back-button {
+  position: absolute;
+  top: 10px;
+  left: 24px;
+  z-index: 5;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.page-back-button svg { width: 28px; height: 28px; }
+
+.page-back-button:hover {
+  color: var(--primary-700);
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .page-head {
@@ -236,6 +272,100 @@
   font-size: 14px;
   color: var(--text-tertiary);
   margin-top: 6px;
+}
+
+.modeling-tasks-page {
+  max-width: 980px;
+}
+
+.brainstorm-hub-page {
+  padding-top: 72px;
+}
+
+.brainstorm-hub-page .page-title {
+  font-size: 24px;
+}
+
+.modeling-tasks-head {
+  margin-bottom: 32px;
+}
+
+.modeling-task-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.modeling-task-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 176px;
+  padding: 28px;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modeling-task-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--primary-300);
+  box-shadow: var(--shadow-md);
+}
+
+.modeling-task-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  color: var(--primary-700);
+  background: var(--primary-50);
+  border-radius: var(--radius-md);
+}
+
+.modeling-task-icon svg {
+  width: 25px;
+  height: 25px;
+}
+
+.modeling-task-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modeling-task-copy strong {
+  font-size: 19px;
+}
+
+.modeling-task-copy span {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.modeling-task-arrow {
+  color: var(--primary-600);
+  font-size: 24px;
+}
+
+@media (max-width: 768px) {
+  .modeling-task-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .brainstorm-hub-page {
+    padding-top: 64px;
+  }
 }
 
 .back-link {
@@ -793,6 +923,13 @@
 
 /* ---------- Knowledge-base brainstorming ---------- */
 .brainstorm-page { padding: 28px 40px 32px; }
+.inspiration-page { padding-top: 58px; }
+.knowledge-base-page { max-width: 980px; }
+.knowledge-library-card { padding: 24px; background: var(--bg-card-solid); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.knowledge-library-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.knowledge-library-head h2 { margin: 0; color: var(--text-primary); font-size: 18px; }
+.knowledge-library-head span { color: var(--text-tertiary); font-size: 13px; }
+.knowledge-library-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .brainstorm-status {
   flex-shrink: 0;
   padding: 5px 10px;
@@ -828,6 +965,8 @@
 .brainstorm-composer span { color: var(--text-tertiary); font-size: 12px; }
 @media (max-width: 768px) {
   .brainstorm-page { padding: 24px 18px 50px; }
+  .inspiration-page { padding-top: 54px; }
+  .knowledge-library-list { grid-template-columns: 1fr; }
   .brainstorm-layout { grid-template-columns: 1fr; min-height: auto; }
   .knowledge-panel { min-height: 170px; }
   .brainstorm-chat { min-height: 520px; }
@@ -1062,14 +1201,16 @@
 .chatapp-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  position: relative;
   gap: 16px;
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card-solid);
+  min-height: 42px;
+  padding: 0 18px;
+  border-bottom: none;
+  background: transparent;
   flex-shrink: 0;
 }
-.chatapp-title { font-size: 16px; font-weight: 800; color: var(--text-primary); margin: 0; }
+.chatapp-title { font-size: 15px; font-weight: 800; color: var(--text-primary); margin: 0; }
 .chatapp-title-row { display: flex; align-items: center; gap: 8px; }
 .chatapp-title-edit {
   font-size: 14px;
@@ -1092,7 +1233,7 @@
   font-family: inherit;
   width: 240px;
 }
-.chatapp-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 0; }
+.chatapp-sub { font-size: 10px; color: var(--text-tertiary); margin-top: 1px; }
 .chatapp-sub strong { color: var(--primary-800); }
 .chatapp-sub code {
   background: var(--primary-50); color: var(--primary-800);
@@ -1104,11 +1245,11 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: var(--bg-soft);
+  background: transparent;
 }
 .chatapp .msg-text { white-space: pre-wrap; word-break: break-word; }
 
@@ -1194,9 +1335,9 @@
 }
 
 .chatapp-composer {
-  border-top: 1px solid var(--border);
-  background: var(--bg-card-solid);
-  padding: 8px 12px;
+  border-top: none;
+  background: transparent;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1229,9 +1370,9 @@
 .chatapp-textarea {
   width: 100%;
   resize: vertical;
-  min-height: 48px;
-  max-height: 120px;
-  padding: 8px 12px;
+  min-height: 42px;
+  max-height: 104px;
+  padding: 8px 11px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--bg);
@@ -1254,7 +1395,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text-secondary);
@@ -1286,7 +1427,18 @@
 
 @media (max-width: 768px) {
   .chatapp { height: calc(100vh - 64px - 20px); }
+  .chat-page { padding: 10px 16px 12px; }
+  .chat-page .chatapp { height: calc(100vh - 22px); border-radius: 0; }
+  .chatapp-messages { padding: 16px; }
 }
+.chatapp-head > div:first-child {
+  position: absolute;
+  left: 50%;
+  text-align: center;
+  transform: translateX(-50%);
+}
+.chatapp-head .chatapp-title-row { justify-content: center; }
+.chatapp-head > .btn-primary { position: absolute; right: 18px; }
 
 /* ---------- 进度气泡内嵌预算确认 ---------- */
 .progress-budget {

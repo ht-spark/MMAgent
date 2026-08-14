@@ -6,14 +6,21 @@ import History from './pages/History'
 import ApiManager from './pages/ApiManager'
 import Brainstorm from './pages/Brainstorm'
 import Docs from './pages/Docs'
+import ModelingTasks from './pages/ModelingTasks'
+import BrainstormHub from './pages/BrainstormHub'
+import KnowledgeBase from './pages/KnowledgeBase'
 
-type Section = 'home' | 'new' | 'brainstorm' | 'history' | 'api' | 'docs'
+type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
+type ModelingView = 'overview' | 'new' | 'history'
+type BrainstormView = 'overview' | 'knowledge' | 'inspiration'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
 export default function App() {
   const [section, setSection] = useState<Section>('home')
+  const [modelingView, setModelingView] = useState<ModelingView>('overview')
+  const [brainstormView, setBrainstormView] = useState<BrainstormView>('overview')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [task, setTask] = useState<{ step: TaskStep; runId: string | null }>({
     step: 'submit',
@@ -22,13 +29,27 @@ export default function App() {
 
   function startNew() {
     setTask({ step: 'submit', runId: null })
-    setSection('new')
+    setSection('modeling')
+    setModelingView('new')
   }
 
   function openFromHistory(runId: string) {
     // 所有历史任务都先恢复聊天上下文；ChatModeling 会根据任务状态展示进度或结果。
     setTask({ step: 'progress', runId })
-    setSection('new')
+    setSection('modeling')
+    setModelingView('new')
+  }
+
+  function goBack() {
+    if (section === 'modeling' && modelingView !== 'overview') {
+      setModelingView('overview')
+      return
+    }
+    if (section === 'brainstorm' && brainstormView !== 'overview') {
+      setBrainstormView('overview')
+      return
+    }
+    setSection('home')
   }
 
   return (
@@ -49,9 +70,14 @@ export default function App() {
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
           onHome={() => setSection('home')}
-          onNew={startNew}
-          onBrainstorm={() => setSection('brainstorm')}
-          onHistory={() => setSection('history')}
+          onModeling={() => {
+            setSection('modeling')
+            setModelingView('overview')
+          }}
+          onBrainstorm={() => {
+            setSection('brainstorm')
+            setBrainstormView('overview')
+          }}
           onApi={() => setSection('api')}
           onDocs={() => setSection('docs')}
         />
@@ -66,12 +92,30 @@ export default function App() {
               : ''
         }`}
       >
-        {section === 'home' && <Home onStart={startNew} onDocs={() => setSection('docs')} />}
-        {section === 'new' && (
-          <NewTask task={task} setTask={setTask} onHistory={() => setSection('history')} />
+        {section !== 'home' && (
+          <button className="page-back-button" onClick={goBack} aria-label="返回上一级" title="返回上一级">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5" />
+              <path d="m12 19-7-7 7-7" />
+            </svg>
+          </button>
         )}
-        {section === 'brainstorm' && <Brainstorm />}
-        {section === 'history' && <History onOpen={openFromHistory} />}
+        {section === 'home' && <Home onStart={startNew} onDocs={() => setSection('docs')} />}
+        {section === 'modeling' && modelingView === 'overview' && (
+          <ModelingTasks onNew={startNew} onHistory={() => setModelingView('history')} />
+        )}
+        {section === 'modeling' && modelingView === 'new' && (
+          <NewTask task={task} setTask={setTask} onHistory={() => setModelingView('history')} />
+        )}
+        {section === 'brainstorm' && brainstormView === 'overview' && (
+          <BrainstormHub
+            onKnowledge={() => setBrainstormView('knowledge')}
+            onInspiration={() => setBrainstormView('inspiration')}
+          />
+        )}
+        {section === 'brainstorm' && brainstormView === 'knowledge' && <KnowledgeBase />}
+        {section === 'brainstorm' && brainstormView === 'inspiration' && <Brainstorm />}
+        {section === 'modeling' && modelingView === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
         {section === 'docs' && <Docs />}
       </main>
