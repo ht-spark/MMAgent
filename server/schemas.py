@@ -110,6 +110,16 @@ class KnowledgeDocumentsDeleteBody(BaseModel):
     document_ids: list[int] = Field(min_length=1)
 
 
+class KnowledgeChunkEmbedResponse(BaseModel):
+    """Completed local chunking and embedding operation."""
+
+    collection_name: str
+    documents_processed: int
+    chunks_indexed: int
+    vector_size: int
+    document_chunks: dict[int, int] = Field(default_factory=dict)
+
+
 class BrainstormRequest(BaseModel):
     """头脑风暴对话接口的输入契约。"""
 

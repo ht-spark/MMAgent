@@ -201,6 +201,20 @@ export async function deleteKnowledgeDocuments(documentIds: number[]): Promise<{
   return res.json()
 }
 
+export type KnowledgeChunkEmbedResult = {
+  collection_name: string
+  documents_processed: number
+  chunks_indexed: number
+  vector_size: number
+  document_chunks: Record<number, number>
+}
+
+export async function chunkAndEmbedKnowledge(): Promise<KnowledgeChunkEmbedResult> {
+  const res = await fetch('/api/knowledge/chunk-embed', { method: 'POST' })
+  if (!res.ok) throw new Error(await extractDetail(res, '分块与嵌入失败'))
+  return res.json()
+}
+
 export async function sendBrainstormMessage(message: string): Promise<void> {
   const res = await fetch('/api/knowledge/brainstorm', {
     method: 'POST',

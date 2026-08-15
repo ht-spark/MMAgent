@@ -7,7 +7,7 @@ import {
   uploadKnowledgeDocument,
 } from '../api'
 
-export default function KnowledgeBase() {
+export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -269,7 +269,7 @@ export default function KnowledgeBase() {
             >
               {deleting ? '删除中…' : `删除所选 (${selectedIds.size})`}
             </button>
-            <button className="api-btn" disabled={documents.length === 0}>
+            <button className="api-btn" disabled={documents.length === 0} onClick={onNext}>
               下一步
             </button>
           </div>

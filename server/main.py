@@ -17,6 +17,8 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
+from KnowledgeBase.chunk import chunk_knowledge_documents
+from KnowledgeBase.embedding import build_local_qdrant_index
 from KnowledgeBase.upload_file import (
     DOCUMENTS_ROOT as KNOWLEDGE_DOCUMENTS_ROOT,
     KnowledgePreparationError,
@@ -45,6 +47,7 @@ from server.schemas import (
     BrainstormRequest,
     CreateRunResponse,
     KnowledgeDocument,
+    KnowledgeChunkEmbedResponse,
     KnowledgeDocumentsDeleteBody,
     KnowledgeStatus,
     ModelConfig,
@@ -168,6 +171,44 @@ async def delete_knowledge_documents_endpoint(
     if not deleted_ids:
         raise HTTPException(status_code=404, detail="未找到可删除的知识库文件")
     return {"deleted_ids": deleted_ids}
+
+
+@app.post("/api/knowledge/chunk-embed", response_model=KnowledgeChunkEmbedResponse)
+async def chunk_and_embed_knowledge_endpoint() -> KnowledgeChunkEmbedResponse:
+    """Run local sentence-window chunking and HuggingFace embedding on demand."""
+    try:
+        result = await asyncio.to_thread(_build_knowledge_vector_index)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    document_chunks = _document_chunk_counts(result.source_chunk_counts)
+    return KnowledgeChunkEmbedResponse(
+        collection_name=result.collection_name,
+        documents_processed=len(document_chunks),
+        chunks_indexed=result.indexed_nodes,
+        vector_size=result.vector_size,
+        document_chunks=document_chunks,
+    )
+
+
+def _build_knowledge_vector_index():
+    """Regenerate chunks, then rebuild the local Qdrant collection."""
+    chunk_knowledge_documents()
+    return build_local_qdrant_index()
+
+
+def _document_chunk_counts(source_chunk_counts: dict[str, int]) -> dict[int, int]:
+    """Map generated Markdown filenames back to stable upload-table IDs."""
+    records = list_upload_records()
+    if records:
+        return {
+            record.document_id: source_chunk_counts.get(record.output_name, 0)
+            for record in records
+        }
+    return {
+        index + 1: source_chunk_counts.get(document.name, 0)
+        for index, document in enumerate(_list_knowledge_documents())
+    }
 
 
 @app.post("/api/knowledge/brainstorm")

@@ -5,6 +5,7 @@ import asyncio
 from KnowledgeBase import upload_file
 from server import main
 from server.schemas import KnowledgeDocumentsDeleteBody
+from KnowledgeBase.embedding import IndexBuildResult
 
 
 def test_knowledge_status_lists_archived_documents(monkeypatch, tmp_path):
@@ -59,3 +60,28 @@ def test_delete_knowledge_documents_endpoint_removes_selected_record(monkeypatch
     assert result == {"deleted_ids": [prepared.document_id]}
     assert not prepared.path.exists()
     assert upload_file.list_upload_records() == []
+
+
+def test_chunk_embed_endpoint_returns_actual_index_counts(monkeypatch, tmp_path):
+    documents_root = tmp_path / "documents"
+    documents_root.mkdir()
+    monkeypatch.setattr(upload_file, "DOCUMENTS_ROOT", documents_root)
+    prepared = upload_file.prepare_upload("reference.md", b"# Reference\n")[0]
+    monkeypatch.setattr(main, "chunk_knowledge_documents", lambda: tmp_path / "nodes.jsonl")
+    monkeypatch.setattr(
+        main,
+        "build_local_qdrant_index",
+        lambda: IndexBuildResult(
+            collection_name="knowledge_chunks",
+            indexed_nodes=3,
+            vector_size=512,
+            qdrant_path=tmp_path / "qdrant_db",
+            source_chunk_counts={prepared.name: 3},
+        ),
+    )
+
+    result = asyncio.run(main.chunk_and_embed_knowledge_endpoint())
+
+    assert result.chunks_indexed == 3
+    assert result.vector_size == 512
+    assert result.document_chunks == {prepared.document_id: 3}

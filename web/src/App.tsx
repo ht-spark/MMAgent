@@ -9,11 +9,12 @@ import Docs from './pages/Docs'
 import ModelingTasks from './pages/ModelingTasks'
 import BrainstormHub from './pages/BrainstormHub'
 import KnowledgeBase from './pages/KnowledgeBase'
+import ChunkEmbedding from './pages/ChunkEmbedding'
 
 type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 type ModelingView = 'overview' | 'new' | 'history'
-type BrainstormView = 'overview' | 'knowledge' | 'inspiration'
+type BrainstormView = 'overview' | 'knowledge' | 'chunking' | 'inspiration'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
@@ -46,7 +47,8 @@ export default function App() {
       return
     }
     if (section === 'brainstorm' && brainstormView !== 'overview') {
-      setBrainstormView('overview')
+      // 分块与嵌入页返回知识库维护页，其余子页返回头脑风暴总览
+      setBrainstormView(brainstormView === 'chunking' ? 'knowledge' : 'overview')
       return
     }
     setSection('home')
@@ -113,7 +115,12 @@ export default function App() {
             onInspiration={() => setBrainstormView('inspiration')}
           />
         )}
-        {section === 'brainstorm' && brainstormView === 'knowledge' && <KnowledgeBase />}
+        {section === 'brainstorm' && brainstormView === 'knowledge' && (
+          <KnowledgeBase onNext={() => setBrainstormView('chunking')} />
+        )}
+        {section === 'brainstorm' && brainstormView === 'chunking' && (
+          <ChunkEmbedding onBack={() => setBrainstormView('knowledge')} />
+        )}
         {section === 'brainstorm' && brainstormView === 'inspiration' && <Brainstorm />}
         {section === 'modeling' && modelingView === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
