@@ -20,6 +20,9 @@ from server.files import list_figures, resolve_artifact
 from KnowledgeBase.upload_file import (
     DOCUMENTS_ROOT as KNOWLEDGE_DOCUMENTS_ROOT,
     KnowledgePreparationError,
+    UPLOAD_MANIFEST_NAME,
+    delete_upload_records,
+    list_upload_records,
     prepare_upload,
 )
 from server.runs import (
@@ -42,6 +45,7 @@ from server.schemas import (
     BrainstormRequest,
     CreateRunResponse,
     KnowledgeDocument,
+    KnowledgeDocumentsDeleteBody,
     KnowledgeStatus,
     ModelConfig,
     RunDetail,
@@ -68,18 +72,38 @@ _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 def _list_knowledge_documents() -> list[KnowledgeDocument]:
     """Return locally archived source documents for the knowledge-base MVP."""
+    records = list_upload_records()
+    if records:
+        return [
+            KnowledgeDocument(
+                id=record.document_id,
+                name=record.name,
+                size_bytes=record.size_bytes,
+                uploaded_at=record.uploaded_at,
+                upload_success=record.upload_success,
+                is_markdown=record.is_markdown,
+            )
+            for record in records
+        ]
     if not KNOWLEDGE_DOCUMENTS_ROOT.exists():
         return []
+    files = [
+        path
+        for path in sorted(KNOWLEDGE_DOCUMENTS_ROOT.iterdir(), key=lambda item: item.name.lower())
+        if path.is_file() and path.name != UPLOAD_MANIFEST_NAME
+    ]
     return [
         KnowledgeDocument(
+            id=index + 1,
             name=path.name,
             size_bytes=path.stat().st_size,
             uploaded_at=datetime.fromtimestamp(
                 path.stat().st_mtime, tz=timezone.utc
             ).isoformat(),
+            upload_success=True,
+            is_markdown=path.suffix.lower() in {".md", ".markdown", ".mdown"},
         )
-        for path in sorted(KNOWLEDGE_DOCUMENTS_ROOT.iterdir(), key=lambda item: item.name.lower())
-        if path.is_file()
+        for index, path in enumerate(files)
     ]
 
 
@@ -119,15 +143,31 @@ async def upload_knowledge_document_endpoint(
     except (ValueError, KnowledgePreparationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    uploaded_at = datetime.now(timezone.utc).isoformat()
     return [
         KnowledgeDocument(
-            name=item.name,
-            size_bytes=item.path.stat().st_size,
-            uploaded_at=uploaded_at,
+            id=item.document_id,
+            name=item.source_name,
+            size_bytes=item.source_size_bytes,
+            uploaded_at=item.uploaded_at,
+            upload_success=True,
+            is_markdown=item.is_markdown,
         )
         for item in prepared
     ]
+
+
+@app.delete("/api/knowledge/documents")
+async def delete_knowledge_documents_endpoint(
+    body: KnowledgeDocumentsDeleteBody,
+) -> dict[str, list[int]]:
+    """Delete selected prepared knowledge-base documents by their stable IDs."""
+    try:
+        deleted_ids = delete_upload_records(set(body.document_ids))
+    except KnowledgePreparationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not deleted_ids:
+        raise HTTPException(status_code=404, detail="未找到可删除的知识库文件")
+    return {"deleted_ids": deleted_ids}
 
 
 @app.post("/api/knowledge/brainstorm")

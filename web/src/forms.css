@@ -279,7 +279,7 @@
 }
 
 .brainstorm-hub-page {
-  padding-top: 72px;
+  padding-top: 20px;
 }
 
 .brainstorm-hub-page .page-title {
@@ -287,7 +287,7 @@
 }
 
 .modeling-tasks-head {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .modeling-task-grid {
@@ -364,7 +364,7 @@
   }
 
   .brainstorm-hub-page {
-    padding-top: 64px;
+    padding-top: 20px;
   }
 }
 
@@ -924,12 +924,172 @@
 /* ---------- Knowledge-base brainstorming ---------- */
 .brainstorm-page { padding: 28px 40px 32px; }
 .inspiration-page { padding-top: 58px; }
-.knowledge-base-page { max-width: 980px; }
-.knowledge-library-card { padding: 24px; background: var(--bg-card-solid); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
-.knowledge-library-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
-.knowledge-library-head h2 { margin: 0; color: var(--text-primary); font-size: 18px; }
-.knowledge-library-head span { color: var(--text-tertiary); font-size: 13px; }
-.knowledge-library-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.knowledge-base-page { max-width: none; padding-top: 58px; }
+.knowledge-base-page .page-head { margin-bottom: 20px; }
+.knowledge-base-page .page-title { font-size: 24px; }
+
+/* 知识库维护 — 上传长条 + 记录表格纵向布局 */
+.kb-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 左侧：文件记录表格 */
+.kb-table-section {
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.kb-table-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.kb-table-head h2 { margin: 0; color: var(--text-primary); font-size: 16px; font-weight: 600; }
+.kb-table-count { color: var(--text-tertiary); font-size: 12px; }
+.kb-table-wrapper { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+
+.kb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.kb-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-soft);
+}
+.kb-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.kb-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.kb-table tbody tr { cursor: pointer; transition: background 0.15s ease; }
+.kb-table tbody tr:hover { background: var(--bg-soft); }
+.kb-table tbody tr:last-child td { border-bottom: none; }
+.kb-row-selected { background: var(--primary-50) !important; }
+
+.kb-table .kb-col-check { width: 48px; text-align: center; }
+.kb-table .kb-col-id { width: 64px; padding-left: 24px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.kb-table .kb-col-name { text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-table .kb-col-time { width: 150px; padding-left: 40px; color: var(--text-tertiary); white-space: nowrap; }
+.kb-table .kb-col-status { width: 100px; text-align: center; }
+.kb-table .kb-col-unknown { width: 100px; text-align: center; }
+
+.kb-empty-row { text-align: center; color: var(--text-tertiary); padding: 32px 12px; }
+
+.kb-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.kb-tag-success { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+.kb-tag-fail { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+.kb-tag-unknown { background: rgba(245, 158, 11, 0.15); color: #a16207; }
+.kb-tag-normal { background: var(--bg-muted, #f3f4f6); color: var(--text-tertiary); }
+
+.kb-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.kb-actions .api-btn { font-size: 13px; padding: 8px 18px; }
+
+/* 顶部：上传文件区域（居中横向长条） */
+.kb-upload-section {
+  display: flex;
+  justify-content: center;
+}
+.kb-upload-zone {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 104px;
+  padding: 20px 28px;
+  text-align: left;
+  border: 2px dashed var(--border-strong, #d1d5db);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card-solid);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.kb-upload-zone:hover {
+  border-color: var(--primary-400, #60a5fa);
+  background: var(--primary-50);
+}
+.kb-drag-over {
+  border-color: var(--primary-600, #2563eb) !important;
+  background: var(--primary-50) !important;
+}
+.kb-uploading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+.kb-upload-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  color: var(--primary-600, #2563eb);
+}
+.kb-upload-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kb-upload-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.kb-upload-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.kb-upload-spinner {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary-600, #2563eb);
+  border-radius: 50%;
+  animation: kb-spin 0.8s linear infinite;
+}
+@keyframes kb-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .brainstorm-page { padding: 24px 18px 50px; }
+  .inspiration-page { padding-top: 54px; }
+  .knowledge-base-page { padding-top: 54px; }
+  .kb-upload-zone { min-height: 88px; padding: 16px 20px; }
+  .brainstorm-layout { grid-template-columns: 1fr; min-height: auto; }
+  .knowledge-panel { min-height: 170px; }
+  .brainstorm-chat { min-height: 520px; }
+}
 .brainstorm-status {
   flex-shrink: 0;
   padding: 5px 10px;
@@ -966,7 +1126,6 @@
 @media (max-width: 768px) {
   .brainstorm-page { padding: 24px 18px 50px; }
   .inspiration-page { padding-top: 54px; }
-  .knowledge-library-list { grid-template-columns: 1fr; }
   .brainstorm-layout { grid-template-columns: 1fr; min-height: auto; }
   .knowledge-panel { min-height: 170px; }
   .brainstorm-chat { min-height: 520px; }

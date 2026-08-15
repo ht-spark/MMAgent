@@ -163,9 +163,12 @@ export async function submitClarification(
 }
 
 export type KnowledgeDocument = {
+  id: number
   name: string
   size_bytes: number
   uploaded_at: string
+  upload_success: boolean
+  is_markdown: boolean
 }
 
 export type KnowledgeStatus = {
@@ -185,6 +188,16 @@ export async function uploadKnowledgeDocument(file: File): Promise<KnowledgeDocu
   form.append('mineru_config', JSON.stringify(loadExternalServiceConfigs().mineru))
   const res = await fetch('/api/knowledge/documents', { method: 'POST', body: form })
   if (!res.ok) throw new Error(await extractDetail(res, '文档上传失败'))
+  return res.json()
+}
+
+export async function deleteKnowledgeDocuments(documentIds: number[]): Promise<{ deleted_ids: number[] }> {
+  const res = await fetch('/api/knowledge/documents', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document_ids: documentIds }),
+  })
+  if (!res.ok) throw new Error(await extractDetail(res, '删除知识库文件失败'))
   return res.json()
 }
 

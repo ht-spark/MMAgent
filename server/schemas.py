@@ -89,9 +89,12 @@ class BudgetConfirmBody(BaseModel):
 class KnowledgeDocument(BaseModel):
     """知识库中已归档的原始文档。"""
 
+    id: int = 0
     name: str
     size_bytes: int
     uploaded_at: str
+    upload_success: bool = True
+    is_markdown: bool = False
 
 
 class KnowledgeStatus(BaseModel):
@@ -99,6 +102,12 @@ class KnowledgeStatus(BaseModel):
 
     retrieval_ready: bool = False
     documents: list[KnowledgeDocument] = Field(default_factory=list)
+
+
+class KnowledgeDocumentsDeleteBody(BaseModel):
+    """Selected knowledge-base document IDs to delete."""
+
+    document_ids: list[int] = Field(min_length=1)
 
 
 class BrainstormRequest(BaseModel):

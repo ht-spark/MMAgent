@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,7 @@ import httpx
 KNOWLEDGE_ROOT = Path(__file__).resolve().parent
 RAW_ROOT = KNOWLEDGE_ROOT / "raw"
 DOCUMENTS_ROOT = KNOWLEDGE_ROOT / "documents"
+UPLOAD_MANIFEST_NAME = ".uploads.json"
 MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdown"}
 TEXT_EXTENSIONS = {".txt"}
 MINERU_EXTENSIONS = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".png", ".jpg", ".jpeg"}
@@ -35,9 +38,99 @@ class KnowledgePreparationError(RuntimeError):
 class PreparedDocument:
     """One Markdown document ready for the later embedding pipeline."""
 
+    document_id: int
     name: str
     path: Path
     source_name: str
+    uploaded_at: str
+    source_size_bytes: int
+    is_markdown: bool
+
+
+@dataclass(frozen=True)
+class UploadRecord:
+    """Persisted metadata displayed by the knowledge-base upload table."""
+
+    document_id: int
+    name: str
+    size_bytes: int
+    uploaded_at: str
+    upload_success: bool
+    output_name: str
+    is_markdown: bool
+
+
+def list_upload_records() -> list[UploadRecord]:
+    """Return persisted upload metadata in upload order.
+
+    The manifest lives beside generated Markdown files, allowing a restarted
+    server to restore the table shown by the existing frontend. Invalid
+    metadata is ignored so it cannot prevent new uploads.
+    """
+    manifest_path = DOCUMENTS_ROOT / UPLOAD_MANIFEST_NAME
+    if not manifest_path.exists():
+        return []
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    records: list[UploadRecord] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        try:
+            records.append(
+                UploadRecord(
+                    document_id=int(item["document_id"]),
+                    name=str(item["name"]),
+                    size_bytes=int(item["size_bytes"]),
+                    uploaded_at=str(item["uploaded_at"]),
+                    upload_success=bool(item["upload_success"]),
+                    output_name=str(item["output_name"]),
+                    is_markdown=bool(
+                        item.get(
+                            "is_markdown",
+                            Path(str(item["name"])).suffix.lower() in MARKDOWN_EXTENSIONS,
+                        )
+                    ),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return records
+
+
+def delete_upload_records(document_ids: set[int]) -> list[int]:
+    """Delete selected prepared Markdown files and their table records.
+
+    Only output paths recorded in the upload manifest and located directly
+    under ``DOCUMENTS_ROOT`` are eligible. This prevents a malformed request
+    or manifest from deleting files outside the knowledge base.
+    """
+    if not document_ids:
+        return []
+
+    existing = list_upload_records()
+    selected = [record for record in existing if record.document_id in document_ids]
+    if not selected:
+        return []
+
+    output_paths = [_document_output_path(record.output_name) for record in selected]
+    for output_path in output_paths:
+        if output_path.exists() and not output_path.is_file():
+            raise KnowledgePreparationError(f"知识库文件路径无效：{output_path.name}")
+
+    for output_path in output_paths:
+        if output_path.exists():
+            output_path.unlink()
+
+    _write_upload_records(
+        [record for record in existing if record.document_id not in document_ids]
+    )
+    return [record.document_id for record in selected]
 
 
 class MinerUClient:
@@ -57,38 +150,35 @@ class MinerUClient:
                 client,
                 "POST",
                 "/api/v4/file-urls/batch",
-                json={"files": [{"name": source.name, "md5": digest}]},
+                json={
+                    "files": [{"name": source.name, "data_id": digest}],
+                    "model_version": "vlm",
+                    "enable_formula": True,
+                    "enable_table": True,
+                },
             )
-            file_info = _first_mapping(upload_info, "file_urls", "files")
-            upload_url = str(file_info.get("url") or file_info.get("upload_url") or "")
-            data_id = str(file_info.get("data_id") or file_info.get("id") or "")
-            if not upload_url or not data_id:
-                raise KnowledgePreparationError("MinerU 未返回上传地址或文件标识")
+            batch_id = str(upload_info.get("batch_id") or "")
+            upload_url = _first_string(upload_info, "file_urls", "files")
+            if not batch_id or not upload_url:
+                raise KnowledgePreparationError("MinerU 未返回批次标识或上传地址")
 
             response = client.put(upload_url, content=file_bytes, timeout=120.0)
             response.raise_for_status()
-            task_data = self._request_json(
-                client,
-                "POST",
-                "/api/v4/extract/task",
-                json={
-                    "files": [{"data_id": data_id, "filename": source.name}],
-                    "options": {"enable_formula": True, "enable_table": True},
-                },
-            )
-            task_id = str(task_data.get("task_id") or task_data.get("id") or "")
-            if not task_id:
-                raise KnowledgePreparationError("MinerU 未返回转换任务标识")
 
             deadline = time.monotonic() + 600
             while time.monotonic() < deadline:
-                task = self._request_json(client, "GET", f"/api/v4/extract/task/{task_id}")
+                batch_result = self._request_json(
+                    client,
+                    "GET",
+                    f"/api/v4/extract-results/batch/{batch_id}",
+                )
+                task = _first_mapping(batch_result, "extract_result")
                 state = str(task.get("state") or task.get("status") or "").lower()
                 if state in {"done", "success", "succeeded"}:
                     return self._download_markdown(client, task)
                 if state in {"failed", "error"}:
                     raise KnowledgePreparationError(
-                        f"MinerU 转换失败: {task.get('error') or task.get('message') or state}"
+                        f"MinerU 转换失败: {task.get('err_msg') or task.get('error') or task.get('message') or state}"
                     )
                 time.sleep(2)
         raise KnowledgePreparationError("MinerU 转换超时（10 分钟）")
@@ -145,12 +235,15 @@ def prepare_upload(
 
     RAW_ROOT.mkdir(parents=True, exist_ok=True)
     DOCUMENTS_ROOT.mkdir(parents=True, exist_ok=True)
-    raw_path = RAW_ROOT / safe_name
+    uploaded_at = datetime.now(timezone.utc).isoformat()
+    raw_path = _available_path(RAW_ROOT / safe_name)
     raw_path.write_bytes(content)
 
     if raw_path.suffix.lower() == ".zip":
-        return _prepare_archive(raw_path, mineru_api_key, mineru_base_url)
-    return [_prepare_file(raw_path, safe_name, mineru_api_key, mineru_base_url)]
+        prepared = _prepare_archive(raw_path, mineru_api_key, mineru_base_url)
+    else:
+        prepared = [_prepare_file(raw_path, safe_name, mineru_api_key, mineru_base_url)]
+    return _persist_upload_records(prepared, uploaded_at)
 
 
 def _prepare_archive(
@@ -168,7 +261,7 @@ def _prepare_archive(
             name = Path(member.filename).name
             if not name:
                 continue
-            extracted = RAW_ROOT / f"{archive_path.stem}_{name}"
+            extracted = _available_path(RAW_ROOT / f"{archive_path.stem}_{name}")
             extracted.write_bytes(archive.read(member))
             prepared.append(_prepare_file(extracted, member.filename, api_key, base_url))
     if not prepared:
@@ -184,7 +277,7 @@ def _prepare_file(
 ) -> PreparedDocument:
     extension = raw_path.suffix.lower()
     output_name = f"{raw_path.stem}.md"
-    output_path = DOCUMENTS_ROOT / output_name
+    output_path = _available_path(DOCUMENTS_ROOT / output_name)
 
     if extension in MARKDOWN_EXTENSIONS:
         output_path.write_bytes(raw_path.read_bytes())
@@ -199,7 +292,101 @@ def _prepare_file(
     else:
         raise KnowledgePreparationError(f"不支持的知识库文件类型: {extension or '无扩展名'}")
 
-    return PreparedDocument(name=output_name, path=output_path, source_name=source_name)
+    return PreparedDocument(
+        document_id=0,
+        name=output_path.name,
+        path=output_path,
+        source_name=Path(source_name).name,
+        uploaded_at="",
+        source_size_bytes=raw_path.stat().st_size,
+        is_markdown=extension in MARKDOWN_EXTENSIONS,
+    )
+
+
+def _available_path(path: Path) -> Path:
+    """Return ``path`` or a numbered sibling without overwriting an upload."""
+    if not path.exists():
+        return path
+    for index in range(2, 10_000):
+        candidate = path.with_name(f"{path.stem}_{index}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise KnowledgePreparationError(f"无法为文件分配安全存储路径：{path.name}")
+
+
+def _persist_upload_records(
+    prepared_documents: list[PreparedDocument], uploaded_at: str
+) -> list[PreparedDocument]:
+    """Assign stable table IDs and append metadata after conversion succeeds."""
+    existing = list_upload_records()
+    next_id = max((record.document_id for record in existing), default=0) + 1
+    assigned = [
+        replace(document, document_id=next_id + index, uploaded_at=uploaded_at)
+        for index, document in enumerate(prepared_documents)
+    ]
+    manifest_records = [
+        {
+            "document_id": record.document_id,
+            "name": record.name,
+            "size_bytes": record.size_bytes,
+            "uploaded_at": record.uploaded_at,
+            "upload_success": record.upload_success,
+            "output_name": record.output_name,
+            "is_markdown": record.is_markdown,
+        }
+        for record in existing
+    ] + [
+        {
+            "document_id": document.document_id,
+            "name": document.source_name,
+            "size_bytes": document.source_size_bytes,
+            "uploaded_at": document.uploaded_at,
+            "upload_success": True,
+            "output_name": document.name,
+            "is_markdown": document.is_markdown,
+        }
+        for document in assigned
+    ]
+    _write_upload_records_payload(manifest_records)
+    return assigned
+
+
+def _document_output_path(output_name: str) -> Path:
+    """Resolve one generated Markdown path and reject traversal attempts."""
+    if Path(output_name).name != output_name:
+        raise KnowledgePreparationError("知识库文件路径无效")
+    root = DOCUMENTS_ROOT.resolve()
+    output_path = (DOCUMENTS_ROOT / output_name).resolve()
+    if output_path.parent != root:
+        raise KnowledgePreparationError("知识库文件路径超出允许范围")
+    return output_path
+
+
+def _write_upload_records(records: list[UploadRecord]) -> None:
+    """Persist upload records after a deletion."""
+    _write_upload_records_payload(
+        [
+            {
+                "document_id": record.document_id,
+                "name": record.name,
+                "size_bytes": record.size_bytes,
+                "uploaded_at": record.uploaded_at,
+                "upload_success": record.upload_success,
+                "output_name": record.output_name,
+                "is_markdown": record.is_markdown,
+            }
+            for record in records
+        ]
+    )
+
+
+def _write_upload_records_payload(records: list[dict[str, Any]]) -> None:
+    """Write a JSON manifest for the upload table."""
+    DOCUMENTS_ROOT.mkdir(parents=True, exist_ok=True)
+    (DOCUMENTS_ROOT / UPLOAD_MANIFEST_NAME).write_text(
+        json.dumps(records, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _first_mapping(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -208,3 +395,12 @@ def _first_mapping(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
         if isinstance(value, list) and value and isinstance(value[0], dict):
             return value[0]
     raise KnowledgePreparationError("MinerU 返回上传文件信息无效")
+
+
+def _first_string(payload: dict[str, Any], *keys: str) -> str:
+    """Return the first non-empty URL string from a MinerU response field."""
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list) and value and isinstance(value[0], str):
+            return value[0]
+    return ""
