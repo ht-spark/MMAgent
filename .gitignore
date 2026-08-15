@@ -65,8 +65,9 @@ logs/
 *.old
 .artifacts/
 .reasonix
-.chunks/
-.documents/
-.embedding_model/
-.qdrant_db/
-.raw/
+KnowledgeBase/chunks/
+KnowledgeBase/documents/
+KnowledgeBase/embedding_model/
+KnowledgeBase/qdrant_db/
+KnowledgeBase/raw/
+KnowledgeBase/embedding_model/bge-small-zh-v1.5/model.safetensors
