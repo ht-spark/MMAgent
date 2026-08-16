@@ -10,18 +10,7 @@ type Props = {
 }
 
 const LOGO = (
-  <svg viewBox="0 0 32 32" width="28" height="28">
-    <defs>
-      <linearGradient id="sidebarLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#4A5BC7" />
-        <stop offset="100%" stopColor="#7CC7C0" />
-      </linearGradient>
-    </defs>
-    <path
-      d="M4 24 L4 8 L10 8 L16 16 L22 8 L28 8 L28 24 L24 24 L24 14 L18 22 L14 22 L8 14 L8 24 Z"
-      fill="url(#sidebarLogoGrad)"
-    />
-  </svg>
+  <img className="sidebar-logo-img" src="/logo.png" alt="MMAgent 数学建模智能体" />
 )
 
 const COLLAPSE_ICON = (
@@ -50,13 +39,7 @@ export default function Sidebar({
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
       <div className="sidebar-top">
         <div className="sidebar-logo" onClick={onHome} title={collapsed ? 'MMAgent 数学建模智能体' : undefined}>
-          <div className="logo-icon">{LOGO}</div>
-          {!collapsed && (
-            <div className="logo-text">
-              <span className="logo-name sidebar-brand">MMAgent</span>
-              <span className="logo-sub sidebar-sub">数学建模智能体</span>
-            </div>
-          )}
+          {LOGO}
         </div>
         <button
           className="sidebar-toggle"
