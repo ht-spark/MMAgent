@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
+import { syncApiSettingsCache } from './api'
 import Home from './pages/Home'
 import NewTask from './pages/NewTask'
 import History from './pages/History'
@@ -27,6 +28,18 @@ export default function App() {
     step: 'submit',
     runId: null,
   })
+
+  // 启动时把后端本地文件中的 API 配置同步进浏览器缓存，
+  // 换浏览器/端口或清缓存后无需重新设置。
+  useEffect(() => {
+    void syncApiSettingsCache()
+  }, [])
+
+  function enterModeling() {
+    // 落地页“开始建模”：先进入建模任务总览（新建任务 / 历史任务）
+    setSection('modeling')
+    setModelingView('overview')
+  }
 
   function startNew() {
     setTask({ step: 'submit', runId: null })
@@ -102,7 +115,7 @@ export default function App() {
             </svg>
           </button>
         )}
-        {section === 'home' && <Home onStart={startNew} onDocs={() => setSection('docs')} />}
+        {section === 'home' && <Home onStart={enterModeling} onDocs={() => setSection('docs')} />}
         {section === 'modeling' && modelingView === 'overview' && (
           <ModelingTasks onNew={startNew} onHistory={() => setModelingView('history')} />
         )}

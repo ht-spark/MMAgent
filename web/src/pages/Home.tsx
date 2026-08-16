@@ -88,8 +88,8 @@ export default function Home({ onStart, onDocs }: Props) {
           labels: Array.from({ length: 24 }, (_, i) => i),
           datasets: [{
             data: [12, 8, 5, 3, 2, 4, 12, 45, 78, 65, 58, 62, 70, 68, 72, 80, 85, 90, 88, 75, 60, 45, 30, 18],
-            borderColor: '#4FC3F7',
-            backgroundColor: 'rgba(79, 195, 247, 0.15)',
+            borderColor: '#4A5BC7',
+            backgroundColor: 'rgba(124, 199, 192, 0.15)',
             borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0,
           }],
         },

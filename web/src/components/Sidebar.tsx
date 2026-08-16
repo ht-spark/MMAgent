@@ -13,8 +13,8 @@ const LOGO = (
   <svg viewBox="0 0 32 32" width="28" height="28">
     <defs>
       <linearGradient id="sidebarLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#4FC3F7" />
-        <stop offset="100%" stopColor="#0288D1" />
+        <stop offset="0%" stopColor="#4A5BC7" />
+        <stop offset="100%" stopColor="#7CC7C0" />
       </linearGradient>
     </defs>
     <path

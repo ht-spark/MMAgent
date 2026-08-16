@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ApiConfig,
   loadConfigs,
@@ -12,6 +12,7 @@ import {
   loadExternalServiceConfigs,
   saveExternalServiceConfigs,
 } from '../apiConfigs'
+import { persistApiSettings, syncApiSettingsCache } from '../api'
 
 type Props = {
   onUsed?: () => void
@@ -46,11 +47,23 @@ export default function ApiManager({ onUsed }: Props) {
   const [serviceConfigs, setServiceConfigs] = useState<Record<ExternalService, ExternalServiceConfig>>(
     loadExternalServiceConfigs,
   )
+  const persistDebounceRef = useRef<number | null>(null)
 
   useEffect(() => {
     setConfigs(loadConfigs())
     setActiveId(loadActiveId())
     setServiceConfigs(loadExternalServiceConfigs())
+    // 后端本地文件是权威存储：同步成功后覆盖界面与浏览器缓存
+    let cancelled = false
+    syncApiSettingsCache().then((synced) => {
+      if (!synced || cancelled) return
+      setConfigs(loadConfigs())
+      setActiveId(loadActiveId())
+      setServiceConfigs(loadExternalServiceConfigs())
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   function persist(next: ApiConfig[], nextActive: string | null) {
@@ -58,6 +71,11 @@ export default function ApiManager({ onUsed }: Props) {
     saveConfigs(next)
     setActiveId(nextActive)
     saveActiveId(nextActive)
+    void persistApiSettings({
+      configs: next,
+      activeId: nextActive,
+      externalServices: serviceConfigs,
+    })
   }
 
   function startNew() {
@@ -121,6 +139,15 @@ export default function ApiManager({ onUsed }: Props) {
     if (onUsed) onUsed()
   }
 
+  /** 扩展服务输入防抖：停止输入 400ms 后才写后端文件 */
+  function schedulePersist(snapshot: Parameters<typeof persistApiSettings>[0]) {
+    if (persistDebounceRef.current !== null) window.clearTimeout(persistDebounceRef.current)
+    persistDebounceRef.current = window.setTimeout(() => {
+      persistDebounceRef.current = null
+      void persistApiSettings(snapshot)
+    }, 400)
+  }
+
   function updateService(
     service: ExternalService,
     field: keyof ExternalServiceConfig,
@@ -132,6 +159,7 @@ export default function ApiManager({ onUsed }: Props) {
     }
     setServiceConfigs(next)
     saveExternalServiceConfigs(next)
+    schedulePersist({ configs, activeId, externalServices: next })
   }
 
   return (
@@ -140,7 +168,7 @@ export default function ApiManager({ onUsed }: Props) {
         <div>
           <h1 className="page-title">API 管理</h1>
           <div className="page-sub">
-            管理 LLM、联网检索和文档转换服务。密钥仅保存在当前浏览器。
+            管理 LLM、联网检索和文档转换服务。配置保存在本机（服务端本地文件），重新进入网页自动恢复。
           </div>
         </div>
         <button className="submit-btn" style={{ width: 'auto', marginTop: 0, padding: '10px 18px' }} onClick={startNew}>

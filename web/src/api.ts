@@ -1,7 +1,17 @@
 // 与 FastAPI 后端交互的薄封装。开发期经 Vite 代理（/api -> :8000）。
 
 /** 后端是否在线（缓存结果，避免频繁探测）。 */
-import { loadExternalServiceConfigs } from './apiConfigs'
+import {
+  ApiConfig,
+  ApiSettingsSnapshot,
+  DEFAULT_EXTERNAL_SERVICES,
+  ExternalService,
+  ExternalServiceConfig,
+  loadExternalServiceConfigs,
+  saveActiveId,
+  saveConfigs,
+  saveExternalServiceConfigs,
+} from './apiConfigs'
 
 let _backendOnline: boolean | null = null
 
@@ -222,4 +232,61 @@ export async function sendBrainstormMessage(message: string): Promise<void> {
     body: JSON.stringify({ message }),
   })
   if (!res.ok) throw new Error(await extractDetail(res, '头脑风暴请求失败'))
+}
+
+/**
+ * 从后端本地文件读取 API 配置快照。
+ * 后端不可用、或从未保存过（saved=false）时返回 null。
+ */
+export async function fetchApiSettings(): Promise<(ApiSettingsSnapshot & { saved: boolean }) | null> {
+  try {
+    const res = await fetch('/api/settings/api', { signal: AbortSignal.timeout(3000) })
+    if (!res.ok) return null
+    const d = await res.json()
+    if (!Array.isArray(d.configs)) return null
+    const es = (d.external_services ?? {}) as Record<string, any>
+    const merge = (name: ExternalService): ExternalServiceConfig => ({
+      apiKey: String(es[name]?.apiKey ?? DEFAULT_EXTERNAL_SERVICES[name].apiKey),
+      baseUrl: String(es[name]?.baseUrl ?? DEFAULT_EXTERNAL_SERVICES[name].baseUrl),
+    })
+    return {
+      saved: d.saved === true,
+      configs: d.configs as ApiConfig[],
+      activeId: typeof d.active_id === 'string' ? d.active_id : null,
+      externalServices: { tavily: merge('tavily'), mineru: merge('mineru') },
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把后端权威配置同步进浏览器缓存。
+ * 仅当后端确实保存过（saved=true）时覆盖，避免首次迁移清掉本地已有配置。
+ */
+export async function syncApiSettingsCache(): Promise<boolean> {
+  const snap = await fetchApiSettings()
+  if (!snap || !snap.saved) return false
+  saveConfigs(snap.configs)
+  saveActiveId(snap.activeId)
+  saveExternalServiceConfigs(snap.externalServices)
+  return true
+}
+
+/** 将配置快照写入后端本地文件；失败时静默降级为仅浏览器缓存。 */
+export async function persistApiSettings(snapshot: ApiSettingsSnapshot): Promise<void> {
+  try {
+    await fetch('/api/settings/api', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        configs: snapshot.configs,
+        active_id: snapshot.activeId,
+        external_services: snapshot.externalServices,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+  } catch {
+    /* 后端离线时保留 localStorage 缓存即可 */
+  }
 }

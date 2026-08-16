@@ -58,6 +58,7 @@ from server.schemas import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
+API_SETTINGS_PATH = Path(__file__).resolve().parent / "api_settings.json"
 
 app = FastAPI(title="MMAgent Web", version="0.1.0")
 
@@ -116,6 +117,51 @@ async def _on_startup() -> None:
     cleaned = cleanup_stale_runs(max_age_seconds=120)
     if cleaned:
         print(f"[startup] cleaned {cleaned} stale running run(s)")
+
+
+def _read_api_settings() -> dict | None:
+    """Load the persisted API settings snapshot, or None when absent/corrupt."""
+    if not API_SETTINGS_PATH.exists():
+        return None
+    try:
+        data = json.loads(API_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+@app.get("/api/settings/api")
+async def get_api_settings_endpoint() -> dict:
+    """Return the locally persisted API settings snapshot.
+
+    ``saved=False`` means nothing has ever been persisted, so the frontend
+    keeps its browser cache untouched instead of overwriting it with empties.
+    """
+    data = _read_api_settings() or {}
+    return {
+        "saved": bool(data),
+        "configs": data.get("configs", []),
+        "active_id": data.get("active_id"),
+        "external_services": data.get("external_services", {}),
+    }
+
+
+@app.put("/api/settings/api")
+async def save_api_settings_endpoint(body: dict) -> dict:
+    """Persist the API settings snapshot to a local file (atomic replace)."""
+    if not isinstance(body.get("configs"), list):
+        raise HTTPException(status_code=422, detail="configs must be a list")
+    payload = {
+        "configs": body.get("configs", []),
+        "active_id": body.get("active_id") if isinstance(body.get("active_id"), str) else None,
+        "external_services": body.get("external_services")
+        if isinstance(body.get("external_services"), dict)
+        else {},
+    }
+    tmp_path = API_SETTINGS_PATH.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(API_SETTINGS_PATH)
+    return {"ok": True}
 
 
 @app.get("/api/knowledge/status", response_model=KnowledgeStatus)

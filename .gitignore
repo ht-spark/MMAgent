@@ -71,3 +71,7 @@ KnowledgeBase/embedding_model/
 KnowledgeBase/qdrant_db/
 KnowledgeBase/raw/
 KnowledgeBase/embedding_model/bge-small-zh-v1.5/model.safetensors
+
+# API 配置本地持久化（含密钥）
+server/api_settings.json
+server/api_settings.json.tmp

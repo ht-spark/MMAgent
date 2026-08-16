@@ -183,17 +183,17 @@ python -m scr.math_modeling_agent.main run --problem examples/ --data examples/ 
 
 任务参数可直接传入文本或文件路径：`--problem examples/problem.md` 或 `--problem "某工厂生产A、B两种产品..."`。
 
-**② Web 界面模式** —— 启动服务层，浏览器操作（推荐）：
+**② Web 界面模式(用户使用)** —— 启动服务层，浏览器操作：
 
 ```bash
-# 1. 构建前端产物到 web/dist（首次或前端改动后执行）
+# 1. 构建前端产物到 web/dist（首次）
 cd web && npm run build && cd ..
 
 # 2. 启动服务（同时托管前端与 API）
 uvicorn server.main:app --port 8000
 
 # 3. 浏览器访问
-#  http://localhost:8000
+http://localhost:8000
 ```
 
 服务启动后自动清理上次未完成的"僵尸"任务，前端产物由根路径静态托管。

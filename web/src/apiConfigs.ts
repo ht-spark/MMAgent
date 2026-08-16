@@ -18,9 +18,20 @@ export type ExternalServiceConfig = {
   baseUrl: string
 }
 
+export type ApiSettingsSnapshot = {
+  configs: ApiConfig[]
+  activeId: string | null
+  externalServices: Record<ExternalService, ExternalServiceConfig>
+}
+
 const KEY_CONFIGS = 'mmagent.apiConfigs'
 const KEY_ACTIVE = 'mmagent.apiActiveId'
 const KEY_EXTERNAL_SERVICES = 'mmagent.externalServiceConfigs'
+
+export const DEFAULT_EXTERNAL_SERVICES: Record<ExternalService, ExternalServiceConfig> = {
+  tavily: { apiKey: '', baseUrl: 'https://api.tavily.com' },
+  mineru: { apiKey: '', baseUrl: 'https://mineru.net' },
+}
 
 export function loadConfigs(): ApiConfig[] {
   try {
@@ -47,20 +58,16 @@ export function saveActiveId(id: string | null) {
 }
 
 export function loadExternalServiceConfigs(): Record<ExternalService, ExternalServiceConfig> {
-  const defaults: Record<ExternalService, ExternalServiceConfig> = {
-    tavily: { apiKey: '', baseUrl: 'https://api.tavily.com' },
-    mineru: { apiKey: '', baseUrl: 'https://mineru.net' },
-  }
   try {
     const raw = localStorage.getItem(KEY_EXTERNAL_SERVICES)
-    if (!raw) return defaults
+    if (!raw) return { ...DEFAULT_EXTERNAL_SERVICES }
     const saved = JSON.parse(raw) as Partial<Record<ExternalService, ExternalServiceConfig>>
     return {
-      tavily: { ...defaults.tavily, ...saved.tavily },
-      mineru: { ...defaults.mineru, ...saved.mineru },
+      tavily: { ...DEFAULT_EXTERNAL_SERVICES.tavily, ...saved.tavily },
+      mineru: { ...DEFAULT_EXTERNAL_SERVICES.mineru, ...saved.mineru },
     }
   } catch {
-    return defaults
+    return { ...DEFAULT_EXTERNAL_SERVICES }
   }
 }
 
