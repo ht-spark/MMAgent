@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from scr.runtime.budget import BudgetManager
+from scr.runtime.budget import BudgetManager, BudgetType
 from scr.schemas.question import (
     ProblemInterpretation,
     QuestionResult,
@@ -137,6 +137,36 @@ class TestCheckGQ:
         assert gq.passed is False
         assert any("question_id_mismatch" in c for c in gq.failed_checks)
 
+    def test_contract_from_required_outputs_without_result_form(self):
+        """回归（run 549171fc）：result_form 为空但 decision_record 提供契约时应通过。
+
+        LLM-only 主流程不保证填充 result_form，契约由 formulation/decision_record
+        的 required_outputs 承载，不能仅因 result_form 为空而失败。
+        """
+        result = _make_valid_result()
+        result.problem_interpretation.result_form = ""
+        gq = check_gq(_make_state(result))
+        assert gq.passed is True
+        assert not any("contract" in c for c in gq.failed_checks)
+
+    def test_fail_when_no_contract_source(self):
+        """result_form 与 required_outputs 均缺失时报告契约缺失。"""
+        result = _make_valid_result()
+        result.problem_interpretation.result_form = ""
+        result.decision_record = {"selected_method": "问题驱动建模"}
+        result.formulation = {"description": "测试模型"}
+        gq = check_gq(_make_state(result))
+        assert gq.passed is False
+        assert "question_contract_missing" in gq.failed_checks
+
+    def test_computation_error_not_duplicated_by_outputs_missing(self):
+        """计算错误时不再重复报告 computation_outputs_missing（根因即 computation_error）。"""
+        result = _make_valid_result()
+        result.computation = {"status": "error", "error": "代码运行失败"}
+        gq = check_gq(_make_state(result))
+        assert "computation_error" in gq.failed_checks
+        assert "computation_outputs_missing" not in gq.failed_checks
+
 
 # ---------------------------------------------------------------------------
 # run_gq_node 测试
@@ -153,15 +183,45 @@ class TestRunGQNode:
         assert result["_gq_action"] == "pass"
         assert result["current_result"].status == "validated"
 
-    def test_retry_when_incomplete(self):
-        """结构不完整时触发重试。"""
+    def test_retry_when_computation_error(self):
+        """计算类失败（重求解可修复）消耗预算后重试。"""
         result = _make_valid_result()
-        result.reusable_summary = None  # 缺少摘要
+        result.computation = {"status": "error", "error": "代码运行失败"}
         state = _make_state(result, retry_count=0, budget_manager=BudgetManager())
         gq_result = run_gq_node(state)
         assert gq_result["_gq_action"] == "retry"
         assert gq_result["_solve_retry_count"] == 1
         assert gq_result["current_result"].status == "solving"
+
+    def test_retry_feedback_includes_computation_error(self):
+        """重试反馈携带真实计算错误，供 LLM 针对性修复。"""
+        result = _make_valid_result()
+        result.computation = {"status": "error", "error": "NameError: foo is not defined"}
+        state = _make_state(result, budget_manager=BudgetManager())
+        gq_result = run_gq_node(state)
+        assert "NameError: foo is not defined" in gq_result["_gq_feedback"]
+
+    def test_structural_failure_blocks_without_consuming_budget(self):
+        """结构性失败（重求解必然复现）直接 blocked，不消耗验证预算。"""
+        result = _make_valid_result()
+        result.reusable_summary = None  # solve 流程必然产出，缺失属结构性异常
+        bm = BudgetManager()
+        record = bm.get_record(BudgetType.VALIDATION_ITERATION)
+        used_before = record.used
+        state = _make_state(result, budget_manager=bm)
+        gq_result = run_gq_node(state)
+        assert gq_result["_gq_action"] == "blocked"
+        assert record.used == used_before
+        assert "结构性失败" in gq_result["current_result"].error_message
+
+    def test_blocked_error_message_keeps_computation_error(self):
+        """blocked 的 error_message 保留底层计算错误摘要，便于追溯。"""
+        result = _make_valid_result()
+        result.computation = {"status": "error", "error": "ZeroDivisionError: division by zero"}
+        state = _make_state(result)  # 无预算管理器 → blocked
+        gq_result = run_gq_node(state)
+        assert gq_result["_gq_action"] == "blocked"
+        assert "ZeroDivisionError" in gq_result["current_result"].error_message
 
     def test_block_without_budget_manager(self):
         """无预算管理器时直接 blocked。"""

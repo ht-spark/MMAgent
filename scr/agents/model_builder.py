@@ -863,6 +863,7 @@ class ModelBuilder:
         feedback = feedback or ""
         last_error = ""
         t_start = time.time()
+        code = ""  # 失败归档用：模型设计阶段失败时可能尚未生成代码
         print(
             "[builder] 问题驱动建模开始"
             "（由 LLM 根据题面、数据和约束推理，模型设计/代码生成超时均为 10 分钟）"
@@ -933,6 +934,7 @@ class ModelBuilder:
             }
         except LLMTimeoutError as exc:
             print(f"[builder] 问题驱动建模超时: {str(exc)[:150]}")
+            self._persist_failed_attempt(context, output_dir, code, csv_path, exc, method_name)
             return {"status": "error", "error": str(exc)}
         except (CodeModelingError, CodeExecutionError, ValueError) as exc:
             repair_feedback = (
@@ -952,6 +954,7 @@ class ModelBuilder:
                     modeling_context=modeling_context,
                 )
             print(f"[builder] 问题驱动建模失败: {str(exc)[:150]}")
+            self._persist_failed_attempt(context, output_dir, code, csv_path, exc, method_name)
             return {"status": "error", "error": str(exc)}
         finally:
             if csv_path and os.path.exists(csv_path):
@@ -971,6 +974,38 @@ class ModelBuilder:
             question_id=question_id,
         )
 
+    def _persist_failed_attempt(
+        self,
+        context: CurrentQuestionContext,
+        output_dir: str | Path | None,
+        code: str,
+        data_csv_path: str | Path | None,
+        exc: Exception,
+        method_name: str,
+    ) -> None:
+        """归档失败的求解尝试（代码 + 错误），便于 blocked 后追溯根因。
+
+        仅在最终失败（不再重试）时调用；模型设计阶段失败时 code 为空，跳过。
+        归档失败不得掩盖原始错误。
+        """
+        if not code or not output_dir or not context.question_id:
+            return
+        try:
+            q_dir = self._persist_question_artifacts(
+                question_id=context.question_id,
+                output_dir=output_dir,
+                code=code,
+                data_csv_path=data_csv_path,
+                results={"error": str(exc)},
+                method_name=method_name,
+                model_name="failed_attempt",
+                status="error",
+            )
+            if q_dir:
+                print(f"[builder] 失败尝试已归档: {q_dir}")
+        except Exception as persist_err:  # noqa: BLE001 - 归档失败不影响原始错误返回
+            print(f"[builder] 失败尝试归档失败（不影响错误返回）: {persist_err}")
+
     def _persist_question_artifacts(
         self,
         question_id: str,
@@ -980,6 +1015,7 @@ class ModelBuilder:
         results: dict,
         method_name: str,
         model_name: str,
+        status: str = "success",
     ) -> Path | None:
         """将小问的建模解题产物保存到 <output_dir>/questions/<qid>/。
 
@@ -996,6 +1032,7 @@ class ModelBuilder:
             results: 沙箱执行返回的结果字典。
             method_name: 选中方法名称。
             model_name: 生成的模型名称。
+            status: 执行状态（success/error），写入 result.json。
 
         Returns:
             保存目录 Path；output_dir 为空时不保存并返回 None。
@@ -1017,7 +1054,7 @@ class ModelBuilder:
         (q_dir / "result.json").write_text(
             json.dumps(
                 {
-                    "status": "success",
+                    "status": status,
                     "method": method_name,
                     "model_name": model_name,
                     "results": results,

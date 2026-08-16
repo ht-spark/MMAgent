@@ -129,18 +129,31 @@ class QuestionSolver(BaseAgent):
             feedback=feedback,
         )
         comp_status = model_output["computation"].get("status", "unknown")
+        build_detail = (
+            f"计算状态: {comp_status}，"
+            f"图表 {len(model_output.get('figures', []))} 张，"
+            f"表格 {len(model_output.get('tables', []))} 张"
+        )
+        if comp_status == "error":
+            build_detail += (
+                f"，错误: {model_output['computation'].get('error', '')[:200]}"
+            )
         log_step(
             logger,
             "solve.build",
             "completed",
             question_id=qid,
             duration=time.monotonic() - t0,
-            detail=(
-                f"计算状态: {comp_status}，"
-                f"图表 {len(model_output.get('figures', []))} 张，"
-                f"表格 {len(model_output.get('tables', []))} 张"
-            ),
+            detail=build_detail,
         )
+
+        # 用 LLM 建模产物回填问题理解的空缺字段（内容来自模型设计输出，保持 LLM-only；
+        # interpretation 在 build 前以中性记录创建，此处补全供报告写作与审查使用）
+        intermediate = model_output["computation"].get("intermediate_values") or {}
+        if not interpretation.decision_variables and intermediate.get("variables"):
+            interpretation.decision_variables = intermediate["variables"]
+        if not interpretation.objective_function and intermediate.get("objective"):
+            interpretation.objective_function = intermediate["objective"]
 
         # 步骤 4: 提取假设（统一规范化为 list[dict]，兼容 LLM list[str] 与 heuristic list[dict]）
         assumptions = self._normalize_assumptions(

@@ -27,6 +27,29 @@ from ..runtime.logging import get_run_logger, log_step
 from ..schemas.common import GateResult
 from ..schemas.question import QuestionResult
 
+#: 结构性失败项前缀：这些字段由求解流程装配保证存在，重新求解必然复现，
+#: 出现即说明流程装配异常，直接 blocked 而不消耗验证迭代预算。
+#: 计算类失败（computation_error / contract_outputs_missing 等）不在此列，
+#: 重求解可能修复。
+STRUCTURAL_CHECK_PREFIXES = (
+    "result_missing",
+    "result_blocked",
+    "problem_interpretation_missing",
+    "math_task_empty",
+    "question_contract_missing",
+    "question_id_mismatch",
+    "computation_empty",
+    "reusable_summary_missing",
+    "limitations_empty",
+    "decision_record_empty",
+    "validation_empty",
+)
+
+
+def _has_structural_failure(failed_checks: list[str]) -> bool:
+    """判断失败项中是否含结构性失败（重新求解无法修复）。"""
+    return any(c.startswith(STRUCTURAL_CHECK_PREFIXES) for c in failed_checks)
+
 
 def _get_budget_info(state: dict, question_id: str = "") -> tuple[int, int, bool]:
     """从 BudgetManager 获取 GQ 预算信息。
@@ -91,8 +114,12 @@ def check_gq(state: dict) -> GateResult:
         interp = current_result.problem_interpretation
         if not interp.math_task:
             failed_checks.append("math_task_empty")
-        if not interp.result_form:
-            failed_checks.append("result_form_empty")
+
+    # 检查 3b: 输出形式契约存在。契约来源多元化：result_form 或
+    # formulation/decision_record 的 required_outputs 任一非空即可
+    # （LLM-only 主流程不保证填充 result_form，契约实际由建模产物承载）。
+    if not _collect_contract_outputs(current_result):
+        failed_checks.append("question_contract_missing")
 
     # 检查 4: reusable_summary 已生成（architecture.md §5.7 条件 6）
     if current_result.reusable_summary is None:
@@ -163,14 +190,19 @@ def run_gq_node(state: dict) -> dict:
             "_gq_action": "pass",
         }
 
-    # 未通过：按预算或常量决定重试 / 阻塞
+    # 未通过：按失败性质和预算决定重试 / 阻塞
     budget_manager = state.get("budget_manager")
     force_blocked = False
+    structural_failure = _has_structural_failure(result.failed_checks)
 
     # 节点显式标记 blocked 时不可重试；其他 GQ 失败均消耗验证迭代预算后重试。
     if current_result is not None and current_result.status == "blocked":
         # 节点降级已标记 blocked（如 solve_question 异常），不再重试
         force_blocked = True
+    elif structural_failure:
+        # 结构性失败由流程装配决定，重新求解必然复现，直接 blocked 不烧预算
+        force_blocked = True
+        print(f"[GQ] 小问 {current_qid} 结构性失败（重试无法修复）: {result.failed_checks}")
     elif budget_manager is not None:
         # 验证迭代预算（强制项，按小问计数）：每次未通过尝试消耗 1 次
         from ..runtime.budget import BudgetType
@@ -196,6 +228,13 @@ def run_gq_node(state: dict) -> dict:
         if current_result:
             current_result.status = "solving"
             current_result.retry_count = retry_count + 1
+        feedback = "GQ 未通过：" + "; ".join(result.failed_checks)
+        comp_err = (
+            (current_result.computation or {}).get("error", "")
+            if current_result else ""
+        )
+        if comp_err:
+            feedback += f"。上轮计算错误：{comp_err[:500]}。请针对该错误修复建模与求解代码。"
         print(f"[GQ] 小问 {current_qid} 需要重试 (第 {retry_count + 1} 次): {result.failed_checks}")
         log_step(
             get_run_logger(),
@@ -210,17 +249,26 @@ def run_gq_node(state: dict) -> dict:
             "current_result": current_result,
             "_solve_retry_count": retry_count + 1,
             "_gq_action": "retry",
-            "_gq_feedback": "GQ 未通过：" + "; ".join(result.failed_checks),
+            "_gq_feedback": feedback,
         }
 
     # 超过重试预算或不可重试 → 标记为 blocked
     if current_result:
         current_result.status = "blocked"
         _, b_rem, _ = _get_budget_info(state, current_qid)
-        current_result.error_message = (
-            f"GQ 验证失败，验证迭代预算已耗尽 (剩余 {b_rem})。"
-            f"失败项: {', '.join(result.failed_checks)}"
-        )
+        if structural_failure:
+            current_result.error_message = (
+                f"GQ 验证失败（结构性失败，重试无法修复）。"
+                f"失败项: {', '.join(result.failed_checks)}"
+            )
+        else:
+            current_result.error_message = (
+                f"GQ 验证失败，验证迭代预算已耗尽 (剩余 {b_rem})。"
+                f"失败项: {', '.join(result.failed_checks)}"
+            )
+        comp_err = (current_result.computation or {}).get("error", "")
+        if comp_err:
+            current_result.error_message += f" 上轮计算错误: {comp_err[:300]}"
     print(f"[GQ] 小问 {current_qid} 被阻塞 ✗: {result.failed_checks}")
     log_step(
         get_run_logger(),
@@ -313,7 +361,8 @@ def _check_task_deliverables(result: QuestionResult) -> list[str]:
     intermediate = computation.get("intermediate_values", {}) or {}
     failures: list[str] = []
 
-    if not results and not metrics and not intermediate:
+    # status=error 时错误返回天然不含 outputs，无需重复报告（根因是 computation_error）
+    if status != "error" and not results and not metrics and not intermediate:
         failures.append("computation_outputs_missing")
 
     if status == "generic_stats" and not _contract_allows_generic_stats(result):
