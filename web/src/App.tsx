@@ -11,11 +11,12 @@ import ModelingTasks from './pages/ModelingTasks'
 import BrainstormHub from './pages/BrainstormHub'
 import KnowledgeBase from './pages/KnowledgeBase'
 import ChunkEmbedding from './pages/ChunkEmbedding'
+import KnowledgeBaseHistory from './pages/KnowledgeBaseHistory'
 
 type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 type ModelingView = 'overview' | 'new' | 'history'
-type BrainstormView = 'overview' | 'knowledge' | 'chunking' | 'inspiration'
+type BrainstormView = 'overview' | 'knowledge' | 'chunking' | 'inspiration' | 'history'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
@@ -126,6 +127,7 @@ export default function App() {
           <BrainstormHub
             onKnowledge={() => setBrainstormView('knowledge')}
             onInspiration={() => setBrainstormView('inspiration')}
+            onHistory={() => setBrainstormView('history')}
           />
         )}
         {section === 'brainstorm' && brainstormView === 'knowledge' && (
@@ -135,6 +137,7 @@ export default function App() {
           <ChunkEmbedding onBack={() => setBrainstormView('knowledge')} />
         )}
         {section === 'brainstorm' && brainstormView === 'inspiration' && <Brainstorm />}
+        {section === 'brainstorm' && brainstormView === 'history' && <KnowledgeBaseHistory />}
         {section === 'modeling' && modelingView === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
         {section === 'docs' && <Docs />}

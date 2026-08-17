@@ -303,6 +303,12 @@
   max-width: 920px;
   margin: 0 auto;
 }
+.brainstorm-hub-page .modeling-task-grid {
+  grid-template-columns: repeat(3, minmax(0, 436px));
+  justify-content: center;
+  gap: 48px;
+  max-width: none;
+}
 
 .modeling-task-card {
   display: flex;
@@ -995,6 +1001,11 @@
 .kb-table .kb-col-status { width: 100px; text-align: center; }
 .kb-table .kb-col-unknown { width: 100px; text-align: center; }
 
+.kb-history-table .kb-history-time { width: 160px; white-space: nowrap; }
+.kb-history-table .kb-history-action { width: 120px; text-align: center; }
+.kb-history-table .kb-history-detail { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.kb-history-table .kb-history-status { width: 100px; text-align: center; }
+
 .kb-empty-row { text-align: center; color: var(--text-tertiary); padding: 32px 12px; }
 
 .kb-tag {
@@ -1018,6 +1029,44 @@
   background: var(--bg-soft);
 }
 .kb-actions .api-btn { font-size: 13px; padding: 8px 18px; }
+
+.kb-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+  font-size: 13px;
+}
+.kb-page-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-card-solid);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.18s ease;
+}
+.kb-page-btn:hover:not(:disabled) {
+  background: var(--primary-50);
+  border-color: var(--primary-500);
+  color: var(--primary-800);
+}
+.kb-page-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.kb-page-info {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+  text-align: center;
+}
 
 /* 顶部：上传文件区域（居中横向长条） */
 .kb-upload-section {
@@ -1347,8 +1396,10 @@
 @media (max-width: 1024px) {
   .home .hero { grid-template-columns: 1fr; }
   .home .hero-visual { display: none; }
+  .brainstorm-hub-page .modeling-task-grid { grid-template-columns: repeat(2, minmax(0, 436px)); }
 }
 @media (max-width: 768px) {
+  .brainstorm-hub-page .modeling-task-grid { grid-template-columns: minmax(0, 436px); }
   .sidebar { width: 100%; height: auto; bottom: auto; flex-direction: row; align-items: center; padding: 12px 16px; }
   .sidebar--collapsed { width: 100%; padding: 12px 16px; }
   .sidebar-top { flex: 1; }

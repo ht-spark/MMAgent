@@ -6,9 +6,13 @@ import {
   type KnowledgeDocument,
   uploadKnowledgeDocument,
 } from '../api'
+import { appendKnowledgeHistory } from '../knowledgeHistory'
+
+const PAGE_SIZE = 10
 
 export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
@@ -49,8 +53,19 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
           is_markdown: doc.is_markdown ?? false,
         })),
       ])
+      setCurrentPage(1)
+      appendKnowledgeHistory({
+        action: 'upload',
+        detail: prepared.map((doc) => doc.name).join('、') || file.name,
+        status: 'success',
+      })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '文档上传失败。')
+      appendKnowledgeHistory({
+        action: 'upload',
+        detail: file.name,
+        status: 'failure',
+      })
     } finally {
       setUploading(false)
       if (fileInput.current) fileInput.current.value = ''
@@ -83,6 +98,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
 
   async function convertFormat() {
     if (selectedIds.size === 0) return
+    const selectedCount = selectedIds.size
     setConverting(true)
     setError('')
     try {
@@ -93,8 +109,18 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
         ),
       )
       setSelectedIds(new Set())
+      appendKnowledgeHistory({
+        action: 'convert',
+        detail: `已选择 ${selectedCount} 个文件`,
+        status: 'success',
+      })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '格式转换失败。')
+      appendKnowledgeHistory({
+        action: 'convert',
+        detail: `已选择 ${selectedCount} 个文件`,
+        status: 'failure',
+      })
     } finally {
       setConverting(false)
     }
@@ -112,8 +138,19 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
       const deletedSet = new Set(deletedIds)
       setDocuments((current) => current.filter((document) => !deletedSet.has(document.id)))
       setSelectedIds(new Set())
+      setCurrentPage(1)
+      appendKnowledgeHistory({
+        action: 'delete',
+        detail: `已删除 ${deletedIds.length} 个文件`,
+        status: 'success',
+      })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '删除知识库文件失败。')
+      appendKnowledgeHistory({
+        action: 'delete',
+        detail: `尝试删除 ${documentIds.length} 个文件`,
+        status: 'failure',
+      })
     } finally {
       setDeleting(false)
     }
@@ -121,6 +158,13 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
 
   const successCount = documents.filter((doc) => doc.upload_success).length
   const markdownCount = documents.filter((doc) => doc.is_markdown).length
+  const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginatedDocuments = documents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages))
+  }, [totalPages])
 
   return (
     <div className="page knowledge-base-page">
@@ -207,7 +251,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
                     <td colSpan={6} className="kb-empty-row">暂无文件记录</td>
                   </tr>
                 )}
-                {documents.map((doc) => (
+                {paginatedDocuments.map((doc) => (
                   <tr
                     key={doc.id}
                     className={selectedIds.has(doc.id) ? 'kb-row-selected' : ''}
@@ -253,6 +297,30 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
               </tbody>
             </table>
           </div>
+
+          {documents.length > 0 && (
+            <div className="kb-pagination">
+              <button
+                className="kb-page-btn"
+                disabled={safePage <= 1}
+                onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                aria-label="上一页"
+              >
+                上一页
+              </button>
+              <span className="kb-page-info">
+                第 {safePage} / {totalPages} 页
+              </span>
+              <button
+                className="kb-page-btn"
+                disabled={safePage >= totalPages}
+                onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+                aria-label="下一页"
+              >
+                下一页
+              </button>
+            </div>
+          )}
 
           <div className="kb-actions">
             <button

@@ -1,9 +1,10 @@
 type Props = {
   onKnowledge: () => void
   onInspiration: () => void
+  onHistory: () => void
 }
 
-export default function BrainstormHub({ onKnowledge, onInspiration }: Props) {
+export default function BrainstormHub({ onKnowledge, onInspiration, onHistory }: Props) {
   return (
     <div className="page modeling-tasks-page brainstorm-hub-page">
       <div className="page-head modeling-tasks-head">
@@ -38,6 +39,20 @@ export default function BrainstormHub({ onKnowledge, onInspiration }: Props) {
           <span className="modeling-task-copy">
             <strong>灵感迸发</strong>
             <span>在交互式对话中梳理建模问题、假设与分析方向。</span>
+          </span>
+          <span className="modeling-task-arrow" aria-hidden="true">→</span>
+        </button>
+
+        <button className="modeling-task-card" onClick={onHistory}>
+          <span className="modeling-task-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3v18h18" />
+              <path d="M7 14l4-4 3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="modeling-task-copy">
+            <strong>历史记录</strong>
+            <span>查看知识库维护的历史操作，包括上传、删除与格式转换。</span>
           </span>
           <span className="modeling-task-arrow" aria-hidden="true">→</span>
         </button>
