@@ -148,10 +148,10 @@ export default function KnowledgeBaseStats({
                     )}
                   </td>
                   <td className="kb-col-status">
-                    {doc.is_conversion ? (
+                    {doc.is_markdown ? (
+                      <span className="kb-tag kb-tag-normal">—</span>
+                    ) : doc.is_conversion ? (
                       <span className="kb-tag kb-tag-success">已转换</span>
-                    ) : doc.is_markdown ? (
-                      <span className="kb-tag kb-tag-unknown">无需转换</span>
                     ) : (
                       <span className="kb-tag kb-tag-normal">未转换</span>
                     )}

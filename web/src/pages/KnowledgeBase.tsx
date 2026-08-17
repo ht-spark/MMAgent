@@ -181,7 +181,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
 
   const successCount = documents.filter((doc) => doc.upload_success).length
   const markdownCount = documents.filter((doc) => doc.is_markdown).length
-  const conversionCount = documents.filter((doc) => doc.is_conversion).length
+  const conversionCount = documents.filter((doc) => doc.is_conversion && !doc.is_markdown).length
   const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
   const paginatedDocuments = documents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
@@ -333,7 +333,9 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
                       )}
                     </td>
                     <td className="kb-col-unknown">
-                      {doc.is_conversion ? (
+                      {doc.is_markdown ? (
+                        <span className="kb-tag kb-tag-normal">—</span>
+                      ) : doc.is_conversion ? (
                         <span className="kb-tag kb-tag-success">是</span>
                       ) : (
                         <span className="kb-tag kb-tag-normal">否</span>
