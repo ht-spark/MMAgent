@@ -105,12 +105,16 @@ export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
           <span className="ce-step-dot">✓</span>
           <span>上传与转换</span>
         </div>
+        <div className="ce-step ce-step-done">
+          <span className="ce-step-dot">✓</span>
+          <span>资料统计</span>
+        </div>
         <div className="ce-step ce-step-current">
-          <span className="ce-step-dot">2</span>
+          <span className="ce-step-dot">3</span>
           <span>分块与嵌入</span>
         </div>
         <div className="ce-step">
-          <span className="ce-step-dot">3</span>
+          <span className="ce-step-dot">4</span>
           <span>向量检索就绪</span>
         </div>
       </div>

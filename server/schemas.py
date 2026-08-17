@@ -95,6 +95,7 @@ class KnowledgeDocument(BaseModel):
     uploaded_at: str
     upload_success: bool = True
     is_markdown: bool = False
+    is_conversion: bool = False
 
 
 class KnowledgeStatus(BaseModel):

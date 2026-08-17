@@ -104,16 +104,16 @@
   cursor: pointer;
 }
 .sidebar-logo-img {
-  height: 40px;
+  height: 56px;
   width: auto;
   display: block;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 .sidebar--collapsed .sidebar-logo-img {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   object-fit: cover;
-  object-position: left center;
+  object-position: center center;
 }
 .sidebar-brand {
   font-size: 17px;
@@ -706,13 +706,14 @@
 }
 
 .err-box {
-  color: var(--danger);
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.4);
   padding: 12px 14px;
   border-radius: var(--radius-md);
   margin-top: 14px;
   font-size: 14px;
+  font-weight: 500;
 }
 .center { text-align: center; margin-top: 18px; }
 .muted { color: var(--text-muted); }
@@ -1100,6 +1101,8 @@
 .kb-uploading {
   pointer-events: none;
   opacity: 0.7;
+  flex-direction: column;
+  gap: 0;
 }
 .kb-upload-icon {
   width: 36px;
@@ -1122,6 +1125,44 @@
   margin: 0;
   font-size: 12px;
   color: var(--text-tertiary);
+}
+.kb-upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, 100%);
+}
+.kb-upload-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kb-upload-progress-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.kb-upload-progress-name {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.kb-upload-progress-bar {
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.kb-upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-600, #4A5BC7), var(--accent, #7CC7C0));
+  border-radius: 999px;
+  transition: width 0.25s ease;
 }
 .kb-upload-spinner {
   width: 32px;
@@ -1405,6 +1446,7 @@
   .sidebar-top { flex: 1; }
   .sidebar-toggle { display: none; }
   .sidebar-logo { padding: 0 12px 0 0; }
+  .sidebar-logo-img { height: 40px; }
   .sidebar-sub { display: none; }
   .sidebar-nav { flex-direction: row; margin: 0; flex: 1; }
   .nav-item { padding: 8px 12px; width: auto; }

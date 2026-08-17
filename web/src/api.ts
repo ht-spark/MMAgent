@@ -179,6 +179,7 @@ export type KnowledgeDocument = {
   uploaded_at: string
   upload_success: boolean
   is_markdown: boolean
+  is_conversion: boolean
 }
 
 export type KnowledgeStatus = {
@@ -208,6 +209,16 @@ export async function deleteKnowledgeDocuments(documentIds: number[]): Promise<{
     body: JSON.stringify({ document_ids: documentIds }),
   })
   if (!res.ok) throw new Error(await extractDetail(res, '删除知识库文件失败'))
+  return res.json()
+}
+
+export async function convertKnowledgeDocuments(documentIds: number[]): Promise<{ converted_ids: number[]; failed: string[] }> {
+  const res = await fetch('/api/knowledge/documents/convert', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document_ids: documentIds }),
+  })
+  if (!res.ok) throw new Error(await extractDetail(res, '文档转换失败'))
   return res.json()
 }
 

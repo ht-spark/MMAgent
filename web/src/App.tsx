@@ -10,13 +10,14 @@ import Docs from './pages/Docs'
 import ModelingTasks from './pages/ModelingTasks'
 import BrainstormHub from './pages/BrainstormHub'
 import KnowledgeBase from './pages/KnowledgeBase'
+import KnowledgeBaseStats from './pages/KnowledgeBaseStats'
 import ChunkEmbedding from './pages/ChunkEmbedding'
 import KnowledgeBaseHistory from './pages/KnowledgeBaseHistory'
 
 type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 type ModelingView = 'overview' | 'new' | 'history'
-type BrainstormView = 'overview' | 'knowledge' | 'chunking' | 'inspiration' | 'history'
+type BrainstormView = 'overview' | 'knowledge' | 'stats' | 'chunking' | 'inspiration' | 'history'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
@@ -61,8 +62,14 @@ export default function App() {
       return
     }
     if (section === 'brainstorm' && brainstormView !== 'overview') {
-      // 分块与嵌入页返回知识库维护页，其余子页返回头脑风暴总览
-      setBrainstormView(brainstormView === 'chunking' ? 'knowledge' : 'overview')
+      // 资料统计页返回知识库维护页；分块与嵌入页返回资料统计页；其余子页返回头脑风暴总览
+      if (brainstormView === 'stats') {
+        setBrainstormView('knowledge')
+      } else if (brainstormView === 'chunking') {
+        setBrainstormView('stats')
+      } else {
+        setBrainstormView('overview')
+      }
       return
     }
     setSection('home')
@@ -131,10 +138,16 @@ export default function App() {
           />
         )}
         {section === 'brainstorm' && brainstormView === 'knowledge' && (
-          <KnowledgeBase onNext={() => setBrainstormView('chunking')} />
+          <KnowledgeBase onNext={() => setBrainstormView('stats')} />
+        )}
+        {section === 'brainstorm' && brainstormView === 'stats' && (
+          <KnowledgeBaseStats
+            onBack={() => setBrainstormView('knowledge')}
+            onNext={() => setBrainstormView('chunking')}
+          />
         )}
         {section === 'brainstorm' && brainstormView === 'chunking' && (
-          <ChunkEmbedding onBack={() => setBrainstormView('knowledge')} />
+          <ChunkEmbedding onBack={() => setBrainstormView('stats')} />
         )}
         {section === 'brainstorm' && brainstormView === 'inspiration' && <Brainstorm />}
         {section === 'brainstorm' && brainstormView === 'history' && <KnowledgeBaseHistory />}

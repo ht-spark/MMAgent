@@ -26,8 +26,9 @@ UPLOAD_MANIFEST_NAME = ".uploads.json"
 MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdown"}
 TEXT_EXTENSIONS = {".txt"}
 MINERU_EXTENSIONS = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".png", ".jpg", ".jpeg"}
-MAX_ARCHIVE_FILES = 100
-MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_ARCHIVE_FILES = 500
+MAX_ARCHIVE_BYTES = 500 * 1024 * 1024
+MAX_SINGLE_FILE_BYTES = 200 * 1024 * 1024
 
 
 class KnowledgePreparationError(RuntimeError):
@@ -36,7 +37,7 @@ class KnowledgePreparationError(RuntimeError):
 
 @dataclass(frozen=True)
 class PreparedDocument:
-    """One Markdown document ready for the later embedding pipeline."""
+    """One document archived for the knowledge base; Markdown conversion is optional."""
 
     document_id: int
     name: str
@@ -45,6 +46,7 @@ class PreparedDocument:
     uploaded_at: str
     source_size_bytes: int
     is_markdown: bool
+    is_conversion: bool
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ class UploadRecord:
     upload_success: bool
     output_name: str
     is_markdown: bool
+    is_conversion: bool
 
 
 def list_upload_records() -> list[UploadRecord]:
@@ -96,6 +99,7 @@ def list_upload_records() -> list[UploadRecord]:
                             Path(str(item["name"])).suffix.lower() in MARKDOWN_EXTENSIONS,
                         )
                     ),
+                    is_conversion=bool(item.get("is_conversion", False)),
                 )
             )
         except (KeyError, TypeError, ValueError):
@@ -214,20 +218,12 @@ class MinerUClient:
             return archive.read(markdown_files[0]).decode("utf-8")
 
 
-def prepare_upload(
-    filename: str,
-    content: bytes,
-    *,
-    mineru_api_key: str | None = None,
-    mineru_base_url: str | None = None,
-) -> list[PreparedDocument]:
-    """Archive one uploaded file or ZIP and prepare Markdown documents.
+def prepare_upload(filename: str, content: bytes) -> list[PreparedDocument]:
+    """Archive one uploaded file or ZIP; Markdown conversion happens separately.
 
     Args:
         filename: Browser-provided filename.
         content: Raw file bytes.
-        mineru_api_key: Request-scoped MinerU key; falls back to ``MINERU_API_KEY``.
-        mineru_base_url: Optional MinerU API origin.
     """
     safe_name = Path(filename).name
     if not safe_name or not content:
@@ -240,55 +236,55 @@ def prepare_upload(
     raw_path.write_bytes(content)
 
     if raw_path.suffix.lower() == ".zip":
-        prepared = _prepare_archive(raw_path, mineru_api_key, mineru_base_url)
+        prepared = _prepare_archive(raw_path)
     else:
-        prepared = [_prepare_file(raw_path, safe_name, mineru_api_key, mineru_base_url)]
+        prepared = [_prepare_file(raw_path, safe_name)]
     return _persist_upload_records(prepared, uploaded_at)
 
 
-def _prepare_archive(
-    archive_path: Path,
-    api_key: str | None,
-    base_url: str | None,
-) -> list[PreparedDocument]:
+def _prepare_archive(archive_path: Path) -> list[PreparedDocument]:
     prepared: list[PreparedDocument] = []
+    skipped: list[str] = []
     with zipfile.ZipFile(archive_path) as archive:
         members = [member for member in archive.infolist() if not member.is_dir()]
-        total_size = sum(member.file_size for member in members)
-        if len(members) > MAX_ARCHIVE_FILES or total_size > MAX_ARCHIVE_BYTES:
-            raise KnowledgePreparationError("压缩包超过知识库导入限制")
         for member in members:
             name = Path(member.filename).name
             if not name:
                 continue
-            extracted = _available_path(RAW_ROOT / f"{archive_path.stem}_{name}")
-            extracted.write_bytes(archive.read(member))
-            prepared.append(_prepare_file(extracted, member.filename, api_key, base_url))
+            if member.file_size > MAX_SINGLE_FILE_BYTES:
+                skipped.append(f"{name}（{member.file_size // 1024 // 1024}MB 超过单文件上限）")
+                continue
+            try:
+                extracted = _available_path(RAW_ROOT / f"{archive_path.stem}_{name}")
+                extracted.write_bytes(archive.read(member))
+                prepared.append(_prepare_file(extracted, member.filename))
+            except KnowledgePreparationError as exc:
+                skipped.append(f"{name}（{exc}）")
     if not prepared:
+        if skipped:
+            raise KnowledgePreparationError(
+                f"压缩包中所有文件均无法处理：{'; '.join(skipped[:5])}"
+            )
         raise KnowledgePreparationError("压缩包中没有可处理的文件")
     return prepared
 
 
-def _prepare_file(
-    raw_path: Path,
-    source_name: str,
-    api_key: str | None,
-    base_url: str | None,
-) -> PreparedDocument:
+def _prepare_file(raw_path: Path, source_name: str) -> PreparedDocument:
     extension = raw_path.suffix.lower()
+    is_markdown = extension in MARKDOWN_EXTENSIONS
+    needs_conversion = extension in MINERU_EXTENSIONS
     output_name = f"{raw_path.stem}.md"
-    output_path = _available_path(DOCUMENTS_ROOT / output_name)
 
-    if extension in MARKDOWN_EXTENSIONS:
-        output_path.write_bytes(raw_path.read_bytes())
-    elif extension in TEXT_EXTENSIONS:
-        output_path.write_text(raw_path.read_text(encoding="utf-8"), encoding="utf-8")
-    elif extension in MINERU_EXTENSIONS:
-        key = api_key or os.getenv("MINERU_API_KEY")
-        if not key:
-            raise KnowledgePreparationError("请先在 API 管理中配置 MinerU Token")
-        markdown = MinerUClient(key, base_url or "https://mineru.net").convert_to_markdown(raw_path)
-        output_path.write_text(markdown, encoding="utf-8")
+    if is_markdown or extension in TEXT_EXTENSIONS:
+        output_path = _available_path(DOCUMENTS_ROOT / output_name)
+        if is_markdown:
+            output_path.write_bytes(raw_path.read_bytes())
+        else:
+            output_path.write_text(raw_path.read_text(encoding="utf-8"), encoding="utf-8")
+        is_conversion = True
+    elif needs_conversion:
+        output_path = raw_path
+        is_conversion = False
     else:
         raise KnowledgePreparationError(f"不支持的知识库文件类型: {extension or '无扩展名'}")
 
@@ -299,7 +295,8 @@ def _prepare_file(
         source_name=Path(source_name).name,
         uploaded_at="",
         source_size_bytes=raw_path.stat().st_size,
-        is_markdown=extension in MARKDOWN_EXTENSIONS,
+        is_markdown=is_markdown,
+        is_conversion=is_conversion,
     )
 
 
@@ -333,6 +330,7 @@ def _persist_upload_records(
             "upload_success": record.upload_success,
             "output_name": record.output_name,
             "is_markdown": record.is_markdown,
+            "is_conversion": record.is_conversion,
         }
         for record in existing
     ] + [
@@ -344,6 +342,7 @@ def _persist_upload_records(
             "upload_success": True,
             "output_name": document.name,
             "is_markdown": document.is_markdown,
+            "is_conversion": document.is_conversion,
         }
         for document in assigned
     ]
@@ -362,6 +361,58 @@ def _document_output_path(output_name: str) -> Path:
     return output_path
 
 
+def convert_documents(
+    document_ids: set[int],
+    *,
+    mineru_api_key: str | None = None,
+    mineru_base_url: str | None = None,
+) -> tuple[list[int], list[str]]:
+    """Convert selected non-Markdown documents to Markdown via MinerU.
+
+    Returns:
+        A tuple of (converted_document_ids, failed_messages).
+    """
+    if not document_ids:
+        return [], []
+
+    records = list_upload_records()
+    id_to_record = {record.document_id: record for record in records}
+    selected = [id_to_record[id] for id in document_ids if id in id_to_record]
+
+    key = mineru_api_key or os.getenv("MINERU_API_KEY")
+    if not key:
+        raise KnowledgePreparationError("请先在 API 管理中配置 MinerU Token")
+
+    client = MinerUClient(key, mineru_base_url or "https://mineru.net")
+    converted: list[int] = []
+    failed: list[str] = []
+
+    for index, record in enumerate(records):
+        if record.document_id not in document_ids:
+            continue
+        if record.is_conversion or record.is_markdown:
+            continue
+        raw_path = RAW_ROOT / record.name
+        if not raw_path.exists():
+            failed.append(f"{record.name}（原始文件不存在）")
+            continue
+        try:
+            markdown = client.convert_to_markdown(raw_path)
+            output_name = f"{raw_path.stem}.md"
+            output_path = _available_path(DOCUMENTS_ROOT / output_name)
+            output_path.write_text(markdown, encoding="utf-8")
+            converted.append(record.document_id)
+            records[index] = replace(record, output_name=output_path.name, is_conversion=True)
+        except KnowledgePreparationError as exc:
+            failed.append(f"{record.name}（{exc}）")
+            continue
+
+    if converted:
+        _write_upload_records(records)
+
+    return converted, failed
+
+
 def _write_upload_records(records: list[UploadRecord]) -> None:
     """Persist upload records after a deletion."""
     _write_upload_records_payload(
@@ -374,6 +425,7 @@ def _write_upload_records(records: list[UploadRecord]) -> None:
                 "upload_success": record.upload_success,
                 "output_name": record.output_name,
                 "is_markdown": record.is_markdown,
+                "is_conversion": record.is_conversion,
             }
             for record in records
         ]

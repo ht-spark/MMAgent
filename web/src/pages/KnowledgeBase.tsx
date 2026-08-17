@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
+  convertKnowledgeDocuments,
   deleteKnowledgeDocuments,
   getKnowledgeStatus,
   type KnowledgeDocument,
@@ -14,13 +15,14 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ total: number; done: number; currentName: string } | null>(null)
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [converting, setConverting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const uploading = uploadProgress !== null
 
   useEffect(() => {
     getKnowledgeStatus()
@@ -31,6 +33,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
             id: doc.id ?? index + 1,
             upload_success: doc.upload_success ?? true,
             is_markdown: doc.is_markdown ?? false,
+            is_conversion: doc.is_conversion ?? false,
           })),
         ),
       )
@@ -38,45 +41,55 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const upload = useCallback(async (file: File | undefined) => {
-    if (!file) return
-    setUploading(true)
+  const uploadFiles = useCallback(async (files: FileList | null | undefined) => {
+    if (!files || files.length === 0) return
+    const fileList = Array.from(files)
+    setUploadProgress({ total: fileList.length, done: 0, currentName: fileList[0].name })
     setError('')
-    try {
-      const prepared = await uploadKnowledgeDocument(file)
-      setDocuments((current) => [
-        ...current.filter((item) => !prepared.some((document) => document.name === item.name)),
-        ...prepared.map((doc, index) => ({
-          ...doc,
-          id: doc.id ?? Date.now() + index,
-          upload_success: doc.upload_success ?? true,
-          is_markdown: doc.is_markdown ?? false,
-        })),
-      ])
-      setCurrentPage(1)
-      appendKnowledgeHistory({
-        action: 'upload',
-        detail: prepared.map((doc) => doc.name).join('、') || file.name,
-        status: 'success',
-      })
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '文档上传失败。')
-      appendKnowledgeHistory({
-        action: 'upload',
-        detail: file.name,
-        status: 'failure',
-      })
-    } finally {
-      setUploading(false)
-      if (fileInput.current) fileInput.current.value = ''
+    const failedNames: string[] = []
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i]
+      setUploadProgress((prev) => (prev ? { ...prev, currentName: file.name } : prev))
+      try {
+        const prepared = await uploadKnowledgeDocument(file)
+        setDocuments((current) => [
+          ...current.filter((item) => !prepared.some((document) => document.name === item.name)),
+          ...prepared.map((doc, index) => ({
+            ...doc,
+            id: doc.id ?? Date.now() + index,
+            upload_success: doc.upload_success ?? true,
+            is_markdown: doc.is_markdown ?? false,
+            is_conversion: doc.is_conversion ?? false,
+          })),
+        ])
+        appendKnowledgeHistory({
+          action: 'upload',
+          detail: prepared.map((doc) => doc.name).join('、') || file.name,
+          status: 'success',
+        })
+      } catch (reason) {
+        failedNames.push(file.name)
+        appendKnowledgeHistory({
+          action: 'upload',
+          detail: file.name,
+          status: 'failure',
+        })
+      } finally {
+        setUploadProgress((prev) => (prev ? { ...prev, done: i + 1 } : prev))
+      }
     }
+    if (failedNames.length > 0) {
+      setError(`${failedNames.length} 个文件上传失败：${failedNames.join('、')}`)
+    }
+    setCurrentPage(1)
+    setUploadProgress(null)
+    if (fileInput.current) fileInput.current.value = ''
   }, [])
 
   function handleDrop(event: React.DragEvent) {
     event.preventDefault()
     setDragOver(false)
-    const file = event.dataTransfer.files?.[0]
-    if (file) upload(file)
+    uploadFiles(event.dataTransfer.files)
   }
 
   function toggleSelect(id: number) {
@@ -98,27 +111,37 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
 
   async function convertFormat() {
     if (selectedIds.size === 0) return
-    const selectedCount = selectedIds.size
+    const documentIds = [...selectedIds]
     setConverting(true)
     setError('')
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const { converted_ids: convertedIds, failed } = await convertKnowledgeDocuments(documentIds)
+      const convertedSet = new Set(convertedIds)
       setDocuments((current) =>
         current.map((doc) =>
-          selectedIds.has(doc.id) ? { ...doc } : doc,
+          convertedSet.has(doc.id) ? { ...doc, is_conversion: true } : doc,
         ),
       )
-      setSelectedIds(new Set())
-      appendKnowledgeHistory({
-        action: 'convert',
-        detail: `已选择 ${selectedCount} 个文件`,
-        status: 'success',
-      })
+      if (failed.length > 0) {
+        setError(`${failed.length} 个文件转换失败：${failed.join('、')}`)
+        appendKnowledgeHistory({
+          action: 'convert',
+          detail: `成功 ${convertedIds.length} 个，失败 ${failed.length} 个`,
+          status: 'failure',
+        })
+      } else {
+        setSelectedIds(new Set())
+        appendKnowledgeHistory({
+          action: 'convert',
+          detail: `已转换 ${convertedIds.length} 个文件`,
+          status: 'success',
+        })
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '格式转换失败。')
       appendKnowledgeHistory({
         action: 'convert',
-        detail: `已选择 ${selectedCount} 个文件`,
+        detail: `尝试转换 ${documentIds.length} 个文件`,
         status: 'failure',
       })
     } finally {
@@ -158,6 +181,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
 
   const successCount = documents.filter((doc) => doc.upload_success).length
   const markdownCount = documents.filter((doc) => doc.is_markdown).length
+  const conversionCount = documents.filter((doc) => doc.is_conversion).length
   const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
   const paginatedDocuments = documents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
@@ -193,14 +217,29 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
             <input
               ref={fileInput}
               type="file"
+              multiple
               hidden
-              onChange={(event) => upload(event.target.files?.[0])}
+              onChange={(event) => uploadFiles(event.target.files)}
             />
             {uploading ? (
-              <>
-                <div className="kb-upload-spinner" />
-                <p className="kb-upload-text">正在上传…</p>
-              </>
+              <div className="kb-upload-progress">
+                <div className="kb-upload-progress-top">
+                  <span className="kb-upload-progress-count">
+                    已上传 {uploadProgress?.done ?? 0} / {uploadProgress?.total ?? 0}
+                  </span>
+                  <span className="kb-upload-progress-name" title={uploadProgress?.currentName}>
+                    {uploadProgress?.currentName}
+                  </span>
+                </div>
+                <div className="kb-upload-progress-bar">
+                  <div
+                    className="kb-upload-progress-fill"
+                    style={{
+                      width: `${uploadProgress && uploadProgress.total > 0 ? (uploadProgress.done / uploadProgress.total) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
             ) : (
               <>
                 <svg className="kb-upload-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -210,7 +249,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
                 </svg>
                 <span className="kb-upload-copy">
                   <p className="kb-upload-text">点击或拖拽文件到此处上传</p>
-                  <p className="kb-upload-hint">支持 PDF / Word / Excel / TXT / Markdown</p>
+                  <p className="kb-upload-hint">支持 PDF / Word / Excel / TXT / Markdown，压缩包自动分批处理</p>
                 </span>
               </>
             )}
@@ -222,7 +261,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
           <div className="kb-table-head">
             <h2>文件记录</h2>
             <span className="kb-table-count">
-              {loading ? '读取中…' : `共 ${documents.length} 份 · 成功 ${successCount} · Markdown ${markdownCount}`}
+              {loading ? '读取中…' : `共 ${documents.length} 份 · 成功 ${successCount} · Markdown ${markdownCount} · 已转换 ${conversionCount}`}
             </span>
           </div>
 
@@ -243,12 +282,13 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
                   <th className="kb-col-time">上传时间</th>
                   <th className="kb-col-status">上传状态</th>
                   <th className="kb-col-unknown">is_markdown</th>
+                  <th className="kb-col-unknown">is_conversion</th>
                 </tr>
               </thead>
               <tbody>
                 {!loading && documents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="kb-empty-row">暂无文件记录</td>
+                    <td colSpan={7} className="kb-empty-row">暂无文件记录</td>
                   </tr>
                 )}
                 {paginatedDocuments.map((doc) => (
@@ -288,6 +328,13 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
                     <td className="kb-col-unknown">
                       {doc.is_markdown ? (
                         <span className="kb-tag kb-tag-unknown">是</span>
+                      ) : (
+                        <span className="kb-tag kb-tag-normal">否</span>
+                      )}
+                    </td>
+                    <td className="kb-col-unknown">
+                      {doc.is_conversion ? (
+                        <span className="kb-tag kb-tag-success">是</span>
                       ) : (
                         <span className="kb-tag kb-tag-normal">否</span>
                       )}

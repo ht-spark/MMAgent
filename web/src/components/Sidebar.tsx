@@ -40,6 +40,12 @@ export default function Sidebar({
       <div className="sidebar-top">
         <div className="sidebar-logo" onClick={onHome} title={collapsed ? 'MMAgent 数学建模智能体' : undefined}>
           {LOGO}
+          {!collapsed && (
+            <div className="logo-text">
+              <span className="logo-name sidebar-brand">MMAgent</span>
+              <span className="logo-sub sidebar-sub">数学建模智能体</span>
+            </div>
+          )}
         </div>
         <button
           className="sidebar-toggle"

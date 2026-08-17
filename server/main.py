@@ -23,6 +23,7 @@ from KnowledgeBase.upload_file import (
     DOCUMENTS_ROOT as KNOWLEDGE_DOCUMENTS_ROOT,
     KnowledgePreparationError,
     UPLOAD_MANIFEST_NAME,
+    convert_documents,
     delete_upload_records,
     list_upload_records,
     prepare_upload,
@@ -86,6 +87,7 @@ def _list_knowledge_documents() -> list[KnowledgeDocument]:
                 uploaded_at=record.uploaded_at,
                 upload_success=record.upload_success,
                 is_markdown=record.is_markdown,
+                is_conversion=record.is_conversion,
             )
             for record in records
         ]
@@ -106,6 +108,7 @@ def _list_knowledge_documents() -> list[KnowledgeDocument]:
             ).isoformat(),
             upload_success=True,
             is_markdown=path.suffix.lower() in {".md", ".markdown", ".mdown"},
+            is_conversion=True,
         )
         for index, path in enumerate(files)
     ]
@@ -173,22 +176,15 @@ async def knowledge_status_endpoint() -> KnowledgeStatus:
 @app.post("/api/knowledge/documents", response_model=list[KnowledgeDocument])
 async def upload_knowledge_document_endpoint(
     document: UploadFile = File(..., description="知识库原始文档"),
-    mineru_config: str = Form("{}", description="JSON: apiKey/baseUrl"),
 ) -> list[KnowledgeDocument]:
-    """Prepare one uploaded document or ZIP for the later embedding pipeline."""
+    """Archive one uploaded document or ZIP; Markdown conversion is triggered separately."""
     filename = Path(document.filename or "knowledge-document").name
     if not filename:
         raise HTTPException(status_code=400, detail="文档名称不能为空")
 
     content = await document.read()
     try:
-        config = json.loads(mineru_config) if mineru_config else {}
-        prepared = prepare_upload(
-            filename,
-            content,
-            mineru_api_key=config.get("apiKey"),
-            mineru_base_url=config.get("baseUrl"),
-        )
+        prepared = prepare_upload(filename, content)
     except (ValueError, KnowledgePreparationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -200,6 +196,7 @@ async def upload_knowledge_document_endpoint(
             uploaded_at=item.uploaded_at,
             upload_success=True,
             is_markdown=item.is_markdown,
+            is_conversion=item.is_conversion,
         )
         for item in prepared
     ]
@@ -217,6 +214,25 @@ async def delete_knowledge_documents_endpoint(
     if not deleted_ids:
         raise HTTPException(status_code=404, detail="未找到可删除的知识库文件")
     return {"deleted_ids": deleted_ids}
+
+
+@app.post("/api/knowledge/documents/convert")
+async def convert_knowledge_documents_endpoint(
+    body: KnowledgeDocumentsDeleteBody,
+) -> dict[str, Any]:
+    """Convert selected non-Markdown documents to Markdown via MinerU."""
+    settings = _read_api_settings() or {}
+    mineru = settings.get("external_services", {}).get("mineru", {})
+    try:
+        converted_ids, failed_messages = await asyncio.to_thread(
+            convert_documents,
+            set(body.document_ids),
+            mineru_api_key=mineru.get("apiKey"),
+            mineru_base_url=mineru.get("baseUrl"),
+        )
+    except KnowledgePreparationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"converted_ids": converted_ids, "failed": failed_messages}
 
 
 @app.post("/api/knowledge/chunk-embed", response_model=KnowledgeChunkEmbedResponse)
