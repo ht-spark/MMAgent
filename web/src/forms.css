@@ -2247,7 +2247,7 @@
 }
 .brainstorm-message-row {
   display: flex;
-  width: min(100%, 1100px);
+  width: min(100%, 1280px);
   align-self: center;
   gap: 12px;
   align-items: flex-start;
@@ -2266,7 +2266,7 @@
   font-weight: 800;
 }
 .inspiration-chat-page .brainstorm-message {
-  max-width: min(760px, calc(100% - 48px));
+  max-width: min(920px, calc(100% - 48px));
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.86);
   box-shadow: var(--shadow-sm);
@@ -2332,7 +2332,7 @@
 .markdown-content th { background: rgba(74, 91, 199, 0.08); }
 .markdown-content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 6px 0; }
 .inspiration-chat-page .brainstorm-composer {
-  width: min(100%, 1100px);
+  width: min(100%, 1280px);
   box-sizing: border-box;
   align-self: center;
   padding: 0;
