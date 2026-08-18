@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -72,6 +73,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_ROOT = PROJECT_ROOT / "artifacts"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 API_SETTINGS_PATH = Path(__file__).resolve().parent / "api_settings.json"
+BRAINSTORM_RETRIEVAL_TIMEOUT_SECONDS = 45
+BRAINSTORM_ANSWER_TIMEOUT_SECONDS = 90
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MMAgent Web", version="0.1.0")
 
@@ -401,7 +406,16 @@ async def brainstorm_endpoint(body: BrainstormRequest) -> BrainstormResponse:
     if llm is None:
         raise HTTPException(status_code=400, detail="尚未配置可用的当前 API 模型")
     try:
-        chunks = await asyncio.to_thread(retrieve_knowledge, body.message, llm=llm)
+        chunks = await asyncio.wait_for(
+            asyncio.to_thread(retrieve_knowledge, body.message, llm=llm),
+            timeout=BRAINSTORM_RETRIEVAL_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as exc:
+        logger.warning("Brainstorm retrieval timed out after %s seconds", BRAINSTORM_RETRIEVAL_TIMEOUT_SECONDS)
+        raise HTTPException(
+            status_code=504,
+            detail="知识库检索与上下文压缩超时，请稍后重试。",
+        ) from exc
     except ValueError as exc:
         if str(exc) != "知识库尚未建立向量索引":
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -423,13 +437,22 @@ async def brainstorm_endpoint(body: BrainstormRequest) -> BrainstormResponse:
         for chunk in chunks
     ]
     try:
-        answer = await asyncio.to_thread(
-            _generate_discussion_answer,
-            body.message,
-            history,
-            chunks,
-            llm,
+        answer = await asyncio.wait_for(
+            asyncio.to_thread(
+                _generate_discussion_answer,
+                body.message,
+                history,
+                chunks,
+                llm,
+            ),
+            timeout=BRAINSTORM_ANSWER_TIMEOUT_SECONDS,
         )
+    except TimeoutError as exc:
+        logger.warning("Brainstorm answer generation timed out after %s seconds", BRAINSTORM_ANSWER_TIMEOUT_SECONDS)
+        raise HTTPException(
+            status_code=504,
+            detail="模型生成回答超时，请检查当前 API 服务后重试。",
+        ) from exc
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

@@ -16,6 +16,7 @@ export default function Brainstorm({ discussionId, onDiscussionId }: {
 }) {
   const [draft, setDraft] = useState('')
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE])
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (!discussionId) {
@@ -32,8 +33,9 @@ export default function Brainstorm({ discussionId, onDiscussionId }: {
 
   async function submit() {
     const message = draft.trim()
-    if (!message) return
+    if (!message || isSubmitting) return
     setDraft('')
+    setIsSubmitting(true)
     setMessages((current) => [...current, { role: 'user', content: message }])
     try {
       const response = await sendBrainstormMessage(message, discussionId)
@@ -47,6 +49,8 @@ export default function Brainstorm({ discussionId, onDiscussionId }: {
         ...current,
         { role: 'assistant', content: error instanceof Error ? error.message : '头脑风暴服务暂不可用。' },
       ])
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -77,12 +81,20 @@ export default function Brainstorm({ discussionId, onDiscussionId }: {
               </div>
             </div>
           ))}
+          {isSubmitting && (
+            <div className="brainstorm-message-row assistant">
+              <span className="brainstorm-avatar">M</span>
+              <div className="brainstorm-message assistant">正在检索资料、压缩上下文并生成回答…</div>
+            </div>
+          )}
         </div>
         <div className="brainstorm-composer">
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="输入待讨论的建模问题、假设或分析方向…" rows={2} />
           <div>
             <span>优先检索并压缩知识库上下文；知识库为空时直接与当前模型讨论。</span>
-            <button className="api-btn primary" onClick={submit} disabled={!draft.trim()}>讨论</button>
+            <button className="api-btn primary" onClick={submit} disabled={!draft.trim() || isSubmitting}>
+              {isSubmitting ? '讨论中…' : '讨论'}
+            </button>
           </div>
         </div>
       </section>

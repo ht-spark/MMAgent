@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
+from fastapi import HTTPException
 from KnowledgeBase import upload_file
 from server import main
 from server.schemas import BrainstormRequest, KnowledgeDocumentsDeleteBody
@@ -161,6 +163,21 @@ def test_brainstorm_endpoint_uses_llm_when_knowledge_is_empty(monkeypatch):
     assert result.message == "可以直接讨论建模方案。"
     assert result.discussion_id == "discussion-uuid"
     assert result.sources == []
+
+
+def test_brainstorm_endpoint_returns_timeout_when_retrieval_stalls(monkeypatch):
+    """A slow compression or retrieval call must not leave the UI waiting forever."""
+    monkeypatch.setattr(main, "_active_discussion_llm", lambda: object())
+    monkeypatch.setattr(main, "BRAINSTORM_RETRIEVAL_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(main, "retrieve_knowledge", lambda *_args, **_kwargs: time.sleep(0.02))
+
+    try:
+        asyncio.run(main.brainstorm_endpoint(BrainstormRequest(message="如何建模？")))
+    except HTTPException as exc:
+        assert exc.status_code == 504
+        assert exc.detail == "知识库检索与上下文压缩超时，请稍后重试。"
+    else:
+        raise AssertionError("Expected a retrieval timeout")
 
 
 def test_discussion_answer_passes_retrieved_window_to_llm_and_hides_thinking(monkeypatch):

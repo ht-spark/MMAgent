@@ -274,11 +274,20 @@ export type BrainstormDiscussion = BrainstormDiscussionSummary & {
 }
 
 export async function sendBrainstormMessage(message: string, discussionId: string | null): Promise<BrainstormResponse> {
-  const res = await fetch('/api/knowledge/brainstorm', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, discussion_id: discussionId }),
-  })
+  let res: Response
+  try {
+    res = await fetch('/api/knowledge/brainstorm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, discussion_id: discussionId }),
+      signal: AbortSignal.timeout(150000),
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new Error('讨论请求超时：模型服务在 150 秒内未响应，请检查 API 配置或稍后重试。')
+    }
+    throw new Error('讨论服务无法连接，请确认后端服务正在运行。')
+  }
   if (!res.ok) throw new Error(await extractDetail(res, '头脑风暴请求失败'))
   return res.json()
 }
