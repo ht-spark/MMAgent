@@ -247,13 +247,52 @@ export async function getKnowledgeChunkEmbedProgress(): Promise<KnowledgeChunkEm
   return res.json()
 }
 
-export async function sendBrainstormMessage(message: string): Promise<void> {
+export type BrainstormSource = {
+  source_file: string
+  document_id: string
+  content: string
+}
+
+export type BrainstormResponse = {
+  message: string
+  sources: BrainstormSource[]
+  discussion_id: string
+}
+
+export type BrainstormDiscussionSummary = {
+  id: string
+  title: string
+  updated_at: string
+}
+
+export type BrainstormDiscussion = BrainstormDiscussionSummary & {
+  messages: Array<{
+    role: 'assistant' | 'user'
+    content: string
+    sources: BrainstormSource[]
+  }>
+}
+
+export async function sendBrainstormMessage(message: string, discussionId: string | null): Promise<BrainstormResponse> {
   const res = await fetch('/api/knowledge/brainstorm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, discussion_id: discussionId }),
   })
   if (!res.ok) throw new Error(await extractDetail(res, '头脑风暴请求失败'))
+  return res.json()
+}
+
+export async function fetchBrainstormDiscussions(): Promise<BrainstormDiscussionSummary[]> {
+  const res = await fetch('/api/knowledge/discussions')
+  if (!res.ok) throw new Error(await extractDetail(res, '获取讨论历史失败'))
+  return res.json()
+}
+
+export async function fetchBrainstormDiscussion(discussionId: string): Promise<BrainstormDiscussion> {
+  const res = await fetch(`/api/knowledge/discussions/${discussionId}`)
+  if (!res.ok) throw new Error(await extractDetail(res, '获取讨论记录失败'))
+  return res.json()
 }
 
 /**

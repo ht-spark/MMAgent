@@ -118,6 +118,37 @@ def test_prepare_zip_upload_expands_each_source(monkeypatch, tmp_path):
     assert (documents_root / "bundle_b.md").read_text(encoding="utf-8") == "B\n"
 
 
+def test_convert_zip_member_uses_its_archived_raw_filename(monkeypatch, tmp_path):
+    """ZIP members keep their collision-safe raw filename for later conversion."""
+    raw_root = tmp_path / "raw"
+    documents_root = tmp_path / "documents"
+    monkeypatch.setattr(upload_file, "RAW_ROOT", raw_root)
+    monkeypatch.setattr(upload_file, "DOCUMENTS_ROOT", documents_root)
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("papers/a.pdf", b"pdf-content")
+    prepared = upload_file.prepare_upload("bundle.zip", archive.getvalue())
+    converted_paths: list[str] = []
+
+    class FakeConverter:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def convert_to_markdown(self, path):
+            converted_paths.append(path.name)
+            return "# Parsed\n"
+
+    monkeypatch.setattr(upload_file, "MinerUClient", FakeConverter)
+    converted, failed = upload_file.convert_documents(
+        {prepared[0].document_id},
+        mineru_api_key="token",
+    )
+
+    assert converted == [prepared[0].document_id]
+    assert failed == []
+    assert converted_paths == ["bundle_a.pdf"]
+
+
 def test_repeated_uploads_keep_distinct_ids_and_source_names(monkeypatch, tmp_path):
     raw_root = tmp_path / "raw"
     documents_root = tmp_path / "documents"

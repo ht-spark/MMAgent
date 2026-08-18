@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,8 +19,10 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
+from server.discussions import get_discussion, list_discussions, save_discussion_message
 from KnowledgeBase.chunk import chunk_knowledge_documents
 from KnowledgeBase.embedding import build_local_qdrant_index, delete_document_vectors
+from KnowledgeBase.main import retrieve as retrieve_knowledge
 from KnowledgeBase.upload_file import (
     DOCUMENTS_ROOT as KNOWLEDGE_DOCUMENTS_ROOT,
     KnowledgePreparationError,
@@ -45,9 +48,15 @@ from server.runs import (
     submit_clarification_decision,
 )
 from scr.runtime.budget import BudgetType
+from scr.math_modeling_agent.llm import create_llm
 from server.schemas import (
     BudgetConfirmBody,
     BrainstormRequest,
+    BrainstormDiscussion,
+    BrainstormDiscussionSummary,
+    BrainstormDiscussionMessage,
+    BrainstormResponse,
+    BrainstormSource,
     CreateRunResponse,
     KnowledgeDocument,
     KnowledgeChunkEmbedResponse,
@@ -324,13 +333,156 @@ def _document_chunk_counts(source_chunk_counts: dict[str, int]) -> dict[str, int
     }
 
 
-@app.post("/api/knowledge/brainstorm")
-async def brainstorm_endpoint(body: BrainstormRequest):
-    """Reserve the RAG chat contract until retrieval infrastructure is configured."""
-    del body
-    raise HTTPException(
-        status_code=501,
-        detail="知识库检索与对话尚未配置：请先接入 Qdrant、嵌入模型和检索链路。",
+def _active_discussion_llm():
+    """Create the LLM selected in the persisted API settings."""
+    settings = _read_api_settings() or {}
+    configs = settings.get("configs")
+    active_id = settings.get("active_id")
+    if not isinstance(configs, list) or not isinstance(active_id, str):
+        return None
+    config = next(
+        (item for item in configs if isinstance(item, dict) and item.get("id") == active_id),
+        None,
+    )
+    if config is None:
+        return None
+    return create_llm(
+        provider=config.get("provider"),
+        api_key=config.get("apiKey"),
+        base_url=config.get("baseUrl"),
+        model=config.get("model"),
+        fallback_env=False,
+    )
+
+
+def _generate_discussion_answer(
+    message: str,
+    history: list[dict[str, object]],
+    chunks: list[object],
+    llm: object,
+) -> str:
+    """Generate a discussion reply from prior messages and retrieved chunks."""
+    messages: list[tuple[str, str]] = [
+        (
+            "system",
+            "你是数学建模讨论助手。请直接给出清晰、可执行的回答；"
+            "不要输出思考过程或 <think> 标签。",
+        ),
+    ]
+    for item in history:
+        role = item.get("role")
+        content = item.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            messages.append(("human" if role == "user" else "ai", content))
+    if chunks:
+        references = "\n\n".join(
+            f"[资料 {index}：{getattr(chunk, 'source_file', '')}]\n"
+            f"{getattr(chunk, 'context', '') or getattr(chunk, 'text', '')}"
+            for index, chunk in enumerate(chunks, start=1)
+        )
+        messages.append((
+            "human",
+            f"用户问题：{message}\n\n"
+            f"以下是从知识库检索到的参考资料，请以它们为依据回答；"
+            f"资料不足时请明确说明。\n\n{references}",
+        ))
+    else:
+        messages.append(("human", message))
+    response = llm.invoke(messages)
+    content = getattr(response, "content", response)
+    answer = content if isinstance(content, str) else str(content)
+    return re.sub(r"<think>.*?</think>\s*", "", answer, flags=re.DOTALL).strip()
+
+
+@app.post("/api/knowledge/brainstorm", response_model=BrainstormResponse)
+async def brainstorm_endpoint(body: BrainstormRequest) -> BrainstormResponse:
+    """Retrieve knowledge-base context for a brainstorm message."""
+    llm = _active_discussion_llm()
+    if llm is None:
+        raise HTTPException(status_code=400, detail="尚未配置可用的当前 API 模型")
+    try:
+        chunks = await asyncio.to_thread(retrieve_knowledge, body.message, llm=llm)
+    except ValueError as exc:
+        if str(exc) != "知识库尚未建立向量索引":
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        chunks = []
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    previous_discussion = (
+        await asyncio.to_thread(get_discussion, body.discussion_id)
+        if body.discussion_id
+        else None
+    )
+    history = previous_discussion.get("messages", []) if previous_discussion else []
+    sources = [
+        BrainstormSource(
+            source_file=chunk.source_file or "未命名文档",
+            document_id=chunk.document_id,
+            content=chunk.context or chunk.text,
+        )
+        for chunk in chunks
+    ]
+    try:
+        answer = await asyncio.to_thread(
+            _generate_discussion_answer,
+            body.message,
+            history,
+            chunks,
+            llm,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502,
+            detail=f"当前模型服务调用失败，请稍后重试：{exc}",
+        ) from exc
+    discussion_id = await asyncio.to_thread(
+        save_discussion_message,
+        body.discussion_id,
+        body.message,
+        answer,
+        [source.model_dump() for source in sources],
+    )
+    return BrainstormResponse(
+        message=answer,
+        sources=sources,
+        discussion_id=discussion_id,
+    )
+
+
+@app.get(
+    "/api/knowledge/discussions",
+    response_model=list[BrainstormDiscussionSummary],
+)
+async def list_brainstorm_discussions_endpoint() -> list[BrainstormDiscussionSummary]:
+    """List saved inspiration discussions for the history page."""
+    return [
+        BrainstormDiscussionSummary(**item)
+        for item in await asyncio.to_thread(list_discussions)
+    ]
+
+
+@app.get(
+    "/api/knowledge/discussions/{discussion_id}",
+    response_model=BrainstormDiscussion,
+)
+async def get_brainstorm_discussion_endpoint(
+    discussion_id: str,
+) -> BrainstormDiscussion:
+    """Load a discussion so users can read it or continue chatting."""
+    discussion = await asyncio.to_thread(get_discussion, discussion_id)
+    if discussion is None:
+        raise HTTPException(status_code=404, detail="未找到该讨论记录")
+    messages = [
+        BrainstormDiscussionMessage(**message)
+        for message in discussion.get("messages", [])
+    ]
+    return BrainstormDiscussion(
+        id=discussion["id"],
+        title=discussion["title"],
+        updated_at=discussion["updated_at"],
+        messages=messages,
     )
 
 

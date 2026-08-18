@@ -1,17 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { sendBrainstormMessage } from '../api'
+import { fetchBrainstormDiscussion, type BrainstormSource, sendBrainstormMessage } from '../api'
+import MarkdownContent from '../components/MarkdownContent'
 
-type Message = { role: 'assistant' | 'user'; content: string }
+type Message = { role: 'assistant' | 'user'; content: string; sources?: BrainstormSource[] }
 
-export default function Brainstorm() {
+const WELCOME_MESSAGE: Message = {
+  role: 'assistant',
+  content: '你好，我是 MMAgent 灵感助手。请输入建模问题、已有假设或分析方向，我会从知识库检索相关片段供你梳理建模思路。',
+}
+
+export default function Brainstorm({ discussionId, onDiscussionId }: {
+  discussionId: string | null
+  onDiscussionId: (discussionId: string) => void
+}) {
   const [draft, setDraft] = useState('')
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: '你好，我是 MMAgent 灵感助手。请输入建模问题、已有假设或分析方向，我会协助你梳理可行的建模思路。',
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE])
+
+  useEffect(() => {
+    if (!discussionId) {
+      setMessages([WELCOME_MESSAGE])
+      return
+    }
+    void fetchBrainstormDiscussion(discussionId)
+      .then((discussion) => setMessages(discussion.messages))
+      .catch((error) => setMessages([
+        WELCOME_MESSAGE,
+        { role: 'assistant', content: error instanceof Error ? error.message : '加载讨论记录失败。' },
+      ]))
+  }, [discussionId])
 
   async function submit() {
     const message = draft.trim()
@@ -19,7 +36,12 @@ export default function Brainstorm() {
     setDraft('')
     setMessages((current) => [...current, { role: 'user', content: message }])
     try {
-      await sendBrainstormMessage(message)
+      const response = await sendBrainstormMessage(message, discussionId)
+      onDiscussionId(response.discussion_id)
+      setMessages((current) => [
+        ...current,
+        { role: 'assistant', content: response.message, sources: response.sources },
+      ])
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -32,7 +54,7 @@ export default function Brainstorm() {
     <div className="page page-fill brainstorm-page inspiration-page inspiration-chat-page">
       <div className="inspiration-chat-title">
         <strong>灵感讨论</strong>
-        <span>RAG 引擎待配置</span>
+        <span>RAG 混合检索与压缩已接入</span>
       </div>
       <section className="brainstorm-chat" aria-label="灵感迸发对话">
         <div className="brainstorm-messages">
@@ -40,7 +62,18 @@ export default function Brainstorm() {
             <div className={`brainstorm-message-row ${message.role}`} key={`${message.role}-${index}`}>
               {message.role === 'assistant' && <span className="brainstorm-avatar">M</span>}
               <div className={`brainstorm-message ${message.role}`}>
-                {message.content}
+                {message.role === 'assistant' ? <MarkdownContent content={message.content} /> : message.content}
+                {message.sources && message.sources.length > 0 && (
+                  <details className="brainstorm-sources">
+                    <summary>参考窗口（{message.sources.length} 条）</summary>
+                    {message.sources.map((source, sourceIndex) => (
+                      <div className="brainstorm-source" key={`${source.document_id}-${sourceIndex}`}>
+                        <strong>{source.source_file}</strong>
+                        <MarkdownContent content={source.content} />
+                      </div>
+                    ))}
+                  </details>
+                )}
               </div>
             </div>
           ))}
@@ -48,7 +81,7 @@ export default function Brainstorm() {
         <div className="brainstorm-composer">
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="输入待讨论的建模问题、假设或分析方向…" rows={2} />
           <div>
-            <span>检索与引用将在 RAG 引擎接入后生成。</span>
+            <span>优先检索并压缩知识库上下文；知识库为空时直接与当前模型讨论。</span>
             <button className="api-btn primary" onClick={submit} disabled={!draft.trim()}>讨论</button>
           </div>
         </div>

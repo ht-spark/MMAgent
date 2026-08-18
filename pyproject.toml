@@ -32,7 +32,8 @@ dependencies = [
     "qdrant-client",
     "modelscope",
     "langchain-huggingface",
-    "sentence-transformers"
+    "sentence-transformers",
+    "langchain-classic "
 ]
 
 [tool.pytest.ini_options]

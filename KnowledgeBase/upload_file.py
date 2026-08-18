@@ -395,7 +395,10 @@ def convert_documents(
             continue
         if record.is_conversion or record.is_markdown:
             continue
-        raw_path = RAW_ROOT / record.name
+        # ``output_name`` is the archived raw filename until conversion finishes.
+        # ZIP members are prefixed with the archive stem to avoid collisions,
+        # while ``name`` remains the original filename shown in the UI.
+        raw_path = RAW_ROOT / record.output_name
         if not raw_path.exists():
             failed.append(f"{record.name}（原始文件不存在）")
             continue

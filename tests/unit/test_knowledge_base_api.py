@@ -4,7 +4,7 @@ import asyncio
 
 from KnowledgeBase import upload_file
 from server import main
-from server.schemas import KnowledgeDocumentsDeleteBody
+from server.schemas import BrainstormRequest, KnowledgeDocumentsDeleteBody
 from KnowledgeBase.embedding import IndexBuildResult
 
 
@@ -104,3 +104,100 @@ def test_chunk_embed_endpoint_returns_actual_index_counts(monkeypatch, tmp_path)
     assert result.vector_size == 512
     assert result.document_chunks == {prepared.document_id: 3}
     assert main._get_knowledge_processing_progress().stage == "done"
+
+
+def test_brainstorm_endpoint_returns_retrieved_sources(monkeypatch):
+    """The inspiration endpoint exposes the local retrieval result to the UI."""
+    chunk = type(
+        "Chunk",
+        (),
+        {
+            "source_file": "reference.md",
+            "document_id": "document-uuid",
+            "context": "与问题相关的知识片段",
+            "text": "用于生成回答的实际分块",
+        },
+    )()
+    compression_llm = object()
+    retrieval_llms: list[object] = []
+    monkeypatch.setattr(main, "_active_discussion_llm", lambda: compression_llm)
+    monkeypatch.setattr(
+        main,
+        "retrieve_knowledge",
+        lambda _, **kwargs: retrieval_llms.append(kwargs["llm"]) or [chunk],
+    )
+    generated: list[object] = []
+    monkeypatch.setattr(
+        main,
+        "_generate_discussion_answer",
+        lambda message, history, chunks, llm: generated.extend([message, history, chunks, llm]) or "基于资料的回答。",
+    )
+    monkeypatch.setattr(main, "save_discussion_message", lambda *_: "discussion-uuid")
+
+    result = asyncio.run(main.brainstorm_endpoint(BrainstormRequest(message="如何建模？")))
+
+    assert result.message == "基于资料的回答。"
+    assert result.discussion_id == "discussion-uuid"
+    assert generated[0] == "如何建模？"
+    assert generated[2] == [chunk]
+    assert generated[3] is compression_llm
+    assert retrieval_llms == [compression_llm]
+    assert result.sources[0].model_dump() == {
+        "source_file": "reference.md",
+        "document_id": "document-uuid",
+        "content": "与问题相关的知识片段",
+    }
+
+
+def test_brainstorm_endpoint_uses_llm_when_knowledge_is_empty(monkeypatch):
+    """An empty retrieval result falls back to the selected discussion LLM."""
+    monkeypatch.setattr(main, "_active_discussion_llm", lambda: object())
+    monkeypatch.setattr(main, "retrieve_knowledge", lambda _, **kwargs: [])
+    monkeypatch.setattr(main, "_generate_discussion_answer", lambda *_: "可以直接讨论建模方案。")
+    monkeypatch.setattr(main, "save_discussion_message", lambda *_: "discussion-uuid")
+
+    result = asyncio.run(main.brainstorm_endpoint(BrainstormRequest(message="如何建模？")))
+
+    assert result.message == "可以直接讨论建模方案。"
+    assert result.discussion_id == "discussion-uuid"
+    assert result.sources == []
+
+
+def test_discussion_answer_passes_retrieved_window_to_llm_and_hides_thinking(monkeypatch):
+    """RAG answers use the retained node's complete window as context."""
+    prompts: list[list[tuple[str, str]]] = []
+
+    class FakeLlm:
+        def invoke(self, messages):
+            prompts.append(messages)
+            return type("Response", (), {"content": "<think>hidden</think>可执行的建模建议。"})()
+
+    chunk = type(
+        "Chunk",
+        (),
+        {"source_file": "reference.md", "text": "实际分块内容", "context": "完整窗口上下文"},
+    )()
+    monkeypatch.setattr(main, "_active_discussion_llm", lambda: FakeLlm())
+
+    answer = main._generate_discussion_answer("如何建模？", [], [chunk], FakeLlm())
+
+    assert answer == "可执行的建模建议。"
+    assert "完整窗口上下文" in prompts[0][-1][1]
+
+
+def test_brainstorm_discussion_endpoints_restore_saved_messages(monkeypatch):
+    """Saved discussions can be listed and loaded for continued chat."""
+    discussion = {
+        "id": "discussion-uuid",
+        "title": "如何建模？",
+        "updated_at": "2026-08-18T00:00:00+00:00",
+        "messages": [{"role": "user", "content": "如何建模？", "sources": []}],
+    }
+    monkeypatch.setattr(main, "list_discussions", lambda: [discussion])
+    monkeypatch.setattr(main, "get_discussion", lambda _: discussion)
+
+    summaries = asyncio.run(main.list_brainstorm_discussions_endpoint())
+    restored = asyncio.run(main.get_brainstorm_discussion_endpoint("discussion-uuid"))
+
+    assert summaries[0].title == "如何建模？"
+    assert restored.messages[0].content == "如何建模？"

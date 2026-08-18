@@ -132,3 +132,45 @@ class BrainstormRequest(BaseModel):
     """头脑风暴对话接口的输入契约。"""
 
     message: str = Field(min_length=1, max_length=20_000)
+    discussion_id: str | None = None
+
+
+class BrainstormSource(BaseModel):
+    """One knowledge-base chunk returned for an inspiration query."""
+
+    source_file: str
+    document_id: str
+    content: str
+
+
+class BrainstormResponse(BaseModel):
+    """Retrieval-only response for the inspiration discussion page."""
+
+    message: str
+    sources: list[BrainstormSource] = Field(default_factory=list)
+    discussion_id: str
+
+
+class BrainstormDiscussionSummary(BaseModel):
+    """Saved discussion displayed in the history list."""
+
+    id: str
+    title: str
+    updated_at: str
+
+
+class BrainstormDiscussionMessage(BaseModel):
+    """One persisted message in a saved discussion."""
+
+    role: str
+    content: str
+    sources: list[BrainstormSource] = Field(default_factory=list)
+
+
+class BrainstormDiscussion(BaseModel):
+    """Saved discussion with its complete message history."""
+
+    id: str
+    title: str
+    updated_at: str
+    messages: list[BrainstormDiscussionMessage] = Field(default_factory=list)

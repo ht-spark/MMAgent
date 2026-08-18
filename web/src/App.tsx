@@ -6,6 +6,8 @@ import NewTask from './pages/NewTask'
 import History from './pages/History'
 import ApiManager from './pages/ApiManager'
 import Brainstorm from './pages/Brainstorm'
+import DiscussionHub from './pages/DiscussionHub'
+import DiscussionHistory from './pages/DiscussionHistory'
 import Docs from './pages/Docs'
 import ModelingTasks from './pages/ModelingTasks'
 import BrainstormHub from './pages/BrainstormHub'
@@ -19,7 +21,7 @@ import KnowledgeBaseHistory from './pages/KnowledgeBaseHistory'
 type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 type ModelingView = 'overview' | 'new' | 'history'
-type BrainstormView = 'overview' | 'knowledge' | 'stats' | 'chunking' | 'chunking-progress' | 'retrieval-ready' | 'inspiration' | 'history'
+type BrainstormView = 'overview' | 'knowledge' | 'stats' | 'chunking' | 'chunking-progress' | 'retrieval-ready' | 'discussion-hub' | 'inspiration' | 'discussion-history' | 'history'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
@@ -27,6 +29,7 @@ export default function App() {
   const [section, setSection] = useState<Section>('home')
   const [modelingView, setModelingView] = useState<ModelingView>('overview')
   const [brainstormView, setBrainstormView] = useState<BrainstormView>('overview')
+  const [discussionId, setDiscussionId] = useState<string | null>(null)
   const [chunkEmbeddingOptions, setChunkEmbeddingOptions] = useState<ChunkEmbeddingOptions>({
     strategy: 'semantic',
     chunkSize: 800,
@@ -78,6 +81,8 @@ export default function App() {
         setBrainstormView('chunking')
       } else if (brainstormView === 'retrieval-ready') {
         setBrainstormView('chunking-progress')
+      } else if (brainstormView === 'inspiration' || brainstormView === 'discussion-history') {
+        setBrainstormView('discussion-hub')
       } else {
         setBrainstormView('overview')
       }
@@ -144,7 +149,7 @@ export default function App() {
         {section === 'brainstorm' && brainstormView === 'overview' && (
           <BrainstormHub
             onKnowledge={() => setBrainstormView('knowledge')}
-            onInspiration={() => setBrainstormView('inspiration')}
+            onInspiration={() => setBrainstormView('discussion-hub')}
             onHistory={() => setBrainstormView('history')}
           />
         )}
@@ -177,7 +182,26 @@ export default function App() {
         {section === 'brainstorm' && brainstormView === 'retrieval-ready' && (
           <VectorRetrievalReady onBack={() => setBrainstormView('chunking-progress')} />
         )}
-        {section === 'brainstorm' && brainstormView === 'inspiration' && <Brainstorm />}
+        {section === 'brainstorm' && brainstormView === 'discussion-hub' && (
+          <DiscussionHub
+            onNew={() => {
+              setDiscussionId(null)
+              setBrainstormView('inspiration')
+            }}
+            onHistory={() => setBrainstormView('discussion-history')}
+          />
+        )}
+        {section === 'brainstorm' && brainstormView === 'inspiration' && (
+          <Brainstorm discussionId={discussionId} onDiscussionId={setDiscussionId} />
+        )}
+        {section === 'brainstorm' && brainstormView === 'discussion-history' && (
+          <DiscussionHistory
+            onOpen={(id) => {
+              setDiscussionId(id)
+              setBrainstormView('inspiration')
+            }}
+          />
+        )}
         {section === 'brainstorm' && brainstormView === 'history' && <KnowledgeBaseHistory />}
         {section === 'modeling' && modelingView === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
