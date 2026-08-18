@@ -108,6 +108,38 @@ def list_upload_records() -> list[UploadRecord]:
     return records
 
 
+def reconcile_conversion_records() -> list[UploadRecord]:
+    """Restore conversion metadata when an existing Markdown output is found.
+
+    Older conversion runs could write the Markdown file without updating the
+    upload manifest.  The workflow uses the manifest to decide whether a
+    document can proceed to chunking, so reconcile that persisted state with
+    the generated file before exposing document status.
+    """
+    records = list_upload_records()
+    reconciled: list[UploadRecord] = []
+    changed = False
+
+    for record in records:
+        if record.is_markdown or record.is_conversion:
+            reconciled.append(record)
+            continue
+
+        output_name = Path(record.output_name).with_suffix(".md").name
+        output_path = DOCUMENTS_ROOT / output_name
+        if output_path.is_file():
+            reconciled.append(
+                replace(record, output_name=output_name, is_conversion=True)
+            )
+            changed = True
+        else:
+            reconciled.append(record)
+
+    if changed:
+        _write_upload_records(reconciled)
+    return reconciled
+
+
 def delete_upload_records(document_ids: set[str]) -> list[str]:
     """Delete selected prepared Markdown files and their table records.
 

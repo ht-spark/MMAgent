@@ -46,6 +46,26 @@ def test_knowledge_status_prefers_persisted_upload_metadata(monkeypatch, tmp_pat
     ]
 
 
+def test_knowledge_status_recovers_conversion_state_from_markdown_output(monkeypatch, tmp_path):
+    """Existing converted Markdown makes its source document eligible for chunking."""
+    documents_root = tmp_path / "documents"
+    documents_root.mkdir()
+    (documents_root / "source.md").write_text("# Converted", encoding="utf-8")
+    (documents_root / ".uploads.json").write_text(
+        '[{"document_id": "document-id", "name": "source.pdf", "size_bytes": 12, '
+        '"uploaded_at": "2026-08-15T00:00:00+00:00", "upload_success": true, '
+        '"output_name": "source.pdf", "is_markdown": false, "is_conversion": false}]',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "KNOWLEDGE_DOCUMENTS_ROOT", documents_root)
+    monkeypatch.setattr("KnowledgeBase.upload_file.DOCUMENTS_ROOT", documents_root)
+
+    status = asyncio.run(main.knowledge_status_endpoint())
+
+    assert status.documents[0].is_conversion is True
+    assert '"output_name": "source.md"' in (documents_root / ".uploads.json").read_text(encoding="utf-8")
+
+
 def test_delete_knowledge_documents_endpoint_removes_selected_record(monkeypatch, tmp_path):
     raw_root = tmp_path / "raw"
     documents_root = tmp_path / "documents"

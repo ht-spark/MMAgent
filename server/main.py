@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +33,7 @@ from KnowledgeBase.upload_file import (
     list_upload_records,
     migrate_legacy_document_ids,
     prepare_upload,
+    reconcile_conversion_records,
 )
 from server.runs import (
     cancel_run,
@@ -88,6 +89,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def _no_cache_html(request: Request, call_next):
+    """index.html 禁止缓存，确保前端重新构建后浏览器立即加载新资源。"""
+    response = await call_next(request)
+    if request.url.path in {"", "/", "/index.html"}:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
 # 保留后台任务引用，避免被 GC
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 _KNOWLEDGE_PROCESSING_LOCK = Lock()
@@ -110,7 +120,7 @@ def _get_knowledge_processing_progress() -> KnowledgeChunkEmbedProgress:
 
 def _list_knowledge_documents() -> list[KnowledgeDocument]:
     """Return locally archived source documents for the knowledge-base MVP."""
-    records = list_upload_records()
+    records = reconcile_conversion_records()
     if records:
         return [
             KnowledgeDocument(
