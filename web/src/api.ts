@@ -173,7 +173,7 @@ export async function submitClarification(
 }
 
 export type KnowledgeDocument = {
-  id: number
+  id: string
   name: string
   size_bytes: number
   uploaded_at: string
@@ -202,7 +202,7 @@ export async function uploadKnowledgeDocument(file: File): Promise<KnowledgeDocu
   return res.json()
 }
 
-export async function deleteKnowledgeDocuments(documentIds: number[]): Promise<{ deleted_ids: number[] }> {
+export async function deleteKnowledgeDocuments(documentIds: string[]): Promise<{ deleted_ids: string[] }> {
   const res = await fetch('/api/knowledge/documents', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -212,7 +212,7 @@ export async function deleteKnowledgeDocuments(documentIds: number[]): Promise<{
   return res.json()
 }
 
-export async function convertKnowledgeDocuments(documentIds: number[]): Promise<{ converted_ids: number[]; failed: string[] }> {
+export async function convertKnowledgeDocuments(documentIds: string[]): Promise<{ converted_ids: string[]; failed: string[] }> {
   const res = await fetch('/api/knowledge/documents/convert', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -227,12 +227,23 @@ export type KnowledgeChunkEmbedResult = {
   documents_processed: number
   chunks_indexed: number
   vector_size: number
-  document_chunks: Record<number, number>
+  document_chunks: Record<string, number>
+}
+
+export type KnowledgeChunkEmbedProgress = {
+  stage: 'idle' | 'chunking' | 'embedding' | 'done' | 'failed'
+  error: string | null
 }
 
 export async function chunkAndEmbedKnowledge(): Promise<KnowledgeChunkEmbedResult> {
   const res = await fetch('/api/knowledge/chunk-embed', { method: 'POST' })
   if (!res.ok) throw new Error(await extractDetail(res, '分块与嵌入失败'))
+  return res.json()
+}
+
+export async function getKnowledgeChunkEmbedProgress(): Promise<KnowledgeChunkEmbedProgress> {
+  const res = await fetch('/api/knowledge/chunk-embed/progress')
+  if (!res.ok) throw new Error(await extractDetail(res, '获取分块与嵌入进度失败'))
   return res.json()
 }
 

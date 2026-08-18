@@ -25,6 +25,7 @@ def test_build_local_qdrant_index_uses_local_chunks(monkeypatch, tmp_path):
                         "original_text": "第一句。",
                         "source_file": "reference.md",
                         "source_path": "C:/example/reference.md",
+                        "document_id": "document-uuid",
                     },
                 },
                 ensure_ascii=False,
@@ -53,4 +54,11 @@ def test_build_local_qdrant_index_uses_local_chunks(monkeypatch, tmp_path):
     assert result.vector_size == 3
     assert collection.config.params.vectors.size == 3
     assert points[0].payload["source_file"] == "reference.md"
+    assert points[0].payload["document_id"] == "document-uuid"
     assert result.source_chunk_counts == {"reference.md": 2}
+
+    embedding.delete_document_vectors({"document-uuid"}, qdrant_path)
+    client = QdrantClient(path=str(qdrant_path))
+    remaining, _ = client.scroll(result.collection_name, limit=10, with_payload=True)
+    client.close()
+    assert remaining == []

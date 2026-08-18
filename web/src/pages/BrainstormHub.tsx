@@ -23,8 +23,8 @@ export default function BrainstormHub({ onKnowledge, onInspiration, onHistory }:
             </svg>
           </span>
           <span className="modeling-task-copy">
-            <strong>知识库维护</strong>
-            <span>上传并查看领域资料，为后续检索与建模提供依据。</span>
+            <strong>知识库更新</strong>
+            <span>上传新的知识文档，持续更新知识库内容。</span>
           </span>
           <span className="modeling-task-arrow" aria-hidden="true">→</span>
         </button>
@@ -52,7 +52,7 @@ export default function BrainstormHub({ onKnowledge, onInspiration, onHistory }:
           </span>
           <span className="modeling-task-copy">
             <strong>历史记录</strong>
-            <span>查看知识库维护的历史操作，包括上传、删除与格式转换。</span>
+            <span>查看现有知识库中的文件，并按需删除。</span>
           </span>
           <span className="modeling-task-arrow" aria-hidden="true">→</span>
         </button>

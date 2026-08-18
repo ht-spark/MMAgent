@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 import httpx
 
@@ -39,7 +40,7 @@ class KnowledgePreparationError(RuntimeError):
 class PreparedDocument:
     """One document archived for the knowledge base; Markdown conversion is optional."""
 
-    document_id: int
+    document_id: str
     name: str
     path: Path
     source_name: str
@@ -53,7 +54,7 @@ class PreparedDocument:
 class UploadRecord:
     """Persisted metadata displayed by the knowledge-base upload table."""
 
-    document_id: int
+    document_id: str
     name: str
     size_bytes: int
     uploaded_at: str
@@ -87,7 +88,7 @@ def list_upload_records() -> list[UploadRecord]:
         try:
             records.append(
                 UploadRecord(
-                    document_id=int(item["document_id"]),
+                    document_id=str(item["document_id"]),
                     name=str(item["name"]),
                     size_bytes=int(item["size_bytes"]),
                     uploaded_at=str(item["uploaded_at"]),
@@ -107,7 +108,7 @@ def list_upload_records() -> list[UploadRecord]:
     return records
 
 
-def delete_upload_records(document_ids: set[int]) -> list[int]:
+def delete_upload_records(document_ids: set[str]) -> list[str]:
     """Delete selected prepared Markdown files and their table records.
 
     Only output paths recorded in the upload manifest and located directly
@@ -117,6 +118,7 @@ def delete_upload_records(document_ids: set[int]) -> list[int]:
     if not document_ids:
         return []
 
+    migrate_legacy_document_ids()
     existing = list_upload_records()
     selected = [record for record in existing if record.document_id in document_ids]
     if not selected:
@@ -289,7 +291,7 @@ def _prepare_file(raw_path: Path, source_name: str) -> PreparedDocument:
         raise KnowledgePreparationError(f"不支持的知识库文件类型: {extension or '无扩展名'}")
 
     return PreparedDocument(
-        document_id=0,
+        document_id="",
         name=output_path.name,
         path=output_path,
         source_name=Path(source_name).name,
@@ -314,12 +316,12 @@ def _available_path(path: Path) -> Path:
 def _persist_upload_records(
     prepared_documents: list[PreparedDocument], uploaded_at: str
 ) -> list[PreparedDocument]:
-    """Assign stable table IDs and append metadata after conversion succeeds."""
+    """Assign permanent UUIDs and append metadata after conversion succeeds."""
+    migrate_legacy_document_ids()
     existing = list_upload_records()
-    next_id = max((record.document_id for record in existing), default=0) + 1
     assigned = [
-        replace(document, document_id=next_id + index, uploaded_at=uploaded_at)
-        for index, document in enumerate(prepared_documents)
+        replace(document, document_id=str(uuid4()), uploaded_at=uploaded_at)
+        for document in prepared_documents
     ]
     manifest_records = [
         {
@@ -362,11 +364,11 @@ def _document_output_path(output_name: str) -> Path:
 
 
 def convert_documents(
-    document_ids: set[int],
+    document_ids: set[str],
     *,
     mineru_api_key: str | None = None,
     mineru_base_url: str | None = None,
-) -> tuple[list[int], list[str]]:
+) -> tuple[list[str], list[str]]:
     """Convert selected non-Markdown documents to Markdown via MinerU.
 
     Returns:
@@ -375,6 +377,7 @@ def convert_documents(
     if not document_ids:
         return [], []
 
+    migrate_legacy_document_ids()
     records = list_upload_records()
     id_to_record = {record.document_id: record for record in records}
     selected = [id_to_record[id] for id in document_ids if id in id_to_record]
@@ -384,7 +387,7 @@ def convert_documents(
         raise KnowledgePreparationError("请先在 API 管理中配置 MinerU Token")
 
     client = MinerUClient(key, mineru_base_url or "https://mineru.net")
-    converted: list[int] = []
+    converted: list[str] = []
     failed: list[str] = []
 
     for index, record in enumerate(records):
@@ -439,6 +442,37 @@ def _write_upload_records_payload(records: list[dict[str, Any]]) -> None:
         json.dumps(records, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def migrate_legacy_document_ids() -> None:
+    """Replace legacy numeric or duplicate upload IDs with permanent UUIDs."""
+    manifest_path = DOCUMENTS_ROOT / UPLOAD_MANIFEST_NAME
+    if not manifest_path.exists():
+        return
+    try:
+        records = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(records, list):
+        return
+
+    seen: set[str] = set()
+    changed = False
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        try:
+            document_id = str(UUID(str(record.get("document_id", ""))))
+        except (AttributeError, TypeError, ValueError):
+            document_id = str(uuid4())
+        if document_id in seen:
+            document_id = str(uuid4())
+        seen.add(document_id)
+        if record.get("document_id") != document_id:
+            record["document_id"] = document_id
+            changed = True
+    if changed:
+        _write_upload_records_payload(records)
 
 
 def _first_mapping(payload: dict[str, Any], *keys: str) -> dict[str, Any]:

@@ -8,6 +8,7 @@ import {
   uploadKnowledgeDocument,
 } from '../api'
 import { appendKnowledgeHistory } from '../knowledgeHistory'
+import { formatKnowledgeDocumentId } from '../knowledgeDocumentId'
 
 const PAGE_SIZE = 10
 
@@ -18,7 +19,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
   const [uploadProgress, setUploadProgress] = useState<{ total: number; done: number; currentName: string } | null>(null)
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [converting, setConverting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -28,9 +29,9 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
     getKnowledgeStatus()
       .then((status) =>
         setDocuments(
-          status.documents.map((doc, index) => ({
+          status.documents.map((doc) => ({
             ...doc,
-            id: doc.id ?? index + 1,
+            id: doc.id || crypto.randomUUID(),
             upload_success: doc.upload_success ?? true,
             is_markdown: doc.is_markdown ?? false,
             is_conversion: doc.is_conversion ?? false,
@@ -54,9 +55,9 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
         const prepared = await uploadKnowledgeDocument(file)
         setDocuments((current) => [
           ...current.filter((item) => !prepared.some((document) => document.name === item.name)),
-          ...prepared.map((doc, index) => ({
+          ...prepared.map((doc) => ({
             ...doc,
-            id: doc.id ?? Date.now() + index,
+            id: doc.id || crypto.randomUUID(),
             upload_success: doc.upload_success ?? true,
             is_markdown: doc.is_markdown ?? false,
             is_conversion: doc.is_conversion ?? false,
@@ -92,7 +93,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
     uploadFiles(event.dataTransfer.files)
   }
 
-  function toggleSelect(id: number) {
+  function toggleSelect(id: string) {
     setSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
@@ -306,7 +307,7 @@ export default function KnowledgeBase({ onNext }: { onNext: () => void }) {
                         aria-label={`选择 ${doc.name}`}
                       />
                     </td>
-                    <td className="kb-col-id">{doc.id}</td>
+                    <td className="kb-col-id" title={doc.id}>{formatKnowledgeDocumentId(doc.id)}</td>
                     <td className="kb-col-name" title={doc.name}>{doc.name}</td>
                     <td className="kb-col-time">
                       {doc.uploaded_at

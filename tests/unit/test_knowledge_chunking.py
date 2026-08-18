@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from KnowledgeBase.chunk_embedding import (
+from KnowledgeBase.chunk import (
     build_sentence_window_nodes,
     chunk_knowledge_documents,
 )
@@ -18,12 +18,17 @@ def test_sentence_window_chunking_loads_only_markdown(tmp_path):
     (documents_root / "ignored.txt").write_text("not prepared markdown", encoding="utf-8")
     (documents_root / ".uploads.json").write_text("[]", encoding="utf-8")
 
-    nodes = build_sentence_window_nodes(documents_root, window_size=1)
+    nodes = build_sentence_window_nodes(
+        documents_root,
+        window_size=1,
+        document_ids_by_source={"reference.md": "document-uuid"},
+    )
 
     assert len(nodes) == 3
     assert {node.metadata["source_file"] for node in nodes} == {"reference.md"}
     assert all("window" in node.metadata for node in nodes)
     assert all("original_text" in node.metadata for node in nodes)
+    assert all(node.metadata["document_id"] == "document-uuid" for node in nodes)
 
 
 def test_chunk_knowledge_documents_writes_jsonl_nodes(tmp_path):
@@ -34,9 +39,15 @@ def test_chunk_knowledge_documents_writes_jsonl_nodes(tmp_path):
         "One sentence. Another sentence.", encoding="utf-8"
     )
 
-    output_path = chunk_knowledge_documents(documents_root, chunks_root, window_size=1)
+    output_path = chunk_knowledge_documents(
+        documents_root,
+        chunks_root,
+        window_size=1,
+        document_ids_by_source={"reference.md": "document-uuid"},
+    )
 
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
     assert output_path.name == "sentence_window_nodes.jsonl"
     assert len(rows) == 2
     assert rows[0]["metadata"]["source_file"] == "reference.md"
+    assert rows[0]["metadata"]["document_id"] == "document-uuid"

@@ -22,11 +22,16 @@ NODE_OUTPUT_NAME = "sentence_window_nodes.jsonl"
 MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdown"}
 
 
-def load_markdown_documents(documents_root: Path = DOCUMENTS_ROOT) -> list[Document]:
+def load_markdown_documents(
+    documents_root: Path = DOCUMENTS_ROOT,
+    *,
+    document_ids_by_source: dict[str, str] | None = None,
+) -> list[Document]:
     """Load prepared Markdown files from the knowledge-base documents folder.
 
     Args:
         documents_root: Folder containing Markdown generated during upload.
+        document_ids_by_source: Stable upload IDs keyed by generated Markdown filename.
 
     Returns:
         LlamaIndex documents, each carrying its source filename and path.
@@ -38,13 +43,17 @@ def load_markdown_documents(documents_root: Path = DOCUMENTS_ROOT) -> list[Docum
     for path in sorted(documents_root.iterdir(), key=lambda item: item.name.lower()):
         if not path.is_file() or path.suffix.lower() not in MARKDOWN_EXTENSIONS:
             continue
+        metadata = {
+            "source_file": path.name,
+            "source_path": str(path.resolve()),
+        }
+        document_id = (document_ids_by_source or {}).get(path.name)
+        if document_id:
+            metadata["document_id"] = document_id
         documents.append(
             Document(
                 text=path.read_text(encoding="utf-8"),
-                metadata={
-                    "source_file": path.name,
-                    "source_path": str(path.resolve()),
-                },
+                metadata=metadata,
             )
         )
     return documents
@@ -54,12 +63,14 @@ def build_sentence_window_nodes(
     documents_root: Path = DOCUMENTS_ROOT,
     *,
     window_size: int = DEFAULT_WINDOW_SIZE,
+    document_ids_by_source: dict[str, str] | None = None,
 ) -> list[BaseNode]:
     """Split prepared Markdown with LlamaIndex ``SentenceWindowNodeParser``.
 
     Args:
         documents_root: Folder containing prepared Markdown documents.
         window_size: Number of neighbouring sentences retained on each node.
+        document_ids_by_source: Stable upload IDs keyed by generated Markdown filename.
 
     Returns:
         Sentence-level nodes with ``window`` and ``original_text`` metadata.
@@ -70,7 +81,10 @@ def build_sentence_window_nodes(
     if window_size < 1:
         raise ValueError("window_size 必须为正整数")
 
-    documents = load_markdown_documents(documents_root)
+    documents = load_markdown_documents(
+        documents_root,
+        document_ids_by_source=document_ids_by_source,
+    )
     if not documents:
         return []
 
@@ -109,6 +123,7 @@ def chunk_knowledge_documents(
     chunks_root: Path = CHUNKS_ROOT,
     *,
     window_size: int = DEFAULT_WINDOW_SIZE,
+    document_ids_by_source: dict[str, str] | None = None,
 ) -> Path:
     """Build and persist sentence-window nodes for all prepared documents.
 
@@ -116,11 +131,16 @@ def chunk_knowledge_documents(
         documents_root: Source folder of prepared Markdown files.
         chunks_root: Destination folder for the JSONL node artifact.
         window_size: Number of neighbouring sentences in each context window.
+        document_ids_by_source: Stable upload IDs keyed by generated Markdown filename.
 
     Returns:
         Path to the generated JSONL node artifact.
     """
-    nodes = build_sentence_window_nodes(documents_root, window_size=window_size)
+    nodes = build_sentence_window_nodes(
+        documents_root,
+        window_size=window_size,
+        document_ids_by_source=document_ids_by_source,
+    )
     return write_sentence_window_nodes(nodes, chunks_root)
 
 

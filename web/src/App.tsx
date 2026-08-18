@@ -11,13 +11,15 @@ import ModelingTasks from './pages/ModelingTasks'
 import BrainstormHub from './pages/BrainstormHub'
 import KnowledgeBase from './pages/KnowledgeBase'
 import KnowledgeBaseStats from './pages/KnowledgeBaseStats'
-import ChunkEmbedding from './pages/ChunkEmbedding'
+import ChunkEmbedding, { type ChunkEmbeddingOptions } from './pages/ChunkEmbedding'
+import ChunkEmbeddingProgress from './pages/ChunkEmbeddingProgress'
+import VectorRetrievalReady from './pages/VectorRetrievalReady'
 import KnowledgeBaseHistory from './pages/KnowledgeBaseHistory'
 
 type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 type ModelingView = 'overview' | 'new' | 'history'
-type BrainstormView = 'overview' | 'knowledge' | 'stats' | 'chunking' | 'inspiration' | 'history'
+type BrainstormView = 'overview' | 'knowledge' | 'stats' | 'chunking' | 'chunking-progress' | 'retrieval-ready' | 'inspiration' | 'history'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
@@ -25,6 +27,11 @@ export default function App() {
   const [section, setSection] = useState<Section>('home')
   const [modelingView, setModelingView] = useState<ModelingView>('overview')
   const [brainstormView, setBrainstormView] = useState<BrainstormView>('overview')
+  const [chunkEmbeddingOptions, setChunkEmbeddingOptions] = useState<ChunkEmbeddingOptions>({
+    strategy: 'semantic',
+    chunkSize: 800,
+    overlap: 100,
+  })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [task, setTask] = useState<{ step: TaskStep; runId: string | null }>({
     step: 'submit',
@@ -62,11 +69,15 @@ export default function App() {
       return
     }
     if (section === 'brainstorm' && brainstormView !== 'overview') {
-      // 资料统计页返回知识库维护页；分块与嵌入页返回资料统计页；其余子页返回头脑风暴总览
+      // 资料统计页返回知识库维护页；分块设置页返回资料统计页；执行页返回设置页。
       if (brainstormView === 'stats') {
         setBrainstormView('knowledge')
       } else if (brainstormView === 'chunking') {
         setBrainstormView('stats')
+      } else if (brainstormView === 'chunking-progress') {
+        setBrainstormView('chunking')
+      } else if (brainstormView === 'retrieval-ready') {
+        setBrainstormView('chunking-progress')
       } else {
         setBrainstormView('overview')
       }
@@ -147,7 +158,24 @@ export default function App() {
           />
         )}
         {section === 'brainstorm' && brainstormView === 'chunking' && (
-          <ChunkEmbedding onBack={() => setBrainstormView('stats')} />
+          <ChunkEmbedding
+            onBack={() => setBrainstormView('stats')}
+            onNext={(options) => {
+              setChunkEmbeddingOptions(options)
+              setBrainstormView('chunking-progress')
+            }}
+            initialOptions={chunkEmbeddingOptions}
+          />
+        )}
+        {section === 'brainstorm' && brainstormView === 'chunking-progress' && (
+          <ChunkEmbeddingProgress
+            options={chunkEmbeddingOptions}
+            onBack={() => setBrainstormView('chunking')}
+            onNext={() => setBrainstormView('retrieval-ready')}
+          />
+        )}
+        {section === 'brainstorm' && brainstormView === 'retrieval-ready' && (
+          <VectorRetrievalReady onBack={() => setBrainstormView('chunking-progress')} />
         )}
         {section === 'brainstorm' && brainstormView === 'inspiration' && <Brainstorm />}
         {section === 'brainstorm' && brainstormView === 'history' && <KnowledgeBaseHistory />}

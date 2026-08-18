@@ -10,6 +10,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
 from KnowledgeBase.chunk import chunk_knowledge_documents
-from KnowledgeBase.embedding import build_local_qdrant_index
+from KnowledgeBase.embedding import build_local_qdrant_index, delete_document_vectors
 from KnowledgeBase.upload_file import (
     DOCUMENTS_ROOT as KNOWLEDGE_DOCUMENTS_ROOT,
     KnowledgePreparationError,
@@ -26,6 +27,7 @@ from KnowledgeBase.upload_file import (
     convert_documents,
     delete_upload_records,
     list_upload_records,
+    migrate_legacy_document_ids,
     prepare_upload,
 )
 from server.runs import (
@@ -49,6 +51,7 @@ from server.schemas import (
     CreateRunResponse,
     KnowledgeDocument,
     KnowledgeChunkEmbedResponse,
+    KnowledgeChunkEmbedProgress,
     KnowledgeDocumentsDeleteBody,
     KnowledgeStatus,
     ModelConfig,
@@ -73,6 +76,22 @@ app.add_middleware(
 
 # 保留后台任务引用，避免被 GC
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
+_KNOWLEDGE_PROCESSING_LOCK = Lock()
+_KNOWLEDGE_PROGRESS_LOCK = Lock()
+_knowledge_processing_progress = {"stage": "idle", "error": None}
+
+
+def _set_knowledge_processing_progress(stage: str, error: str | None = None) -> None:
+    """Record the current real indexing stage for the frontend."""
+    with _KNOWLEDGE_PROGRESS_LOCK:
+        _knowledge_processing_progress["stage"] = stage
+        _knowledge_processing_progress["error"] = error
+
+
+def _get_knowledge_processing_progress() -> KnowledgeChunkEmbedProgress:
+    """Return a consistent snapshot of the current indexing stage."""
+    with _KNOWLEDGE_PROGRESS_LOCK:
+        return KnowledgeChunkEmbedProgress(**_knowledge_processing_progress)
 
 
 def _list_knowledge_documents() -> list[KnowledgeDocument]:
@@ -100,7 +119,7 @@ def _list_knowledge_documents() -> list[KnowledgeDocument]:
     ]
     return [
         KnowledgeDocument(
-            id=index + 1,
+            id=str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve()))),
             name=path.name,
             size_bytes=path.stat().st_size,
             uploaded_at=datetime.fromtimestamp(
@@ -117,6 +136,7 @@ def _list_knowledge_documents() -> list[KnowledgeDocument]:
 @app.on_event("startup")
 async def _on_startup() -> None:
     """启动时清理因服务重启而留下的\"僵尸\"运行（status=running 但无对应后台线程）。"""
+    migrate_legacy_document_ids()
     cleaned = cleanup_stale_runs(max_age_seconds=120)
     if cleaned:
         print(f"[startup] cleaned {cleaned} stale running run(s)")
@@ -205,14 +225,21 @@ async def upload_knowledge_document_endpoint(
 @app.delete("/api/knowledge/documents")
 async def delete_knowledge_documents_endpoint(
     body: KnowledgeDocumentsDeleteBody,
-) -> dict[str, list[int]]:
+) -> dict[str, list[str]]:
     """Delete selected prepared knowledge-base documents by their stable IDs."""
+    selected_ids = {
+        record.document_id
+        for record in list_upload_records()
+        if record.document_id in body.document_ids
+    }
+    if not selected_ids:
+        raise HTTPException(status_code=404, detail="未找到可删除的知识库文件")
     try:
-        deleted_ids = delete_upload_records(set(body.document_ids))
+        delete_document_vectors(selected_ids)
+        deleted_ids = delete_upload_records(selected_ids)
+        chunk_knowledge_documents(document_ids_by_source=_document_ids_by_source())
     except KnowledgePreparationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    if not deleted_ids:
-        raise HTTPException(status_code=404, detail="未找到可删除的知识库文件")
     return {"deleted_ids": deleted_ids}
 
 
@@ -238,28 +265,52 @@ async def convert_knowledge_documents_endpoint(
 @app.post("/api/knowledge/chunk-embed", response_model=KnowledgeChunkEmbedResponse)
 async def chunk_and_embed_knowledge_endpoint() -> KnowledgeChunkEmbedResponse:
     """Run local sentence-window chunking and HuggingFace embedding on demand."""
+    if not _KNOWLEDGE_PROCESSING_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="已有知识库分块与嵌入任务正在执行")
+    _set_knowledge_processing_progress("chunking")
     try:
         result = await asyncio.to_thread(_build_knowledge_vector_index)
+        document_chunks = _document_chunk_counts(result.source_chunk_counts)
+        _set_knowledge_processing_progress("done")
+        return KnowledgeChunkEmbedResponse(
+            collection_name=result.collection_name,
+            documents_processed=len(document_chunks),
+            chunks_indexed=result.indexed_nodes,
+            vector_size=result.vector_size,
+            document_chunks=document_chunks,
+        )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _set_knowledge_processing_progress("failed", str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        _set_knowledge_processing_progress("failed", str(exc))
+        raise
+    finally:
+        _KNOWLEDGE_PROCESSING_LOCK.release()
 
-    document_chunks = _document_chunk_counts(result.source_chunk_counts)
-    return KnowledgeChunkEmbedResponse(
-        collection_name=result.collection_name,
-        documents_processed=len(document_chunks),
-        chunks_indexed=result.indexed_nodes,
-        vector_size=result.vector_size,
-        document_chunks=document_chunks,
-    )
+
+@app.get("/api/knowledge/chunk-embed/progress", response_model=KnowledgeChunkEmbedProgress)
+async def knowledge_chunk_embed_progress_endpoint() -> KnowledgeChunkEmbedProgress:
+    """Return the real processing stage of the active knowledge indexing job."""
+    return _get_knowledge_processing_progress()
 
 
 def _build_knowledge_vector_index():
     """Regenerate chunks, then rebuild the local Qdrant collection."""
-    chunk_knowledge_documents()
+    chunk_knowledge_documents(document_ids_by_source=_document_ids_by_source())
+    _set_knowledge_processing_progress("embedding")
     return build_local_qdrant_index()
 
 
-def _document_chunk_counts(source_chunk_counts: dict[str, int]) -> dict[int, int]:
+def _document_ids_by_source() -> dict[str, str]:
+    """Map generated Markdown filenames to stable upload UUIDs."""
+    return {
+        record.output_name: record.document_id
+        for record in list_upload_records()
+    }
+
+
+def _document_chunk_counts(source_chunk_counts: dict[str, int]) -> dict[str, int]:
     """Map generated Markdown filenames back to stable upload-table IDs."""
     records = list_upload_records()
     if records:
@@ -268,8 +319,8 @@ def _document_chunk_counts(source_chunk_counts: dict[str, int]) -> dict[int, int
             for record in records
         }
     return {
-        index + 1: source_chunk_counts.get(document.name, 0)
-        for index, document in enumerate(_list_knowledge_documents())
+        document.id: source_chunk_counts.get(document.name, 0)
+        for document in _list_knowledge_documents()
     }
 
 

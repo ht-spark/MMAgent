@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchAny,
+    PointStruct,
+    VectorParams,
+)
 
 
 KNOWLEDGE_ROOT = Path(__file__).resolve().parent
@@ -157,11 +165,48 @@ def _embed_texts(model: Any, texts: list[str]) -> list[list[float]]:
     return [list(map(float, vector)) for vector in vectors]
 
 
+def delete_document_vectors(
+    document_ids: set[str],
+    qdrant_path: Path = QDRANT_PATH,
+    *,
+    collection_name: str = COLLECTION_NAME,
+) -> None:
+    """Delete all indexed vectors belonging to the selected document UUIDs.
+
+    Args:
+        document_ids: Stable document UUIDs stored in Qdrant payload metadata.
+        qdrant_path: Local Qdrant storage directory.
+        collection_name: Collection holding knowledge document vectors.
+    """
+    if not document_ids:
+        return
+    client = QdrantClient(path=str(qdrant_path))
+    try:
+        if not client.collection_exists(collection_name):
+            return
+        client.delete(
+            collection_name=collection_name,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchAny(any=sorted(document_ids)),
+                        )
+                    ]
+                )
+            ),
+        )
+    finally:
+        client.close()
+
+
 def _node_payload(record: dict[str, Any]) -> dict[str, Any]:
     """Keep retrieval text, sentence context, and provenance in Qdrant."""
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     return {
         "node_id": str(record.get("id_") or ""),
+        "document_id": str(metadata.get("document_id") or ""),
         "text": record["text"],
         "window": str(metadata.get("window") or ""),
         "original_text": str(metadata.get("original_text") or ""),

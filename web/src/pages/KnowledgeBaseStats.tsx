@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { getKnowledgeStatus, type KnowledgeDocument } from '../api'
+import { formatKnowledgeDocumentId } from '../knowledgeDocumentId'
 
 type DocKind = 'original-markdown' | 'converted' | 'not-ready'
 
@@ -20,6 +21,8 @@ const KIND_TAG_CLASS: Record<DocKind, string> = {
   'not-ready': 'kb-tag-normal',
 }
 
+const PAGE_SIZE = 5
+
 export default function KnowledgeBaseStats({
   onBack,
   onNext,
@@ -30,6 +33,7 @@ export default function KnowledgeBaseStats({
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     getKnowledgeStatus()
@@ -51,6 +55,13 @@ export default function KnowledgeBaseStats({
   const originalMarkdownCount = usableDocs.filter((doc) => doc.kind === 'original-markdown').length
   const convertedCount = usableDocs.filter((doc) => doc.kind === 'converted').length
   const notReadyCount = categorized.length - usableDocs.length
+  const totalPages = Math.max(1, Math.ceil(categorized.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginatedDocuments = categorized.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages))
+  }, [totalPages])
 
   return (
     <div className="page chunk-page">
@@ -73,10 +84,14 @@ export default function KnowledgeBaseStats({
         </div>
         <div className="ce-step">
           <span className="ce-step-dot">3</span>
-          <span>分块与嵌入</span>
+          <span>分块与嵌入设置</span>
         </div>
         <div className="ce-step">
           <span className="ce-step-dot">4</span>
+          <span>执行分块与嵌入</span>
+        </div>
+        <div className="ce-step">
+          <span className="ce-step-dot">5</span>
           <span>向量检索就绪</span>
         </div>
       </div>
@@ -131,9 +146,9 @@ export default function KnowledgeBaseStats({
                   </td>
                 </tr>
               )}
-              {categorized.map((doc, index) => (
+              {paginatedDocuments.map((doc) => (
                 <tr key={doc.id}>
-                  <td className="kb-col-id">{index + 1}</td>
+                  <td className="kb-col-id" title={doc.id}>{formatKnowledgeDocumentId(doc.id)}</td>
                   <td className="kb-col-name" title={doc.name}>
                     {doc.name}
                   </td>
@@ -162,12 +177,32 @@ export default function KnowledgeBaseStats({
           </table>
         </div>
 
+        {categorized.length > 0 && (
+          <div className="kb-pagination">
+            <button
+              className="kb-page-btn"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+            >
+              上一页
+            </button>
+            <span className="kb-page-info">第 {safePage} / {totalPages} 页</span>
+            <button
+              className="kb-page-btn"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+            >
+              下一页
+            </button>
+          </div>
+        )}
+
         <div className="kb-actions">
           <button className="api-btn" onClick={onBack}>
-            返回上一步
+            上一步
           </button>
           <button className="api-btn primary" disabled={usableDocs.length === 0} onClick={onNext}>
-            进入分块与嵌入
+            下一步
           </button>
         </div>
       </div>

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
+from uuid import UUID
 
 from KnowledgeBase import upload_file
 
@@ -94,7 +96,7 @@ def test_prepare_markdown_upload(monkeypatch, tmp_path):
 
     assert [item.name for item in prepared] == ["reference.md"]
     assert (documents_root / "reference.md").read_text(encoding="utf-8") == "# Reference\n"
-    assert prepared[0].document_id == 1
+    assert str(UUID(prepared[0].document_id)) == prepared[0].document_id
     assert prepared[0].source_name == "reference.md"
     assert upload_file.list_upload_records()[0].name == "reference.md"
 
@@ -125,7 +127,9 @@ def test_repeated_uploads_keep_distinct_ids_and_source_names(monkeypatch, tmp_pa
     first = upload_file.prepare_upload("reference.md", b"# First\n")
     second = upload_file.prepare_upload("reference.md", b"# Second\n")
 
-    assert [item.document_id for item in first + second] == [1, 2]
+    ids = [item.document_id for item in first + second]
+    assert len(set(ids)) == 2
+    assert all(str(UUID(document_id)) == document_id for document_id in ids)
     assert [item.name for item in first + second] == ["reference.md", "reference_2.md"]
     assert [record.name for record in upload_file.list_upload_records()] == [
         "reference.md",
@@ -149,3 +153,21 @@ def test_delete_upload_records_removes_only_selected_markdown(monkeypatch, tmp_p
     assert [record.document_id for record in upload_file.list_upload_records()] == [
         second.document_id,
     ]
+
+
+def test_migrate_legacy_document_ids_replaces_numeric_and_duplicate_ids(monkeypatch, tmp_path):
+    documents_root = tmp_path / "documents"
+    documents_root.mkdir()
+    monkeypatch.setattr(upload_file, "DOCUMENTS_ROOT", documents_root)
+    (documents_root / ".uploads.json").write_text(
+        '[{"document_id": 1}, {"document_id": 1}]', encoding="utf-8"
+    )
+
+    upload_file.migrate_legacy_document_ids()
+
+    records = json.loads(
+        (documents_root / ".uploads.json").read_text(encoding="utf-8")
+    )
+    ids = [record["document_id"] for record in records]
+    assert len(set(ids)) == 2
+    assert all(str(UUID(document_id)) == document_id for document_id in ids)

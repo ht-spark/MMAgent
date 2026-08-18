@@ -89,7 +89,7 @@ class BudgetConfirmBody(BaseModel):
 class KnowledgeDocument(BaseModel):
     """知识库中已归档的原始文档。"""
 
-    id: int = 0
+    id: str = ""
     name: str
     size_bytes: int
     uploaded_at: str
@@ -108,7 +108,7 @@ class KnowledgeStatus(BaseModel):
 class KnowledgeDocumentsDeleteBody(BaseModel):
     """Selected knowledge-base document IDs to delete."""
 
-    document_ids: list[int] = Field(min_length=1)
+    document_ids: list[str] = Field(min_length=1)
 
 
 class KnowledgeChunkEmbedResponse(BaseModel):
@@ -118,7 +118,14 @@ class KnowledgeChunkEmbedResponse(BaseModel):
     documents_processed: int
     chunks_indexed: int
     vector_size: int
-    document_chunks: dict[int, int] = Field(default_factory=dict)
+    document_chunks: dict[str, int] = Field(default_factory=dict)
+
+
+class KnowledgeChunkEmbedProgress(BaseModel):
+    """Current server-side stage for the knowledge indexing operation."""
+
+    stage: str = "idle"
+    error: str | None = None
 
 
 class BrainstormRequest(BaseModel):

@@ -1,25 +1,13 @@
 import { useEffect, useState } from 'react'
 
-import {
-  chunkAndEmbedKnowledge,
-  getKnowledgeStatus,
-  type KnowledgeDocument,
-} from '../api'
+import { getKnowledgeStatus, type KnowledgeDocument } from '../api'
 
 type Strategy = 'semantic' | 'fixed'
-type Stage = 'pending' | 'chunking' | 'embedding' | 'done'
 
-interface DocProgress {
-  stage: Stage
-  chunks: number
-  vectors: number
-}
-
-const STAGE_LABEL: Record<Stage, string> = {
-  pending: '待处理',
-  chunking: '分块中…',
-  embedding: '嵌入中…',
-  done: '完成',
+export type ChunkEmbeddingOptions = {
+  strategy: Strategy
+  chunkSize: number
+  overlap: number
 }
 
 /** 按扩展名估算文档字符量（仅用于前端预估分块数，实际值以后端执行结果为准）。 */
@@ -32,15 +20,21 @@ function estimateChars(name: string): number {
   return 4000
 }
 
-export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
+export default function ChunkEmbedding({
+  onBack,
+  onNext,
+  initialOptions,
+}: {
+  onBack: () => void
+  onNext: (options: ChunkEmbeddingOptions) => void
+  initialOptions: ChunkEmbeddingOptions
+}) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [strategy, setStrategy] = useState<Strategy>('semantic')
-  const [chunkSize, setChunkSize] = useState(800)
-  const [overlap, setOverlap] = useState(100)
-  const [running, setRunning] = useState(false)
-  const [progressMap, setProgressMap] = useState<Record<number, DocProgress>>({})
+  const [strategy, setStrategy] = useState<Strategy>(initialOptions.strategy)
+  const [chunkSize, setChunkSize] = useState(initialOptions.chunkSize)
+  const [overlap, setOverlap] = useState(initialOptions.overlap)
 
   useEffect(() => {
     getKnowledgeStatus()
@@ -57,45 +51,12 @@ export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
 
   const totalChunks = documents.reduce((sum, doc) => sum + estimateChunks(doc), 0)
 
-  async function startProcessing() {
-    if (documents.length === 0 || running) return
-    setRunning(true)
-    setError('')
-    setProgressMap(
-      Object.fromEntries(
-        documents.map((doc) => [
-          doc.id,
-          { stage: 'chunking', chunks: estimateChunks(doc), vectors: 0 },
-        ]),
-      ),
-    )
-    try {
-      const result = await chunkAndEmbedKnowledge()
-      setProgressMap(
-        Object.fromEntries(
-          documents.map((doc) => {
-            const chunks = result.document_chunks[doc.id] ?? estimateChunks(doc)
-            return [doc.id, { stage: 'done', chunks, vectors: chunks }]
-          }),
-        ),
-      )
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '分块与嵌入失败。')
-      setProgressMap({})
-    } finally {
-      setRunning(false)
-    }
-  }
-
-  const doneCount = Object.values(progressMap).filter((p) => p.stage === 'done').length
-  const finished = documents.length > 0 && doneCount === documents.length && !running
-
   return (
     <div className="page chunk-page">
       <div className="page-head">
         <div>
-          <h1 className="page-title">分块与嵌入</h1>
-          <p className="page-sub">配置分块策略与嵌入模型，将知识库文档转化为可检索向量。</p>
+          <h1 className="page-title">分块与嵌入设置</h1>
+          <p className="page-sub">配置分块策略与嵌入模型，然后进入执行页面开始处理。</p>
         </div>
       </div>
 
@@ -111,10 +72,14 @@ export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
         </div>
         <div className="ce-step ce-step-current">
           <span className="ce-step-dot">3</span>
-          <span>分块与嵌入</span>
+          <span>分块与嵌入设置</span>
         </div>
         <div className="ce-step">
           <span className="ce-step-dot">4</span>
+          <span>执行分块与嵌入</span>
+        </div>
+        <div className="ce-step">
+          <span className="ce-step-dot">5</span>
           <span>向量检索就绪</span>
         </div>
       </div>
@@ -166,7 +131,6 @@ export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
               step={100}
               value={chunkSize}
               onChange={(event) => setChunkSize(Number(event.target.value))}
-              disabled={running}
             />
           </div>
 
@@ -185,7 +149,6 @@ export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
                 const next = Number(event.target.value)
                 setOverlap(next >= chunkSize ? Math.floor(chunkSize / 4) : next)
               }}
-              disabled={running}
             />
             <p className="ce-field-hint">相邻分块共享的字符数，缓解关键信息被切断的问题。</p>
           </div>
@@ -221,90 +184,19 @@ export default function ChunkEmbedding({ onBack }: { onBack: () => void }) {
               <span className="ce-summary-num">{totalChunks}</span>
               <span className="ce-summary-label">预估分块</span>
             </div>
-            <div>
-              <span className="ce-summary-num">{doneCount}</span>
-              <span className="ce-summary-label">已嵌入</span>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* 处理进度表格 */}
-      <div className="ce-table-section">
-        <div className="kb-table-head">
-          <h2>处理进度</h2>
-          <span className="kb-table-count">
-            {loading
-              ? '读取中…'
-              : `共 ${documents.length} 份 · 预估 ${totalChunks} 块 · 已完成 ${doneCount}`}
-          </span>
-        </div>
-
-        <div className="kb-table-wrapper">
-          <table className="kb-table">
-            <thead>
-              <tr>
-                <th className="kb-col-id">ID</th>
-                <th className="kb-col-name">文件名</th>
-                <th className="ce-col-strategy">分块策略</th>
-                <th className="ce-col-chunks">分块数（预估）</th>
-                <th className="kb-col-status">处理状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!loading && documents.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="kb-empty-row">
-                    暂无文档，请先返回上一步上传文件
-                  </td>
-                </tr>
-              )}
-              {documents.map((doc, index) => {
-                const progress = progressMap[doc.id]
-                return (
-                  <tr key={doc.id}>
-                    <td className="kb-col-id">{index + 1}</td>
-                    <td className="kb-col-name" title={doc.name}>{doc.name}</td>
-                    <td className="ce-col-strategy">
-                      {strategy === 'semantic' ? '标题语义分块' : '固定长度分块'}
-                    </td>
-                    <td className="ce-col-chunks">{progress ? progress.chunks : estimateChunks(doc)}</td>
-                    <td className="kb-col-status">
-                      {!progress || progress.stage === 'pending' ? (
-                        <span className="kb-tag kb-tag-normal">待处理</span>
-                      ) : progress.stage === 'done' ? (
-                        <span className="kb-tag kb-tag-success">完成</span>
-                      ) : (
-                        <span className="ce-inline-progress">
-                          <span className="ce-mini-spinner" />
-                          {STAGE_LABEL[progress.stage]}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="kb-actions">
-          <button className="api-btn" onClick={onBack} disabled={running}>
-            返回上一步
-          </button>
-          <button
-            className="api-btn primary"
-            disabled={documents.length === 0 || running}
-            onClick={startProcessing}
-          >
-            {running ? '处理中…' : finished ? '重新处理' : '开始分块与嵌入'}
-          </button>
-          {finished && (
-            <button className="api-btn" onClick={onBack}>
-              完成并返回
-            </button>
-          )}
-        </div>
+      <div className="kb-actions">
+        <button className="api-btn" onClick={onBack}>上一步</button>
+        <button
+          className="api-btn primary"
+          disabled={documents.length === 0 || loading}
+          onClick={() => onNext({ strategy, chunkSize, overlap })}
+        >
+          下一步
+        </button>
       </div>
     </div>
   )
