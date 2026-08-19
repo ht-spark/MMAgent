@@ -46,6 +46,7 @@ class PreparedDocument:
     source_name: str
     uploaded_at: str
     source_size_bytes: int
+    raw_name: str
     is_markdown: bool
     is_conversion: bool
 
@@ -59,6 +60,7 @@ class UploadRecord:
     size_bytes: int
     uploaded_at: str
     upload_success: bool
+    raw_name: str
     output_name: str
     is_markdown: bool
     is_conversion: bool
@@ -93,6 +95,7 @@ def list_upload_records() -> list[UploadRecord]:
                     size_bytes=int(item["size_bytes"]),
                     uploaded_at=str(item["uploaded_at"]),
                     upload_success=bool(item["upload_success"]),
+                    raw_name=str(item.get("raw_name") or _legacy_raw_name(item)),
                     output_name=str(item["output_name"]),
                     is_markdown=bool(
                         item.get(
@@ -141,11 +144,11 @@ def reconcile_conversion_records() -> list[UploadRecord]:
 
 
 def delete_upload_records(document_ids: set[str]) -> list[str]:
-    """Delete selected prepared Markdown files and their table records.
+    """Delete selected source files, generated Markdown, and table records.
 
-    Only output paths recorded in the upload manifest and located directly
-    under ``DOCUMENTS_ROOT`` are eligible. This prevents a malformed request
-    or manifest from deleting files outside the knowledge base.
+    Only manifest paths located directly under the raw or documents folders
+    are eligible. This prevents malformed metadata from deleting files outside
+    the knowledge base.
     """
     if not document_ids:
         return []
@@ -156,14 +159,21 @@ def delete_upload_records(document_ids: set[str]) -> list[str]:
     if not selected:
         return []
 
-    output_paths = [_document_output_path(record.output_name) for record in selected]
-    for output_path in output_paths:
-        if output_path.exists() and not output_path.is_file():
-            raise KnowledgePreparationError(f"知识库文件路径无效：{output_path.name}")
+    paths = {
+        _raw_document_path(record.raw_name)
+        for record in selected
+        if record.raw_name
+    } | {
+        _document_output_path(record.output_name)
+        for record in selected
+    }
+    for path in paths:
+        if path.exists() and not path.is_file():
+            raise KnowledgePreparationError(f"知识库文件路径无效：{path.name}")
 
-    for output_path in output_paths:
-        if output_path.exists():
-            output_path.unlink()
+    for path in paths:
+        if path.exists():
+            path.unlink()
 
     _write_upload_records(
         [record for record in existing if record.document_id not in document_ids]
@@ -329,6 +339,7 @@ def _prepare_file(raw_path: Path, source_name: str) -> PreparedDocument:
         source_name=Path(source_name).name,
         uploaded_at="",
         source_size_bytes=raw_path.stat().st_size,
+        raw_name=raw_path.name,
         is_markdown=is_markdown,
         is_conversion=is_conversion,
     )
@@ -374,6 +385,7 @@ def _persist_upload_records(
             "size_bytes": document.source_size_bytes,
             "uploaded_at": document.uploaded_at,
             "upload_success": True,
+            "raw_name": document.raw_name,
             "output_name": document.name,
             "is_markdown": document.is_markdown,
             "is_conversion": document.is_conversion,
@@ -393,6 +405,17 @@ def _document_output_path(output_name: str) -> Path:
     if output_path.parent != root:
         raise KnowledgePreparationError("知识库文件路径超出允许范围")
     return output_path
+
+
+def _raw_document_path(raw_name: str) -> Path:
+    """Resolve one archived source path and reject traversal attempts."""
+    if Path(raw_name).name != raw_name:
+        raise KnowledgePreparationError("知识库原始文件路径无效")
+    root = RAW_ROOT.resolve()
+    raw_path = (RAW_ROOT / raw_name).resolve()
+    if raw_path.parent != root:
+        raise KnowledgePreparationError("知识库原始文件路径超出允许范围")
+    return raw_path
 
 
 def convert_documents(
@@ -461,6 +484,7 @@ def _write_upload_records(records: list[UploadRecord]) -> None:
                 "size_bytes": record.size_bytes,
                 "uploaded_at": record.uploaded_at,
                 "upload_success": record.upload_success,
+                "raw_name": record.raw_name,
                 "output_name": record.output_name,
                 "is_markdown": record.is_markdown,
                 "is_conversion": record.is_conversion,
@@ -468,6 +492,23 @@ def _write_upload_records(records: list[UploadRecord]) -> None:
             for record in records
         ]
     )
+
+
+def _legacy_raw_name(record: dict[str, Any]) -> str:
+    """Infer the raw filename for manifests created before ``raw_name`` existed."""
+    output_name = str(record.get("output_name") or "")
+    if not bool(record.get("is_conversion")):
+        return output_name
+
+    expected_stem = Path(output_name).stem
+    if not RAW_ROOT.exists() or not expected_stem:
+        return ""
+    matches = [
+        path.name
+        for path in RAW_ROOT.iterdir()
+        if path.is_file() and path.stem == expected_stem
+    ]
+    return matches[0] if len(matches) == 1 else ""
 
 
 def _write_upload_records_payload(records: list[dict[str, Any]]) -> None:

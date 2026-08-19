@@ -11,6 +11,7 @@ import DiscussionHistory from './pages/DiscussionHistory'
 import Docs from './pages/Docs'
 import ModelingTasks from './pages/ModelingTasks'
 import BrainstormHub from './pages/BrainstormHub'
+import KnowledgeBaseHub from './pages/KnowledgeBaseHub'
 import KnowledgeBase from './pages/KnowledgeBase'
 import KnowledgeBaseStats from './pages/KnowledgeBaseStats'
 import ChunkEmbedding, { type ChunkEmbeddingOptions } from './pages/ChunkEmbedding'
@@ -21,7 +22,7 @@ import KnowledgeBaseHistory from './pages/KnowledgeBaseHistory'
 type Section = 'home' | 'modeling' | 'brainstorm' | 'api' | 'docs'
 type TaskStep = 'submit' | 'progress' | 'result'
 type ModelingView = 'overview' | 'new' | 'history'
-type BrainstormView = 'overview' | 'knowledge' | 'stats' | 'chunking' | 'chunking-progress' | 'retrieval-ready' | 'discussion-hub' | 'inspiration' | 'discussion-history' | 'history'
+type BrainstormView = 'overview' | 'knowledge-hub' | 'knowledge' | 'knowledge-history' | 'stats' | 'chunking' | 'chunking-progress' | 'retrieval-ready' | 'discussion-hub' | 'inspiration' | 'discussion-history'
 
 const SYMBOLS = ['∫', '∑', '∏', '∂', '∇', '∞', 'π', 'σ', 'μ', 'λ', 'α', 'β', 'γ', 'θ', 'Δ', 'Ω']
 
@@ -73,7 +74,11 @@ export default function App() {
     }
     if (section === 'brainstorm' && brainstormView !== 'overview') {
       // 资料统计页返回知识库维护页；分块设置页返回资料统计页；执行页返回设置页。
-      if (brainstormView === 'stats') {
+      if (brainstormView === 'knowledge-hub') {
+        setBrainstormView('overview')
+      } else if (brainstormView === 'knowledge' || brainstormView === 'knowledge-history') {
+        setBrainstormView('knowledge-hub')
+      } else if (brainstormView === 'stats') {
         setBrainstormView('knowledge')
       } else if (brainstormView === 'chunking') {
         setBrainstormView('stats')
@@ -148,14 +153,22 @@ export default function App() {
         )}
         {section === 'brainstorm' && brainstormView === 'overview' && (
           <BrainstormHub
-            onKnowledge={() => setBrainstormView('knowledge')}
+            onKnowledge={() => setBrainstormView('knowledge-hub')}
             onInspiration={() => setBrainstormView('discussion-hub')}
-            onHistory={() => setBrainstormView('history')}
+          />
+        )}
+        {section === 'brainstorm' && brainstormView === 'knowledge-hub' && (
+          <KnowledgeBaseHub
+            onUpdate={() => setBrainstormView('knowledge')}
+            onHistory={() => setBrainstormView('knowledge-history')}
           />
         )}
         {section === 'brainstorm' && brainstormView === 'knowledge' && (
-          <KnowledgeBase onNext={() => setBrainstormView('stats')} />
+          <KnowledgeBase
+            onNext={() => setBrainstormView('stats')}
+          />
         )}
+        {section === 'brainstorm' && brainstormView === 'knowledge-history' && <KnowledgeBaseHistory />}
         {section === 'brainstorm' && brainstormView === 'stats' && (
           <KnowledgeBaseStats
             onBack={() => setBrainstormView('knowledge')}
@@ -202,7 +215,6 @@ export default function App() {
             }}
           />
         )}
-        {section === 'brainstorm' && brainstormView === 'history' && <KnowledgeBaseHistory />}
         {section === 'modeling' && modelingView === 'history' && <History onOpen={openFromHistory} />}
         {section === 'api' && <ApiManager onUsed={() => startNew()} />}
         {section === 'docs' && <Docs />}

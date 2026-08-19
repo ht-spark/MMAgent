@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from dataclasses import replace
 from uuid import UUID
 
 from KnowledgeBase import upload_file
@@ -168,7 +169,7 @@ def test_repeated_uploads_keep_distinct_ids_and_source_names(monkeypatch, tmp_pa
     ]
 
 
-def test_delete_upload_records_removes_only_selected_markdown(monkeypatch, tmp_path):
+def test_delete_upload_records_removes_selected_source_and_markdown(monkeypatch, tmp_path):
     raw_root = tmp_path / "raw"
     documents_root = tmp_path / "documents"
     monkeypatch.setattr(upload_file, "RAW_ROOT", raw_root)
@@ -180,10 +181,33 @@ def test_delete_upload_records_removes_only_selected_markdown(monkeypatch, tmp_p
 
     assert deleted == [first.document_id]
     assert not first.path.exists()
+    assert not (raw_root / "first.md").exists()
     assert second.path.exists()
+    assert (raw_root / "second.md").exists()
     assert [record.document_id for record in upload_file.list_upload_records()] == [
         second.document_id,
     ]
+
+
+def test_delete_upload_records_removes_converted_source_and_markdown(monkeypatch, tmp_path):
+    raw_root = tmp_path / "raw"
+    documents_root = tmp_path / "documents"
+    monkeypatch.setattr(upload_file, "RAW_ROOT", raw_root)
+    monkeypatch.setattr(upload_file, "DOCUMENTS_ROOT", documents_root)
+    prepared = upload_file.prepare_upload("reference.pdf", b"PDF")[0]
+    converted_path = documents_root / "reference.md"
+    converted_path.write_text("# Converted\n", encoding="utf-8")
+    record = upload_file.list_upload_records()[0]
+    upload_file._write_upload_records([
+        replace(record, output_name=converted_path.name, is_conversion=True)
+    ])
+
+    deleted = upload_file.delete_upload_records({prepared.document_id})
+
+    assert deleted == [prepared.document_id]
+    assert not (raw_root / "reference.pdf").exists()
+    assert not converted_path.exists()
+    assert upload_file.list_upload_records() == []
 
 
 def test_migrate_legacy_document_ids_replaces_numeric_and_duplicate_ids(monkeypatch, tmp_path):

@@ -309,6 +309,10 @@
   gap: 48px;
   max-width: none;
 }
+.brainstorm-main-hub-page .modeling-task-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 920px;
+}
 
 .modeling-task-card {
   display: flex;

@@ -1,12 +1,11 @@
 type Props = {
   onKnowledge: () => void
   onInspiration: () => void
-  onHistory: () => void
 }
 
-export default function BrainstormHub({ onKnowledge, onInspiration, onHistory }: Props) {
+export default function BrainstormHub({ onKnowledge, onInspiration }: Props) {
   return (
-    <div className="page modeling-tasks-page brainstorm-hub-page">
+    <div className="page modeling-tasks-page brainstorm-hub-page brainstorm-main-hub-page">
       <div className="page-head modeling-tasks-head">
         <div>
           <h1 className="page-title">头脑风暴</h1>
@@ -23,8 +22,8 @@ export default function BrainstormHub({ onKnowledge, onInspiration, onHistory }:
             </svg>
           </span>
           <span className="modeling-task-copy">
-            <strong>知识库更新</strong>
-            <span>上传新的知识文档，持续更新知识库内容。</span>
+            <strong>知识库维护</strong>
+            <span>上传、查看和管理知识文档，持续维护知识库内容。</span>
           </span>
           <span className="modeling-task-arrow" aria-hidden="true">→</span>
         </button>
@@ -39,20 +38,6 @@ export default function BrainstormHub({ onKnowledge, onInspiration, onHistory }:
           <span className="modeling-task-copy">
             <strong>灵感迸发</strong>
             <span>在交互式对话中梳理建模问题、假设与分析方向。</span>
-          </span>
-          <span className="modeling-task-arrow" aria-hidden="true">→</span>
-        </button>
-
-        <button className="modeling-task-card" onClick={onHistory}>
-          <span className="modeling-task-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 3v18h18" />
-              <path d="M7 14l4-4 3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="modeling-task-copy">
-            <strong>历史记录</strong>
-            <span>查看现有知识库中的文件，并按需删除。</span>
           </span>
           <span className="modeling-task-arrow" aria-hidden="true">→</span>
         </button>
