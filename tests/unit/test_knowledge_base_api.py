@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import json
 import time
 
 from fastapi import HTTPException
+from fastapi import UploadFile
 from KnowledgeBase import upload_file
 from server import main
 from server.schemas import BrainstormRequest, KnowledgeDocumentsDeleteBody
@@ -169,6 +172,39 @@ def test_brainstorm_endpoint_returns_retrieved_sources(monkeypatch):
         "document_id": "document-uuid",
         "content": "与问题相关的知识片段",
     }
+
+
+def test_brainstorm_stream_endpoint_yields_tokens_and_saves_on_completion(monkeypatch):
+    """Streaming discussion sends source, token, and completion events in order."""
+    monkeypatch.setattr(main, "_active_discussion_llm", lambda: object())
+    monkeypatch.setattr(main, "retrieve_knowledge", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(main, "_stream_discussion_answer", lambda *_args: iter(["逐段", "回答"]))
+    saved: list[object] = []
+    monkeypatch.setattr(main, "save_discussion_message", lambda *args: saved.append(args) or "discussion-uuid")
+
+    response = asyncio.run(main.brainstorm_stream_endpoint(message="如何建模？", files=None))
+
+    async def consume() -> list[str]:
+        return [part async for part in response.body_iterator]
+
+    events = [json.loads(item) for item in asyncio.run(consume())]
+
+    assert events == [
+        {"type": "sources", "sources": []},
+        {"type": "token", "content": "逐段"},
+        {"type": "token", "content": "回答"},
+        {"type": "done", "discussion_id": "discussion-uuid"},
+    ]
+    assert saved[0][2] == "逐段回答"
+
+
+def test_prepare_discussion_attachments_extracts_markdown(monkeypatch):
+    """A Markdown attachment is passed to the discussion model as text context."""
+    upload = UploadFile(filename="notes.md", file=io.BytesIO("# 建模笔记".encode("utf-8")))
+
+    attachments = asyncio.run(main._prepare_discussion_attachments([upload]))
+
+    assert attachments == [{"kind": "text", "name": "notes.md", "content": "# 建模笔记"}]
 
 
 def test_brainstorm_endpoint_uses_llm_when_knowledge_is_empty(monkeypatch):

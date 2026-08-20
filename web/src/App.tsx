@@ -144,7 +144,10 @@ export default function App() {
             </svg>
           </button>
         )}
-        {section === 'home' && <Home onStart={enterModeling} onDocs={() => setSection('docs')} />}
+        {section === 'home' && <Home onStart={enterModeling} onBrainstorm={() => {
+          setSection('brainstorm')
+          setBrainstormView('overview')
+        }} onDocs={() => setSection('docs')} />}
         {section === 'modeling' && modelingView === 'overview' && (
           <ModelingTasks onNew={startNew} onHistory={() => setModelingView('history')} />
         )}

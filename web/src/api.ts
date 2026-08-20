@@ -292,6 +292,58 @@ export async function sendBrainstormMessage(message: string, discussionId: strin
   return res.json()
 }
 
+export async function streamBrainstormMessage(
+  message: string,
+  discussionId: string | null,
+  title: string,
+  files: File[],
+  handlers: {
+    onSources: (sources: BrainstormSource[]) => void
+    onToken: (content: string) => void
+    onDone: (discussionId: string) => void
+  },
+): Promise<void> {
+  let res: Response
+  const form = new FormData()
+  form.append('message', message)
+  form.append('title', title)
+  if (discussionId) form.append('discussion_id', discussionId)
+  files.forEach((file) => form.append('files', file))
+  try {
+    res = await fetch('/api/knowledge/brainstorm/stream', {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(150000),
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new Error('讨论请求超时：模型服务在 150 秒内未响应，请检查 API 配置或稍后重试。')
+    }
+    throw new Error('讨论服务无法连接，请确认后端服务正在运行。')
+  }
+  if (!res.ok) throw new Error(await extractDetail(res, '头脑风暴请求失败'))
+  if (!res.body) throw new Error('讨论服务未返回流式内容。')
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line) continue
+      const event = JSON.parse(line) as { type: string; content?: string; detail?: string; sources?: BrainstormSource[]; discussion_id?: string }
+      if (event.type === 'sources') handlers.onSources(event.sources ?? [])
+      if (event.type === 'token' && event.content) handlers.onToken(event.content)
+      if (event.type === 'error') throw new Error(event.detail ?? '模型服务调用失败。')
+      if (event.type === 'done' && event.discussion_id) handlers.onDone(event.discussion_id)
+    }
+    if (done) break
+  }
+}
+
 export async function fetchBrainstormDiscussions(): Promise<BrainstormDiscussionSummary[]> {
   const res = await fetch('/api/knowledge/discussions')
   if (!res.ok) throw new Error(await extractDetail(res, '获取讨论历史失败'))
@@ -302,6 +354,20 @@ export async function fetchBrainstormDiscussion(discussionId: string): Promise<B
   const res = await fetch(`/api/knowledge/discussions/${discussionId}`)
   if (!res.ok) throw new Error(await extractDetail(res, '获取讨论记录失败'))
   return res.json()
+}
+
+export async function deleteBrainstormDiscussion(discussionId: string): Promise<void> {
+  const res = await fetch(`/api/knowledge/discussions/${discussionId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await extractDetail(res, '删除讨论失败'))
+}
+
+export async function renameBrainstormDiscussion(discussionId: string, title: string): Promise<void> {
+  const res = await fetch(`/api/knowledge/discussions/${discussionId}/title`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!res.ok) throw new Error(await extractDetail(res, '修改讨论名称失败'))
 }
 
 /**

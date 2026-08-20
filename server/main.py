@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import re
@@ -20,7 +22,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.files import list_figures, resolve_artifact
-from server.discussions import get_discussion, list_discussions, save_discussion_message
+from server.discussions import delete_discussion, get_discussion, list_discussions, rename_discussion, save_discussion_message
 from KnowledgeBase.chunk import chunk_knowledge_documents
 from KnowledgeBase.embedding import build_local_qdrant_index, delete_document_vectors
 from KnowledgeBase.main import retrieve as retrieve_knowledge
@@ -76,6 +78,9 @@ WEB_DIST = PROJECT_ROOT / "web" / "dist"
 API_SETTINGS_PATH = Path(__file__).resolve().parent / "api_settings.json"
 BRAINSTORM_RETRIEVAL_TIMEOUT_SECONDS = 45
 BRAINSTORM_ANSWER_TIMEOUT_SECONDS = 90
+MAX_DISCUSSION_ATTACHMENTS = 5
+MAX_DISCUSSION_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_DISCUSSION_ATTACHMENT_TEXT_LENGTH = 50_000
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +414,114 @@ def _generate_discussion_answer(
     return re.sub(r"<think>.*?</think>\s*", "", answer, flags=re.DOTALL).strip()
 
 
+def _stream_discussion_answer(
+    message: str,
+    history: list[dict[str, object]],
+    chunks: list[object],
+    llm: object,
+    attachments: list[dict[str, str]] | None = None,
+):
+    """Yield the discussion reply as the configured model produces it."""
+    messages: list[tuple[str, str]] = [
+        (
+            "system",
+            "你是数学建模讨论助手。请直接给出清晰、可执行的回答；"
+            "不要输出思考过程或 <think> 标签。",
+        ),
+    ]
+    for item in history:
+        role = item.get("role")
+        content = item.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            messages.append(("human" if role == "user" else "ai", content))
+    if chunks:
+        references = "\n\n".join(
+            f"[资料 {index}：{getattr(chunk, 'source_file', '')}]\n"
+            f"{getattr(chunk, 'context', '') or getattr(chunk, 'text', '')}"
+            for index, chunk in enumerate(chunks, start=1)
+        )
+        prompt = (
+            f"用户问题：{message}\n\n"
+            f"以下是从知识库检索到的参考资料，请以它们为依据回答；"
+            f"资料不足时请明确说明。\n\n{references}"
+        )
+    else:
+        prompt = message
+    if attachments:
+        content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
+        for attachment in attachments:
+            if attachment["kind"] == "image":
+                content.append({"type": "image_url", "image_url": {"url": attachment["content"]}})
+            else:
+                content[0]["text"] += f"\n\n[附件：{attachment['name']}]\n{attachment['content']}"
+        messages.append(("human", content))
+    else:
+        messages.append(("human", prompt))
+    for chunk in llm.stream(messages):
+        content = getattr(chunk, "content", chunk)
+        if isinstance(content, str) and content:
+            yield content
+
+
+def _next_stream_content(iterator: object) -> str | None:
+    """Get one synchronous model-stream item without leaking StopIteration to asyncio."""
+    try:
+        return next(iterator)  # type: ignore[arg-type]
+    except StopIteration:
+        return None
+
+
+async def _prepare_discussion_attachments(
+    files: list[UploadFile] | None,
+) -> list[dict[str, str]]:
+    """Extract supported uploaded files into text or multimodal image context."""
+    if not files:
+        return []
+    if len(files) > MAX_DISCUSSION_ATTACHMENTS:
+        raise HTTPException(status_code=400, detail=f"最多可上传 {MAX_DISCUSSION_ATTACHMENTS} 个附件")
+
+    attachments: list[dict[str, str]] = []
+    for file in files:
+        name = Path(file.filename or "attachment").name
+        suffix = Path(name).suffix.lower()
+        content = await file.read()
+        if len(content) > MAX_DISCUSSION_ATTACHMENT_BYTES:
+            raise HTTPException(status_code=400, detail=f"附件 {name} 超过 10 MB 限制")
+        if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            mime_type = file.content_type or {
+                ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".webp": "image/webp", ".gif": "image/gif",
+            }[suffix]
+            attachments.append({
+                "kind": "image",
+                "name": name,
+                "content": f"data:{mime_type};base64,{base64.b64encode(content).decode('ascii')}",
+            })
+            continue
+        if suffix in {".xlsx", ".xlsm"}:
+            try:
+                from openpyxl import load_workbook
+
+                workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+                rows = []
+                for worksheet in workbook.worksheets:
+                    rows.append(f"工作表：{worksheet.title}")
+                    for row in worksheet.iter_rows(max_row=200, max_col=50, values_only=True):
+                        rows.append("\t".join("" if value is None else str(value) for value in row))
+                text = "\n".join(rows)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=400, detail=f"无法读取 Excel 附件 {name}：{exc}") from exc
+        elif suffix in {".md", ".markdown", ".txt", ".json", ".csv"}:
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(status_code=400, detail=f"附件 {name} 必须使用 UTF-8 编码") from exc
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的附件类型：{name}")
+        attachments.append({"kind": "text", "name": name, "content": text[:MAX_DISCUSSION_ATTACHMENT_TEXT_LENGTH]})
+    return attachments
+
+
 @app.post("/api/knowledge/brainstorm", response_model=BrainstormResponse)
 async def brainstorm_endpoint(body: BrainstormRequest) -> BrainstormResponse:
     """Retrieve knowledge-base context for a brainstorm message."""
@@ -484,6 +597,89 @@ async def brainstorm_endpoint(body: BrainstormRequest) -> BrainstormResponse:
     )
 
 
+@app.post("/api/knowledge/brainstorm/stream")
+async def brainstorm_stream_endpoint(
+    message: str = Form(""),
+    discussion_id: str | None = Form(None),
+    title: str | None = Form(None),
+    files: list[UploadFile] | None = File(None),
+) -> StreamingResponse:
+    """Stream a brainstorm reply as newline-delimited JSON events."""
+    message = message.strip()
+    if not message and not files:
+        raise HTTPException(status_code=400, detail="请输入讨论内容或上传附件")
+    attachments = await _prepare_discussion_attachments(files)
+    llm = _active_discussion_llm()
+    if llm is None:
+        raise HTTPException(status_code=400, detail="尚未配置可用的当前 API 模型")
+
+    try:
+        chunks = await asyncio.wait_for(
+            asyncio.to_thread(retrieve_knowledge, message, llm=llm),
+            timeout=BRAINSTORM_RETRIEVAL_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="知识库检索与上下文压缩超时，请稍后重试。",
+        ) from exc
+    except ValueError as exc:
+        if str(exc) != "知识库尚未建立向量索引":
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        chunks = []
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    previous_discussion = (
+        await asyncio.to_thread(get_discussion, discussion_id)
+        if discussion_id
+        else None
+    )
+    history = previous_discussion.get("messages", []) if previous_discussion else []
+    sources = [
+        BrainstormSource(
+            source_file=chunk.source_file or "未命名文档",
+            document_id=chunk.document_id,
+            content=chunk.context or chunk.text,
+        )
+        for chunk in chunks
+    ]
+
+    async def event_stream():
+        yield json.dumps({"type": "sources", "sources": [source.model_dump() for source in sources]}, ensure_ascii=False) + "\n"
+        answer_parts: list[str] = []
+        iterator = _stream_discussion_answer(message, history, chunks, llm, attachments)
+        try:
+            async with asyncio.timeout(BRAINSTORM_ANSWER_TIMEOUT_SECONDS):
+                while (content := await asyncio.to_thread(_next_stream_content, iterator)) is not None:
+                    answer_parts.append(content)
+                    yield json.dumps({"type": "token", "content": content}, ensure_ascii=False) + "\n"
+        except TimeoutError:
+            yield json.dumps({"type": "error", "detail": "模型生成回答超时，请检查当前 API 服务后重试。"}, ensure_ascii=False) + "\n"
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Brainstorm streaming answer failed")
+            yield json.dumps({"type": "error", "detail": f"当前模型服务调用失败，请稍后重试：{exc}"}, ensure_ascii=False) + "\n"
+            return
+
+        answer = re.sub(r"<think>.*?</think>\s*", "", "".join(answer_parts), flags=re.DOTALL).strip()
+        saved_discussion_id = await asyncio.to_thread(
+            save_discussion_message,
+            discussion_id,
+            message or f"附件讨论：{', '.join(item['name'] for item in attachments)}",
+            answer,
+            [source.model_dump() for source in sources],
+            title,
+        )
+        yield json.dumps({"type": "done", "discussion_id": saved_discussion_id}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get(
     "/api/knowledge/discussions",
     response_model=list[BrainstormDiscussionSummary],
@@ -517,6 +713,27 @@ async def get_brainstorm_discussion_endpoint(
         updated_at=discussion["updated_at"],
         messages=messages,
     )
+
+
+@app.delete("/api/knowledge/discussions/{discussion_id}")
+async def delete_brainstorm_discussion_endpoint(discussion_id: str) -> dict[str, bool]:
+    """Permanently delete a saved inspiration discussion."""
+    deleted = await asyncio.to_thread(delete_discussion, discussion_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="未找到该讨论记录")
+    return {"deleted": True}
+
+
+@app.patch("/api/knowledge/discussions/{discussion_id}/title")
+async def rename_brainstorm_discussion_endpoint(discussion_id: str, body: dict) -> dict[str, bool]:
+    """Update the user-visible title of a saved discussion."""
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise HTTPException(status_code=400, detail="讨论名称不能为空")
+    renamed = await asyncio.to_thread(rename_discussion, discussion_id, title)
+    if not renamed:
+        raise HTTPException(status_code=404, detail="未找到该讨论记录")
+    return {"renamed": True}
 
 
 @app.post("/api/runs", response_model=CreateRunResponse)

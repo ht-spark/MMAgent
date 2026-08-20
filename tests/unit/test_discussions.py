@@ -19,3 +19,23 @@ def test_saved_discussion_can_be_listed_and_restored(monkeypatch, tmp_path):
     restored = discussions.get_discussion(discussion_id)
     assert restored is not None
     assert restored["messages"][1]["sources"][0]["source_file"] == "reference.md"
+
+
+def test_delete_discussion_removes_persisted_messages(monkeypatch, tmp_path):
+    """Deleting a discussion removes the complete local conversation record."""
+    monkeypatch.setattr(discussions, "DISCUSSIONS_PATH", tmp_path / "history.json")
+    discussion_id = discussions.save_discussion_message(None, "问题", "回答", [])
+
+    assert discussions.delete_discussion(discussion_id) is True
+    assert discussions.get_discussion(discussion_id) is None
+    assert discussions.list_discussions() == []
+
+
+def test_discussion_title_is_user_supplied_and_can_be_renamed(monkeypatch, tmp_path):
+    """A custom discussion title persists and is reflected in history."""
+    monkeypatch.setattr(discussions, "DISCUSSIONS_PATH", tmp_path / "history.json")
+    discussion_id = discussions.save_discussion_message(None, "问题", "回答", [], "预测模型讨论")
+
+    assert discussions.list_discussions()[0]["title"] == "预测模型讨论"
+    assert discussions.rename_discussion(discussion_id, "最终方案") is True
+    assert discussions.list_discussions()[0]["title"] == "最终方案"

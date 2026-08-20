@@ -1,224 +1,127 @@
-import { useEffect, useRef, useState } from 'react'
+type Props = {
+  onStart: () => void
+  onBrainstorm: () => void
+  onDocs: () => void
+}
 
-type Props = { onStart: () => void; onDocs: () => void }
-
-const CAPABILITIES = [
-  { icon: 'M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16zM3 9h18M9 21V9', title: '任务解析', desc: '深度理解任务背景，自动提取关键信息，识别问题类型与约束条件', tag: 'NLP · 知识图谱' },
-  { icon: 'M3 3h18v18H3zM3 9h18M9 21V9', title: '模型选择', desc: '基于问题特征智能推荐最优建模方法，覆盖 156+ 经典模型', tag: '决策树 · 匹配算法' },
-  { icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6', title: '代码生成', desc: '自动生成 Python / MATLAB 代码，集成 SciPy、PuLP、Gurobi 等工具链', tag: 'Code-LLM · 沙箱执行' },
-  { icon: 'M3 3v18h18M7 14l4-4 4 4 6-6', title: '数据可视化', desc: '自动绘制专业级图表，报告级排版，支持 LaTeX 公式嵌入', tag: 'Matplotlib · D3.js' },
-  { icon: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2', title: '结果分析', desc: '灵敏度分析、误差评估、模型对比，确保结论科学严谨', tag: '统计分析 · 蒙特卡洛' },
-  { icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8', title: '报告撰写', desc: '一键生成结构化建模报告，含摘要、模型、求解、结论完整章节', tag: 'LaTeX · 学术规范' },
+const TASK_STEPS = [
+  ['01', '提交题目与数据'],
+  ['02', '拆解问题 · 自动建模'],
+  ['03', '代码求解 · 结果验证'],
+  ['04', '报告撰写 · 自动审查'],
 ]
 
-const WORKFLOW = [
-  { n: '01', t: '任务理解', d: '自动解析任务，提取关键信息', dur: '~30s' },
-  { n: '02', t: '思路分析', d: '多方案对比，确定建模路径', dur: '~2min' },
-  { n: '03', t: '模型建立', d: '选择并构建数学模型', dur: '~5min' },
-  { n: '04', t: '算法实现', d: '代码生成与运行验证', dur: '~3min' },
-  { n: '05', t: '结果分析', d: '可视化与误差评估', dur: '~2min' },
-  { n: '06', t: '报告撰写', d: '一键生成完整报告', dur: '~8min' },
+const DELIVERABLES = [
+  ['建模报告', 'Markdown / DOCX'],
+  ['可复现代码', 'Python 与运行日志'],
+  ['图表与数据', 'Figures / CSV / Tables'],
+  ['审查意见', '结论与证据可追溯'],
 ]
 
-export default function Home({ onStart, onDocs }: Props) {
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function SparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+export default function Home({ onStart, onBrainstorm, onDocs }: Props) {
   const [typed, setTyped] = useState('')
 
-  const formulaRef = useRef<HTMLDivElement>(null)
-  const miniRef = useRef<HTMLCanvasElement>(null)
-
-  /* Typing animation */
   useEffect(() => {
-    const words = ['更智能', '更高效', '更专业', '更轻松', '更有趣']
-    let wi = 0, ci = 0, deleting = false, timer = 0
+    const words = ['更高效', '更科学']
+    let word_index = 0
+    let character_index = 0
+    let deleting = false
+    let timer = 0
+
     const tick = () => {
-      const word = words[wi]
-      if (!deleting) {
-        setTyped(word.slice(0, ++ci))
-        if (ci === word.length) {
-          deleting = true
-          timer = window.setTimeout(tick, 1800)
-          return
+      const word = words[word_index]
+      if (deleting) {
+        setTyped(word.slice(0, --character_index))
+        if (character_index === 0) {
+          deleting = false
+          word_index = (word_index + 1) % words.length
         }
       } else {
-        setTyped(word.slice(0, --ci))
-        if (ci === 0) {
-          deleting = false
-          wi = (wi + 1) % words.length
+        setTyped(word.slice(0, ++character_index))
+        if (character_index === word.length) {
+          deleting = true
+          timer = window.setTimeout(tick, 1700)
+          return
         }
       }
-      timer = window.setTimeout(tick, deleting ? 60 : 120)
+      timer = window.setTimeout(tick, deleting ? 70 : 140)
     }
+
     tick()
     return () => window.clearTimeout(timer)
   }, [])
 
-  /* KaTeX + Charts */
-  useEffect(() => {
-    let cancelled = false
-    const tryInit = () => {
-      const w = window as any
-      if (cancelled) return
-      if (w.katex && formulaRef.current) {
-        try {
-          w.katex.render(
-            '\\min_{x \\in \\mathbb{R}^n} c^T x \\quad \\text{s.t.} \\quad Ax \\leq b,\\ x \\geq 0',
-            formulaRef.current,
-            { throwOnError: false, displayMode: true },
-          )
-        } catch { /* ignore */ }
-      }
-      if (w.Chart && miniRef.current) {
-        drawCharts(w.Chart)
-        return
-      }
-      if (!w.katex || !w.Chart) setTimeout(tryInit, 200)
-    }
-    const t = setTimeout(tryInit, 100)
-    return () => {
-      cancelled = true
-      window.clearTimeout(t)
-    }
-  }, [])
-
-  function drawCharts(Chart: any) {
-    if (miniRef.current) {
-      new Chart(miniRef.current.getContext('2d'), {
-        type: 'line',
-        data: {
-          labels: Array.from({ length: 24 }, (_, i) => i),
-          datasets: [{
-            data: [12, 8, 5, 3, 2, 4, 12, 45, 78, 65, 58, 62, 70, 68, 72, 80, 85, 90, 88, 75, 60, 45, 30, 18],
-            borderColor: '#4A5BC7',
-            backgroundColor: 'rgba(124, 199, 192, 0.15)',
-            borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0,
-          }],
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { enabled: false } },
-          scales: { x: { display: false }, y: { display: false } },
-        },
-      })
-    }
-  }
-
   return (
-    <div className="home">
-      {/* Hero */}
-      <section id="home" className="hero">
-        <div className="hero-content">
-          <div className="hero-badge">
-            <span className="badge-dot" />
-            <span>Powered by Multi-Agent Architecture</span>
-          </div>
-          <h1 className="hero-title">
-            让 <span className="gradient-text">数学建模</span>
-            <br />
-            变得 <span className="typing-text">{typed}</span><span className="cursor">|</span>
-          </h1>
-          <p className="hero-subtitle">
-            融合大语言模型、符号计算与数值仿真的一体化建模平台<br />
-            从任务理解到报告撰写，全流程智能辅助
-          </p>
-          <div className="hero-actions">
-            <button className="btn-primary large" onClick={onStart}>
-              <span>开始建模</span>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+    <div className="home home-redesign">
+      <section className="landing-hero">
+        <div className="landing-copy">
+          <div className="landing-eyebrow"><span /> 数学建模智能体</div>
+          <h1>让<span className="gradient-text">数学建模</span><br /><em className="typing-text">{typed}</em><span className="cursor">|</span></h1>
+          <div className="landing-actions">
+            <button className="landing-primary" onClick={onStart}>新建建模任务 <ArrowIcon /></button>
+            <button className="landing-secondary" onClick={onBrainstorm}>先做头脑风暴</button>
           </div>
         </div>
 
-        <div className="hero-visual">
-          <div className="float-card card-1">
-            <div className="card-header">
-              <span className="card-tag">优化模型</span>
-              <span className="card-time">2.3s</span>
-            </div>
-            <div className="math-formula" ref={formulaRef} />
+        <div className="solution-preview" aria-label="建模任务产出预览">
+          <div className="preview-topbar"><span>任务进行中</span><b>自动求解</b></div>
+          <div className="preview-title"><span className="preview-mark">M</span><div><strong>城市配送路径优化</strong><small>含 3 个子问题 · 4 份数据附件</small></div></div>
+          <div className="preview-progress"><div><span>建模与求解</span><b>已完成</b></div><i><span /></i></div>
+          <div className="preview-result">
+            <div><small>当前最优目标值</small><strong>18.42%</strong><span>较基准方案降低总成本</span></div>
+            <svg viewBox="0 0 150 62" fill="none" aria-hidden="true"><path d="M2 51C18 52 22 36 36 40S50 51 63 35s15-12 26-20 15 5 27-5 17-7 32-7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /><path d="M2 51C18 52 22 36 36 40S50 51 63 35s15-12 26-20 15 5 27-5 17-7 32-7V62H2Z" fill="currentColor" opacity=".08" /></svg>
           </div>
-          <div className="float-card card-2">
-            <div className="card-header">
-              <span className="card-tag green">预测模型</span>
-            </div>
-            <div className="chart-mini">
-              <canvas ref={miniRef} width="200" height="80" />
-            </div>
-          </div>
-          <div className="float-card card-3">
-            <div className="code-block">
-              <span className="code-line"><span className="kw">def</span> <span className="fn">solve_lp</span>():</span>
-              <span className="code-line">    <span className="cmt"># 线性规划求解</span></span>
-              <span className="code-line">    <span className="fn">result</span> = linprog(c, A_ub, b_ub)</span>
-              <span className="code-line">    <span className="kw">return</span> result.x</span>
-            </div>
-          </div>
+          <div className="preview-check"><span>✓</span> 结果验证通过 <small>可生成报告</small></div>
         </div>
       </section>
 
-      {/* Capabilities */}
-      <section id="capabilities" className="section">
-        <div className="section-header">
-          <div className="section-tag">CORE CAPABILITIES</div>
-          <h2 className="section-title">六大核心建模能力</h2>
-          <p className="section-subtitle">覆盖数学建模全流程，从问题分析到报告产出</p>
-        </div>
-        <div className="capabilities-grid">
-          {CAPABILITIES.map((c) => (
-            <div className="cap-card" key={c.title}>
-              <div className="cap-icon">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d={c.icon} />
-                </svg>
-              </div>
-              <h3>{c.title}</h3>
-              <p>{c.desc}</p>
-              <div className="cap-tag">{c.tag}</div>
-            </div>
-          ))}
+      <section className="landing-paths">
+        <div className="landing-section-heading"><span>两条路径，按你的工作方式开始</span><h2>从问题到结论，始终由你掌控</h2></div>
+        <div className="path-grid">
+          <article className="path-card path-card-main">
+            <div className="path-icon"><ArrowIcon /></div><span className="path-label">PATH 01 · 直接求解</span>
+            <h3>交给智能体，完成一次端到端建模</h3>
+            <p>提交题目和数据，系统会在需要时向你澄清信息；其余过程自动推进，并保留完整过程产物。</p>
+            <button onClick={onStart}>开始建模 <ArrowIcon /></button>
+          </article>
+          <article className="path-card path-card-brainstorm">
+            <div className="path-icon"><SparkIcon /></div><span className="path-label">PATH 02 · 思路先行</span>
+            <h3>用自己的资料，把方法论变成建模思路</h3>
+            <p>上传文献、案例或竞赛资料，获得带来源引用的对话式检索回答，再将思路带入建模任务。</p>
+            <button onClick={onBrainstorm}>进入头脑风暴 <ArrowIcon /></button>
+          </article>
         </div>
       </section>
 
-      {/* Workflow */}
-      <section id="workflow" className="section section-alt">
-        <div className="section-header">
-          <div className="section-tag">WORKFLOW</div>
-          <h2 className="section-title">六步建模工作流</h2>
-          <p className="section-subtitle">从任务发布到报告交付，智能化全流程辅助</p>
+      <section className="landing-workflow">
+        <div className="landing-section-heading"><span>建模任务的工作方式</span><h2>每一步都有依据，也都可回看</h2></div>
+        <div className="task-steps">
+          {TASK_STEPS.map(([number, title]) => <div className="task-step" key={number}><b>{number}</b><span>{title}</span></div>)}
         </div>
-        <div className="workflow">
-          <div className="workflow-line" />
-          <div className="workflow-steps">
-            {WORKFLOW.map((w) => (
-              <div className="wf-step" key={w.n}>
-                <div className="wf-num">{w.n}</div>
-                <h3>{w.t}</h3>
-                <p>{w.d}</p>
-                <div className="wf-duration">{w.dur}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <div className="workflow-footnote">遇到题意不清或需调整预算时，任务会停在恰当的位置，等待你的决策。</div>
       </section>
 
-      {/* CTA */}
-      <section className="cta">
-        <div className="cta-bg"><div className="cta-glow" /></div>
-        <div className="cta-content">
-          <h2>准备好开始你的<br /><span className="gradient-text">建模之旅</span>了吗？</h2>
-          <div className="cta-actions">
-            <button className="btn-primary large" onClick={onStart}>免费开始使用</button>
-            <button
-              className="btn-ghost large"
-              onClick={onDocs}
-            >
-              查看文档
-            </button>
-          </div>
-        </div>
+      <section className="landing-deliverables">
+        <div className="deliverable-copy"><span>不止一个答案</span><h2>拿到完整成果，<br />也保留复核能力。</h2><p>报告中的结论、证据与决策日志相互对应，方便修改、复盘和沉淀为下一次建模经验。</p><button className="landing-text-button" onClick={onDocs}>查看功能说明 <ArrowIcon /></button></div>
+        <div className="deliverable-list">{DELIVERABLES.map(([name, description]) => <div key={name}><span>✓</span><strong>{name}</strong><small>{description}</small></div>)}</div>
       </section>
-
-      </div>
+    </div>
   )
 }
+import { useEffect, useState } from 'react'

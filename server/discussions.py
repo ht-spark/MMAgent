@@ -36,11 +36,23 @@ def get_discussion(discussion_id: str) -> dict[str, Any] | None:
         )
 
 
+def delete_discussion(discussion_id: str) -> bool:
+    """Permanently remove one saved discussion and all its messages."""
+    with _DISCUSSIONS_LOCK:
+        discussions = _read_discussions()
+        remaining = [item for item in discussions if item["id"] != discussion_id]
+        if len(remaining) == len(discussions):
+            return False
+        _write_discussions(remaining)
+        return True
+
+
 def save_discussion_message(
     discussion_id: str | None,
     user_message: str,
     assistant_message: str,
     sources: list[dict[str, str]],
+    title: str | None = None,
 ) -> str:
     """Append one exchange and return its persistent discussion ID."""
     now = datetime.now(timezone.utc).isoformat()
@@ -53,12 +65,14 @@ def save_discussion_message(
         if discussion is None:
             discussion = {
                 "id": str(uuid.uuid4()),
-                "title": user_message[:40],
+                "title": title.strip()[:80] if title and title.strip() else user_message[:40],
                 "created_at": now,
                 "updated_at": now,
                 "messages": [],
             }
             discussions.append(discussion)
+        elif title and title.strip():
+            discussion["title"] = title.strip()[:80]
         discussion["messages"].extend([
             {"role": "user", "content": user_message, "sources": []},
             {"role": "assistant", "content": assistant_message, "sources": sources},
@@ -66,6 +80,22 @@ def save_discussion_message(
         discussion["updated_at"] = now
         _write_discussions(discussions)
         return str(discussion["id"])
+
+
+def rename_discussion(discussion_id: str, title: str) -> bool:
+    """Persist a user-supplied title for an existing discussion."""
+    normalized_title = title.strip()[:80]
+    if not normalized_title:
+        return False
+    with _DISCUSSIONS_LOCK:
+        discussions = _read_discussions()
+        discussion = next((item for item in discussions if item["id"] == discussion_id), None)
+        if discussion is None:
+            return False
+        discussion["title"] = normalized_title
+        discussion["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _write_discussions(discussions)
+        return True
 
 
 def _read_discussions() -> list[dict[str, Any]]:
