@@ -53,8 +53,9 @@ def save_discussion_message(
     assistant_message: str,
     sources: list[dict[str, str]],
     title: str | None = None,
+    attachments: list[dict[str, str]] | None = None,
 ) -> str:
-    """Append one exchange and return its persistent discussion ID."""
+    """Append one exchange, including reusable attachment context, and return its ID."""
     now = datetime.now(timezone.utc).isoformat()
     with _DISCUSSIONS_LOCK:
         discussions = _read_discussions()
@@ -73,8 +74,11 @@ def save_discussion_message(
             discussions.append(discussion)
         elif title and title.strip():
             discussion["title"] = title.strip()[:80]
+        user_entry: dict[str, Any] = {"role": "user", "content": user_message, "sources": []}
+        if attachments:
+            user_entry["attachments"] = attachments
         discussion["messages"].extend([
-            {"role": "user", "content": user_message, "sources": []},
+            user_entry,
             {"role": "assistant", "content": assistant_message, "sources": sources},
         ])
         discussion["updated_at"] = now

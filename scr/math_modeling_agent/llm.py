@@ -99,6 +99,8 @@ def create_llm(
         kwargs["timeout"] = 120
         # 生成参数：控制输出的随机性
         kwargs["temperature"] = 0.3
+        # 最大生成长度（字符）
+        kwargs["max_tokens"] = 40000
         return ChatOpenAI(**kwargs)
     except ImportError:
         get_logger().warning("[llm] langchain_openai 未安装，LLM 不可用")

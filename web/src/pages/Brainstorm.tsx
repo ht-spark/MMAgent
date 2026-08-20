@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 
 import { fetchBrainstormDiscussion, renameBrainstormDiscussion, streamBrainstormMessage, type BrainstormSource } from '../api'
 import MarkdownContent from '../components/MarkdownContent'
@@ -9,6 +9,29 @@ const WELCOME_MESSAGE: Message = {
   role: 'assistant',
   content: '你好，我是 MMAgent 灵感助手。请输入建模问题、已有假设或分析方向，我会从知识库检索相关片段供你梳理建模思路。',
 }
+
+const DiscussionMessage = memo(function DiscussionMessage({ message }: { message: Message }) {
+  if (!message.content) return null
+  return (
+    <div className={`brainstorm-message-row ${message.role}`}>
+      {message.role === 'assistant' && <span className="brainstorm-avatar">M</span>}
+      <div className={`brainstorm-message ${message.role}`}>
+        {message.role === 'assistant' ? <MarkdownContent content={message.content} /> : message.content}
+        {message.sources && message.sources.length > 0 && (
+          <details className="brainstorm-sources">
+            <summary>参考窗口（{message.sources.length} 条）</summary>
+            {message.sources.map((source, sourceIndex) => (
+              <div className="brainstorm-source" key={`${source.document_id}-${sourceIndex}`}>
+                <strong>{source.source_file}</strong>
+                <MarkdownContent content={source.content} />
+              </div>
+            ))}
+          </details>
+        )}
+      </div>
+    </div>
+  )
+})
 
 export default function Brainstorm({ discussionId, onDiscussionId }: {
   discussionId: string | null
@@ -96,24 +119,8 @@ export default function Brainstorm({ discussionId, onDiscussionId }: {
       </div>
       <section className="brainstorm-chat" aria-label="灵感迸发对话">
         <div className="brainstorm-messages">
-          {messages.map((message, index) => message.content && (
-            <div className={`brainstorm-message-row ${message.role}`} key={`${message.role}-${index}`}>
-              {message.role === 'assistant' && <span className="brainstorm-avatar">M</span>}
-              <div className={`brainstorm-message ${message.role}`}>
-                {message.role === 'assistant' ? <MarkdownContent content={message.content} /> : message.content}
-                {message.sources && message.sources.length > 0 && (
-                  <details className="brainstorm-sources">
-                    <summary>参考窗口（{message.sources.length} 条）</summary>
-                    {message.sources.map((source, sourceIndex) => (
-                      <div className="brainstorm-source" key={`${source.document_id}-${sourceIndex}`}>
-                        <strong>{source.source_file}</strong>
-                        <MarkdownContent content={source.content} />
-                      </div>
-                    ))}
-                  </details>
-                )}
-              </div>
-            </div>
+          {messages.map((message, index) => (
+            <DiscussionMessage key={`${message.role}-${index}`} message={message} />
           ))}
         </div>
         <div className="brainstorm-composer">

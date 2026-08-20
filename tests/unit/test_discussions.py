@@ -39,3 +39,12 @@ def test_discussion_title_is_user_supplied_and_can_be_renamed(monkeypatch, tmp_p
     assert discussions.list_discussions()[0]["title"] == "预测模型讨论"
     assert discussions.rename_discussion(discussion_id, "最终方案") is True
     assert discussions.list_discussions()[0]["title"] == "最终方案"
+
+
+def test_saved_discussion_retains_attachment_context(monkeypatch, tmp_path):
+    """Parsed attachment content is retained for later discussion turns."""
+    monkeypatch.setattr(discussions, "DISCUSSIONS_PATH", tmp_path / "history.json")
+    attachments = [{"kind": "text", "name": "data.json", "content": '{"x": 1}'}]
+    discussion_id = discussions.save_discussion_message(None, "分析附件", "已分析", [], attachments=attachments)
+
+    assert discussions.get_discussion(discussion_id)["messages"][0]["attachments"] == attachments

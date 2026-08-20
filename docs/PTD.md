@@ -117,50 +117,32 @@ flowchart TD
 
 ---
 
-## 4. 核心功能二：本地知识库 RAG（`KnowledgeBase/`）
+## 4. 核心功能二：RAG（`KnowledgeBase/`）
 
-### 4.1 架构
+### 4.1 模块
 
-```mermaid
-flowchart LR
-    U[上传 文档/ZIP] --> P[prepare_upload 归档 raw]
-    P --> C[convert_documents MinerU 转 Markdown]
-    C --> D[documents/*.md]
-    D --> CK[chunk_knowledge_documents 句子窗口切分]
-    CK --> J[chunks/sentence_window_nodes.jsonl]
-    J --> E[build_local_qdrant_index 嵌入+入库]
-    E --> Q[(Qdrant 本地库)]
-    Q --> R[retrieve 混合检索 + RRF + LLM压缩]
-    R --> A[Brainstorm 问答 + 引用溯源]
-```
+| 文件               | 职责                                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `upload_file.py` | 上传文档（支持ZIP 解包）、MinerU 一键转换、上传清单持久化、删除与 UUID 治理                                                |
+| `chunk.py`       | 基于 LlamaIndex的`SentenceWindowNodeParser` 进行句子窗口切分，输出 JSONL 节点（含 `window`和`original_text` 元数据） |
+| `embedding.py`   | 加载本地`bge-small-zh-v1.5`嵌入模型，创建本地Qdrant向量库                                                                |
+| `main.py`        | 实现混合检索以及注入检索内容的LLM交互聊天                                                                                  |
 
-### 4.2 模块
+### 4.2 检索技术（混合检索 + RRF + 压缩）
 
-| 文件                    | 职责                                                                                                                                                 |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `upload_file.py`      | 上传归档（`prepare_upload`）、ZIP 解包、Markdown/文本直通、MinerU 转换（`convert_documents`）、清单持久化（`.uploads.json`）、删除与 UUID 治理 |
-| `chunk.py`            | 基于 LlamaIndex`SentenceWindowNodeParser` 的句子窗口切分，输出 JSONL 节点（含 `window`/`original_text` 元数据）                                |
-| `embedding.py`        | 加载本地 BGE 模型、Embedding、`build_local_qdrant_index`（重建集合）、`delete_document_vectors`                                                  |
-| `main.py`             | `retrieve()`：稠密召回 + BM25 + RRF 融合 + 可选 LLM 压缩，返回 `RetrievedChunk` 列表                                                             |
-| `architecture_rag.md` | 设计说明（含混合检索意图与前端 LaTeX 渲染方案）                                                                                                      |
-
-### 4.3 检索技术（混合检索 + RRF + 压缩）
-
-`retrieve(question, ...)` 流程：
+`retrieve`流程：
 
 1. **稠密召回**：BGE 模型对问题编码 → Qdrant 余弦检索 Top 50。
-2. **稀疏召回**：自实现、无三方依赖的 **BM25**（中英文分词：拉丁词 + 单汉字），对 Qdrant 已存 payload 重排 Top 50。
-3. **融合**：**RRF（Reciprocal Rank Fusion）**，常数 `RRF_K=60`，融合两路排名后取 Top 5。
-4. **压缩**（可选）：若传入 `llm`，用 `langchain-classic` 的 `LLMChainFilter` 对融合结果做上下文压缩（`COMPRESSION_PREVIEW_LENGTH=1500`）。
+2. **稀疏召回**：自实现、无三方依赖的 **BM25**，对 Qdrant 已存 payload 重排 Top 50。
+3. **融合**：**RRF**，常数 `RRF_K=60`，融合两路排名后取 Top 5。
+4. **压缩**：若传入 `llm`，用 `langchain-classic` 的 `LLMChainFilter` 对融合结果做上下文压缩（`COMPRESSION_PREVIEW_LENGTH=8000`）。
 
-> **实现与设计的差异（需关注）**：`architecture_rag.md` 将 HyDE（假设性文档嵌入）列为检索前处理，但 `main.py` 的 docstring 明确声明 **"HyDE is not part of this implementation"**；当前实现直接从用户原始问题出发做稠密 + BM25 混合召回。文档中的 HyDE / `TransformQueryEngine` 属于设计意图，尚未落地到 `main.py`。
-
-### 4.4 模型与存储
+### 4.3 模型与存储
 
 - **嵌入模型**：`KnowledgeBase/embedding_model/bge-small-zh-v1.5`，CPU 推理，`normalize_embeddings=True`。
 - **向量库**：Qdrant 本地文件（`KnowledgeBase/qdrant_db`），集合名 `knowledge_chunks`，向量维度由模型决定（BGE-small-zh 为 512）。
 - **数据隔离**：每个文档分配稳定 UUID（`document_id`），删除时按 `document_id` 过滤并重建索引。
-- **安全**：路径解析拒绝目录穿越（`_document_output_path` / `_raw_document_path` 校验父目录）；上传大小限制（单文件 ≤200MB，压缩包 ≤500MB / 500 文件）。
+- **安全**：路径解析拒绝目录穿越；上传大小限制（单文件 ≤200MB，压缩包 ≤500MB / 500 文件）。
 
 ---
 
@@ -194,53 +176,6 @@ flowchart LR
 | POST   | `/api/knowledge/brainstorm`           | 检索 + LLM 生成回答（含引用溯源） |
 | GET    | `/api/knowledge/discussions[/id]`     | 灵感讨论历史                      |
 
-### 5.3 两子系统的桥接
-
-- **当前实桥接点**：知识库 RAG 通过 `/api/knowledge/brainstorm` 服务于**"头脑风暴/灵感讨论"**功能——用户与结合了专用知识的 LLM 交流、形成建模思路；检索结果以 `sources`（来源文件 + 原文片段）形式回传。
-- **设计目标桥接**（`architecture_rag.md`）：将知识库中的建模思路**加载进任务智能体**以引导建模，以及将每次任务报告**回灌知识库**。当前 `scr/` 的求解闭环尚未直接调用 `KnowledgeBase.retrieve`，属于规划中的集成方向。
-- 二者共享 `create_llm` 工厂（经 `server` 的 `_active_discussion_llm` / `scr.math_modeling_agent.llm`）与同一份 API 设置（`api_settings.json`）。
-
----
-
 ## 6. 前端（`web/`）
 
-React + Vite + TypeScript 单页应用，关键页面：`Home`、`Submit`/`NewTask`（提交）、`ModelingTasks`/`Progress`/`Result`（任务运行与产物）、`KnowledgeBase*` 系列（上传/转换/分块嵌入/统计/历史）、`Brainstorm*` 系列（灵感讨论）、`ApiManager`（LLM 配置）、`Docs`。公式经 `react-markdown` + `remark-math` + `rehype-katex` 渲染。后端若已构建 `web/dist`，`server` 直接静态托管前端。
-
----
-
-## 7. 目录结构（核心）
-
-```
-MMAgent/
-├── scr/                      # 核心功能一：数学建模智能体（命名空间包）
-│   ├── math_modeling_agent/  # 编排：main/graph/state/llm
-│   ├── agents/               # 角色能力层
-│   ├── gates/                # G0 / GQ / GF 质量门
-│   ├── workflow/             # 阶段流程节点
-│   ├── runtime/              # 预算/检查点/埋点/日志/产物
-│   ├── schemas/              # Pydantic 数据结构
-│   ├── templates/            # 报告模板
-│   └── tools/                # 确定性外部能力
-├── KnowledgeBase/            # 核心功能二：本地知识库 RAG
-│   ├── upload_file.py        # 上传/转换/治理
-│   ├── chunk.py              # 句子窗口切分
-│   ├── embedding.py          # 嵌入 + Qdrant 入库
-│   ├── main.py               # 混合检索 + RRF + 压缩
-│   ├── embedding_model/      # 本地 BGE 模型
-│   ├── documents/ chunks/ qdrant_db/ raw/   # 各阶段产物
-├── server/                   # FastAPI 集成层
-│   ├── main.py               # 路由 + 桥接两大模块
-│   ├── runs.py  schemas.py  files.py  discussions.py
-├── web/                      # React 前端
-├── artifacts/                # 运行产物（run_id 隔离）
-├── AGENTS.md  pyproject.toml  README.md
-```
-
----
-
-## 8. 运行与部署要点
-
-- **后端**：`uvicorn server.main:app --reload --port 8000`（项目根目录）。
-- **LLM 配置**：环境变量 `LLM_*`/`OPENAI_*`/`DEEPSEEK_*`，或前端 API 管理中配置（持久化于 `server/api_settings.json`）。
-- **知识库就绪前置**：需先 `/api/knowledge/documents` 上传 → （非 Markdown 经 MinerU）转换 → `/api/knowledge/chunk-embed` 建索引，之后 `/api/knowledge/brainstorm` 方可检索。
-- **测试**：`pytest`（mock LLM/网络，无需 API Key），优先跑单点测试再跑套件。
+React + Vite + TypeScript 单页应用，关键页面：`Home`、`Submit`/`NewTask`（提交）、`ModelingTasks`/`Progress`/`Result`（任务运行与产物）、`KnowledgeBase*` 系列（上传/转换/分块嵌入/统计/历史）、`Brainstorm*` 系列（灵感讨论）、`ApiManager`（LLM 配置）、`Docs`。公式经 `react-markdown` + `remark-math` + `rehype-katex` 渲染。后端若已构建 `web/dist`，`server` 直接静态托管前端。---

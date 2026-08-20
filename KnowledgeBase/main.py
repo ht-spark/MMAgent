@@ -2,8 +2,7 @@
 
 The retrieval path intentionally starts with the user's original question: dense
 and BM25 recall each return up to 50 candidates, reciprocal-rank fusion keeps
-the best five, and an optional LLM filter compresses the final context. HyDE is
-not part of this implementation.
+the best five, and an optional LLM filter compresses the final context. 
 """
 from __future__ import annotations
 
@@ -25,7 +24,7 @@ except ImportError:  # Allows ``python KnowledgeBase/main.py`` as well.
 RECALL_LIMIT = 50
 FINAL_LIMIT = 5
 RRF_K = 60
-COMPRESSION_PREVIEW_LENGTH = 1_500
+COMPRESSION_PREVIEW_LENGTH = 6000   #限制每个候选 chunk 在交给 LLMChainFilter 做压缩筛选时的文本长度
 
 
 @dataclass(frozen=True)
